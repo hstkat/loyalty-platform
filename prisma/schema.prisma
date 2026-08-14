@@ -1,0 +1,540 @@
+// ============================================================================
+// Loyalty Platform — Prisma Schema
+// Module 1: Customer & CRM
+//
+// Stack: Node.js/TypeScript + Prisma + Supabase (Postgres) + Vercel
+//
+// Conventions used throughout this schema (kept consistent for future
+// modules — Transactions, Wallet & Credit, Reward Engine, etc.):
+//   - snake_case in the database (via @map / @@map), camelCase in TS
+//   - UUID primary keys (gen_random_uuid(), Supabase has pgcrypto enabled)
+//   - Soft delete via `deletedAt` where AVG/right-to-be-forgotten applies
+//   - Money fields use Decimal(10,2)
+//   - Multi-tenant: every table that isn't purely global carries
+//     organizationId, either directly or via its parent relation
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Supabase: use the pooled (pgbouncer) connection for the app at runtime,
+  // and the direct connection for migrations. See README for setup.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Tenancy
+// ----------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  locations           Location[]
+  customers           Customer[]
+  customerTags        CustomerTag[]
+  customerCustomFields CustomerCustomField[]
+  auditLogs           AuditLog[]
+
+  @@map("organizations")
+}
+
+model Location {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  timezone       String   @default("Europe/Amsterdam")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerLocations   CustomerLocation[]
+  timelineEvents      CustomerTimelineEvent[]
+  favoriteOfCustomers Customer[]          @relation("FavoriteLocation")
+
+  @@index([organizationId])
+  @@map("locations")
+}
+
+// ----------------------------------------------------------------------------
+// Core customer profile
+// ----------------------------------------------------------------------------
+
+enum LoyaltyStatus {
+  active
+  inactive
+  blocked
+  merged
+}
+
+enum SourceChannel {
+  pos
+  qr
+  website
+  reservation
+  wallet
+  manual
+  import
+}
+
+model Customer {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  firstName   String? @map("first_name")
+  lastName    String? @map("last_name")
+  email       String?
+  phone       String?
+  dateOfBirth DateTime? @map("date_of_birth") @db.Date
+  language    String    @default("nl")
+
+  loyaltyStatus LoyaltyStatus @default(active) @map("loyalty_status")
+
+  // Forward-looking: full tier system is designed in a later module.
+  // Kept nullable + FK-ready so we don't need a breaking migration then.
+  tierId String? @map("tier_id") @db.Uuid
+  tier   LoyaltyTier? @relation(fields: [tierId], references: [id])
+
+  // Denormalized read-cache. Source of truth lives in Module 2 (Transactions)
+  // and Module 3 (Wallet & Credit). Never written to directly by the API —
+  // only updated by event consumers. See README "Event-driven cache fields".
+  currentBalance             Decimal  @default(0) @map("current_balance") @db.Decimal(10, 2)
+  lifetimeEarned              Decimal  @default(0) @map("lifetime_earned") @db.Decimal(10, 2)
+  lifetimeRedeemed            Decimal  @default(0) @map("lifetime_redeemed") @db.Decimal(10, 2)
+  visitCount                  Int      @default(0) @map("visit_count")
+  lifetimeSpend                Decimal  @default(0) @map("lifetime_spend") @db.Decimal(10, 2)
+  averageSpend                 Decimal? @map("average_spend") @db.Decimal(10, 2)
+  firstVisitAt                 DateTime? @map("first_visit_at")
+  lastVisitAt                  DateTime? @map("last_visit_at")
+  averageVisitFrequencyDays    Int?      @map("average_visit_frequency_days")
+
+  favoriteLocationId String?   @map("favorite_location_id") @db.Uuid
+  favoriteLocation   Location? @relation("FavoriteLocation", fields: [favoriteLocationId], references: [id])
+
+  favoriteVisitDay        String? @map("favorite_visit_day")
+  favoriteVisitTimeWindow String? @map("favorite_visit_time_window")
+  favoritePartySize        Int?    @map("favorite_party_size")
+
+  interests   Json @default("[]") @map("interests")
+  preferences Json @default("{}") @map("preferences")
+
+  sourceChannel SourceChannel @default(manual) @map("source_channel")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  identities         CustomerIdentity[]
+  locationsBreakdown CustomerLocation[]
+  consents           CustomerConsent[]
+  consentHistory     CustomerConsentHistory[]
+  timelineEvents     CustomerTimelineEvent[]
+  notes              CustomerNote[]
+  tags               CustomerTagMap[]
+  customFieldValues  CustomerCustomFieldValue[]
+  segmentMemberships CustomerSegmentMembership[]
+
+  mergedInto   CustomerMergeLog[] @relation("SurvivingCustomer")
+  mergedFrom   CustomerMergeLog[] @relation("MergedCustomer")
+
+  // Unique identity per organization — enforced at the identity table level
+  // (email/phone can be null here; the real uniqueness constraint that
+  // prevents duplicate people lives on CustomerIdentity).
+  @@index([organizationId])
+  @@index([organizationId, email])
+  @@index([organizationId, phone])
+  @@index([organizationId, loyaltyStatus])
+  @@map("customers")
+}
+
+// Forward-looking stub for the future tier system (not fully designed yet —
+// referenced here only so Customer.tierId has a valid, non-breaking target).
+model LoyaltyTier {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  customers Customer[]
+
+  @@map("loyalty_tiers")
+}
+
+// ----------------------------------------------------------------------------
+// Identity resolution
+// ----------------------------------------------------------------------------
+
+enum IdentityType {
+  email
+  phone
+  qr_code
+  wallet_pass_id
+  pos_customer_ref
+  external_crm_id
+}
+
+model CustomerIdentity {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  customerId     String       @map("customer_id") @db.Uuid
+  identityType   IdentityType @map("identity_type")
+  identityValue  String       @map("identity_value") // normalized (lowercase email, E.164 phone)
+  isPrimary      Boolean      @default(false) @map("is_primary")
+  verified       Boolean      @default(false)
+  source         SourceChannel
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // Core anti-duplicate rule: one identity value can only belong to one
+  // customer within an organization.
+  @@unique([organizationId, identityType, identityValue])
+  @@index([customerId])
+  @@map("customer_identities")
+}
+
+// ----------------------------------------------------------------------------
+// Per-location statistics
+// ----------------------------------------------------------------------------
+
+model CustomerLocation {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId    String   @map("customer_id") @db.Uuid
+  locationId    String   @map("location_id") @db.Uuid
+  visitCount    Int      @default(0) @map("visit_count")
+  spendTotal    Decimal  @default(0) @map("spend_total") @db.Decimal(10, 2)
+  firstVisitAt  DateTime? @map("first_visit_at")
+  lastVisitAt   DateTime? @map("last_visit_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, locationId])
+  @@index([locationId])
+  @@map("customer_locations")
+}
+
+// ----------------------------------------------------------------------------
+// Consent / AVG
+// ----------------------------------------------------------------------------
+
+enum ConsentType {
+  marketing
+  email
+  sms
+  push
+  profiling
+  data_sharing_partners
+}
+
+enum ConsentSource {
+  signup_form
+  pos_prompt
+  wallet_signup
+  website
+  import
+  manual_staff
+  api
+}
+
+enum ConsentAction {
+  granted
+  revoked
+}
+
+model CustomerConsent {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String        @map("customer_id") @db.Uuid
+  consentType           ConsentType   @map("consent_type")
+  granted               Boolean
+  grantedAt             DateTime?     @map("granted_at")
+  revokedAt             DateTime?     @map("revoked_at")
+  source                ConsentSource
+  privacyPolicyVersion  String        @map("privacy_policy_version")
+  ipAddress             String?       @map("ip_address")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // One current-state row per customer per consent channel.
+  @@unique([customerId, consentType])
+  @@map("customer_consents")
+}
+
+model CustomerConsentHistory {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId           String        @map("customer_id") @db.Uuid
+  consentType          ConsentType   @map("consent_type")
+  action               ConsentAction
+  timestamp            DateTime      @default(now())
+  source               ConsentSource
+  privacyPolicyVersion String        @map("privacy_policy_version")
+  actor                String        // "customer" or a staff user id
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, consentType])
+  @@map("customer_consent_history")
+}
+
+// ----------------------------------------------------------------------------
+// Timeline
+// ----------------------------------------------------------------------------
+
+enum TimelineEventType {
+  account_created
+  profile_updated
+  visit
+  transaction
+  credit_earned
+  credit_redeemed
+  credit_expired
+  credit_manual_adjustment
+  reward_granted
+  reward_used
+  reservation_created
+  reservation_completed
+  reservation_no_show
+  push_sent
+  push_opened
+  email_sent
+  email_opened
+  sms_sent
+  campaign_targeted
+  coupon_issued
+  coupon_redeemed
+  manual_change
+  cs_note_added
+  consent_changed
+  merge_performed
+  segment_entered
+  segment_left
+}
+
+model CustomerTimelineEvent {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId          String            @map("customer_id") @db.Uuid
+  organizationId      String            @map("organization_id") @db.Uuid
+  locationId          String?           @map("location_id") @db.Uuid
+  eventType           TimelineEventType @map("event_type")
+  eventSourceModule   String            @map("event_source_module") // 'crm' | 'transactions' | 'wallet' | ...
+  eventSourceId       String?           @map("event_source_id") @db.Uuid
+  payload             Json              @default("{}")
+  occurredAt          DateTime          @map("occurred_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([customerId, occurredAt])
+  @@index([organizationId, eventType])
+  @@map("customer_timeline_events")
+}
+
+// ----------------------------------------------------------------------------
+// Notes
+// ----------------------------------------------------------------------------
+
+enum NoteType {
+  general
+  complaint
+  preference
+  allergy
+  vip_flag
+}
+
+enum NoteVisibility {
+  organization
+  location_only
+}
+
+model CustomerNote {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId    String         @map("customer_id") @db.Uuid
+  authorUserId  String         @map("author_user_id") @db.Uuid
+  noteType      NoteType       @default(general) @map("note_type")
+  content       String
+  visibility    NoteVisibility @default(organization)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_notes")
+}
+
+// ----------------------------------------------------------------------------
+// Tags
+// ----------------------------------------------------------------------------
+
+model CustomerTag {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  label          String
+  color          String   @default("#64748B")
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customers    CustomerTagMap[]
+
+  @@unique([organizationId, label])
+  @@map("customer_tags")
+}
+
+model CustomerTagMap {
+  customerId String   @map("customer_id") @db.Uuid
+  tagId      String   @map("tag_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag      CustomerTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, tagId])
+  @@map("customer_tag_map")
+}
+
+// ----------------------------------------------------------------------------
+// Custom fields (per-organization, no schema migration needed)
+// ----------------------------------------------------------------------------
+
+enum CustomFieldType {
+  text
+  number
+  boolean
+  date
+  select
+}
+
+model CustomerCustomField {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  fieldKey       String          @map("field_key")
+  fieldLabel     String          @map("field_label")
+  fieldType      CustomFieldType @map("field_type")
+  options        Json?           // used when fieldType = select
+  deletedAt      DateTime?       @map("deleted_at") // soft delete, see Edge case #10
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  values       CustomerCustomFieldValue[]
+
+  @@unique([organizationId, fieldKey])
+  @@map("customer_custom_fields")
+}
+
+model CustomerCustomFieldValue {
+  customerId    String @map("customer_id") @db.Uuid
+  customFieldId String @map("custom_field_id") @db.Uuid
+  value         Json
+
+  customer    Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customField CustomerCustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, customFieldId])
+  @@map("customer_custom_field_values")
+}
+
+// ----------------------------------------------------------------------------
+// Merge log
+// ----------------------------------------------------------------------------
+
+enum MergeType {
+  automatic
+  manual
+}
+
+model CustomerMergeLog {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  survivingCustomerId    String    @map("surviving_customer_id") @db.Uuid
+  mergedCustomerId       String    @map("merged_customer_id") @db.Uuid
+  mergedFieldsSnapshot   Json      @map("merged_fields_snapshot")
+  matchScore             Decimal   @map("match_score") @db.Decimal(5, 4)
+  mergeType              MergeType @map("merge_type")
+  performedBy            String?   @map("performed_by") @db.Uuid
+  performedAt            DateTime  @default(now()) @map("performed_at")
+
+  survivingCustomer Customer @relation("SurvivingCustomer", fields: [survivingCustomerId], references: [id])
+  mergedCustomer    Customer @relation("MergedCustomer", fields: [mergedCustomerId], references: [id])
+
+  @@index([survivingCustomerId])
+  @@index([mergedCustomerId])
+  @@map("customer_merge_log")
+}
+
+// ----------------------------------------------------------------------------
+// Segmentation (forward-looking stub — full engine is Module 7)
+// ----------------------------------------------------------------------------
+
+model Segment {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  memberships CustomerSegmentMembership[]
+
+  @@map("segments")
+}
+
+model CustomerSegmentMembership {
+  customerId String   @map("customer_id") @db.Uuid
+  segmentId  String   @map("segment_id") @db.Uuid
+  enteredAt  DateTime @default(now()) @map("entered_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  segment  Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, segmentId])
+  @@map("customer_segment_memberships")
+}
+
+// ----------------------------------------------------------------------------
+// Audit log (shared infrastructure, used by all modules)
+// ----------------------------------------------------------------------------
+
+enum AuditAction {
+  create
+  update
+  delete
+  merge
+  anonymize
+  export
+}
+
+enum ActorType {
+  staff
+  system
+  api_key
+  customer_self_service
+}
+
+model AuditLog {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  entityType     String      @map("entity_type") // e.g. 'customer', 'customer_consent', 'customer_note'
+  entityId       String      @map("entity_id") @db.Uuid
+  action         AuditAction
+  actorType      ActorType   @map("actor_type")
+  actorId        String?     @map("actor_id") @db.Uuid
+  beforeState    Json?       @map("before_state")
+  afterState     Json?       @map("after_state")
+  reason         String?
+  ipAddress      String?     @map("ip_address")
+  timestamp      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, timestamp])
+  @@map("audit_log")
+}
