@@ -315,6 +315,82 @@ npm run db:seed:rewards
 Module 2 sectie 5 en Module 4 sectie 11), en de webhook-adapter voor een
 eerste concrete POS-provider zodra dat relevant wordt.
 
+## 10. Module 3 (Wallet & Credit) — database
+
+Toegevoegd via `20260815000000_wallet_credit`: `wallets`,
+`wallet_ledger_entries`, `wallet_ledger_allocations`, `wallet_passes`,
+`credit_rules` — het lot-based ledger-model uit het Module 3-ontwerp.
+
+**Getest, net als de vorige migraties:** lokaal tegen een verse Postgres 16,
+met een concreet scenario dat het hele pad doorloopt:
+1. Transactie van €184 → earn-lot van €9,20 (10 dagen geleden)
+2. Een *volgend* bezoek (andere transactie) → gedeeltelijke besteding van
+   €5,00, met een allocatie-rij die expliciet naar de oorspronkelijke lot
+   verwijst — traceerbaarheidsquery bevestigd: je kunt van elke besteding
+   exact aanwijzen uit welke verdien-gebeurtenis hij kwam
+3. Een verlopen lot van €3,00 → expiratie-flow, lot netjes afgesloten
+4. Reconciliatie: de ledger herberekenen en vergelijken met de
+   denormalized cache — dit ving zelfs een fout in mijn eigen testscript
+   op (een vergeten cache-update), precies zoals sectie 15 bedoeld is
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+**Nog te bouwen:** de NestJS API-laag voor Module 3 (redemption
+reserve/confirm-flow, admin-correcties, Wallet-pas-endpoints) staat nog
+niet — alleen schema + migratie zijn nu klaar, net als bij Module 2/4 in
+eerste instantie.
+
+## 11. Nieuwe endpoints — Module 3 (Wallet & Credit)
+
+```
+GET    /organizations/:orgId/customers/:customerId/wallet
+GET    /organizations/:orgId/customers/:customerId/wallet/ledger
+GET    /organizations/:orgId/customers/:customerId/wallet/ledger/:entryId
+POST   /organizations/:orgId/customers/:customerId/wallet/redemptions/reserve
+POST   /organizations/:orgId/customers/:customerId/wallet/redemptions/:reservationId/confirm
+POST   /organizations/:orgId/customers/:customerId/wallet/redemptions/:reservationId/cancel
+POST   /organizations/:orgId/customers/:customerId/wallet/adjustments
+```
+
+**Belangrijk:** het aanmaken van een transactie (`POST /transactions`) boekt
+nu automatisch een `earn`-ledger entry op de wallet van de klant, als de
+Reward Engine een positief bedrag berekent — precies het "transactie →
+reward → zichtbaar tegoed"-pad waar we naartoe hebben gewerkt.
+
+**Voorbeeld — volledige cyclus testen:**
+```bash
+# 1. Transactie invoeren (levert reward op, boekt automatisch een earn)
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/transactions \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
+  -H "x-permissions: transaction.write" \
+  -d '{"locationId":"<LOCATION_ID>","customerId":"<CUSTOMER_ID>","grossAmount":100,"netAmount":100,"totalAmount":100,"paymentMethod":"card"}'
+
+# 2. Saldo bekijken
+curl http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet \
+  -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.read"
+
+# 3. Tegoed reserveren voor besteding bij een ANDERE (volgende) transactie
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet/redemptions/reserve \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.redeem" \
+  -d '{"amount":5,"transactionId":"<EEN_ANDERE_TRANSACTIE_ID>","idempotencyKey":"test-1"}'
+
+# 4. Bevestigen (reservationId uit de vorige response)
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet/redemptions/<RESERVATION_ID>/confirm \
+  -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.redeem"
+```
+
+### Eerlijk over de scope van deze wallet-API
+
+- **Redemption-reserveringen staan in-memory** (een `Map` in de service), niet in een database-tabel of Redis. Dit werkt correct zolang je **één** serverinstantie draait (zoals nu, lokaal of op Vercel als één functie), maar overleeft geen herstart en werkt niet betrouwbaar met meerdere gelijktijdige instanties. Een productierijpe versie heeft hiervoor een echte gedeelde store nodig.
+- **Tegoedregels (`credit_rules`) worden nog niet gevalideerd** bij redemption — de endpoints bestaan (via Prisma), maar de validatie (minimumbesteding, max-percentage, uitgesloten dagen/producten) uit sectie 6 van het ontwerp is nog niet in `WalletService.reserveRedemption()` geïmplementeerd.
+- **Apple/Google Wallet pass-endpoints zijn niet gebouwd** — het datamodel (`wallet_passes`) staat klaar, de pass-generatie/webhook-ontvangst (sectie 9) niet.
+- **Refund/void reward-reversal (Module 4) landt nog niet automatisch als `refund_reversal`-ledger entry** — die koppeling (Module 2/4's refund-events → Module 3's ledger) is nog niet gelegd.
+- **De expiratie-achtergrondjob draait niet** — het model ondersteunt expiratie volledig (zoals lokaal getest), maar er is geen scheduled job die hem in productie daadwerkelijk uitvoert.
+
+
 ## Projectstructuur
 
 ```

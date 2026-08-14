@@ -8,6 +8,7 @@ import { TransactionsModule } from './transactions/transactions.module';
 import { PosConnectionsModule } from './pos-connections/pos-connections.module';
 import { RewardRulesModule } from './reward-rules/reward-rules.module';
 import { RewardEngineModule } from './reward-engine/reward-engine.module';
+import { WalletModule } from './wallet/wallet.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { RewardEngineModule } from './reward-engine/reward-engine.module';
     PosConnectionsModule,
     RewardRulesModule,
     RewardEngineModule,
+    WalletModule,
   ],
 })
 export class AppModule {}

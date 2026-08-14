@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RewardEngineService } from '../reward-engine/reward-engine.service';
+import { WalletService } from '../wallet/wallet.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RefundTransactionDto, VoidTransactionDto } from './dto/refund-transaction.dto';
 
@@ -23,6 +24,7 @@ export class TransactionsService {
   constructor(
     private prisma: PrismaService,
     private rewardEngine: RewardEngineService,
+    private wallet: WalletService,
   ) {}
 
   async create(orgId: string, dto: CreateTransactionDto) {
@@ -92,6 +94,21 @@ export class TransactionsService {
         occurredAt,
         isSimulation: false,
       });
+
+      // Module 3 (Wallet & Credit): a positive reward becomes an `earn`
+      // ledger entry — the direct in-process equivalent of Wallet & Credit
+      // consuming a `reward.calculated` event (see Module 3 design doc,
+      // section 2/11).
+      if (rewardResult.finalRewardAmount > 0) {
+        await this.wallet.recordEarn({
+          organizationId: orgId,
+          customerId: dto.customerId,
+          transactionId: transaction.id,
+          amount: rewardResult.finalRewardAmount,
+          occurredAt,
+          rewardCalculationId: rewardResult.id,
+        });
+      }
     }
 
     return { transaction, reward: rewardResult };

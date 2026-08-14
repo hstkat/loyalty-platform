@@ -67,6 +67,9 @@ model Location {
   rewardRules        RewardRule[]
   rewardLocationCaps RewardLocationCap[]
 
+  // Module 3 — Wallet & Credit
+  creditRules CreditRule[]
+
   @@index([organizationId])
   @@map("locations")
 }
@@ -162,6 +165,9 @@ model Customer {
   rewardCustomerCaps       RewardCustomerCap[]
   rewardCalculations       RewardCalculation[]
   rewardChallengeProgress  RewardChallengeProgress[]
+
+  // Module 3 — Wallet & Credit
+  wallet Wallet?
 
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
@@ -694,6 +700,7 @@ model Transaction {
   chargebacks   TransactionChargeback[]
   posEvents     PosEvent[]
   rewardCalculations RewardCalculation[]
+  walletLedgerEntries WalletLedgerEntry[]
 
   @@unique([posConnectionId, externalTransactionId])
   @@index([organizationId])
@@ -1062,4 +1069,162 @@ model RewardChallengeProgress {
 
   @@index([rewardRuleId, customerId])
   @@map("reward_challenge_progress")
+}
+
+// ============================================================================
+// Module 3 — Wallet & Credit
+// ============================================================================
+
+model Wallet {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  customerId        String   @unique @map("customer_id") @db.Uuid
+  availableBalance  Decimal  @default(0) @map("available_balance") @db.Decimal(10, 2)
+  pendingBalance    Decimal  @default(0) @map("pending_balance") @db.Decimal(10, 2)
+  reservedBalance   Decimal  @default(0) @map("reserved_balance") @db.Decimal(10, 2)
+  lifetimeExpired   Decimal  @default(0) @map("lifetime_expired") @db.Decimal(10, 2)
+  lifetimeEarned    Decimal  @default(0) @map("lifetime_earned") @db.Decimal(10, 2)
+  lifetimeRedeemed  Decimal  @default(0) @map("lifetime_redeemed") @db.Decimal(10, 2)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  ledgerEntries WalletLedgerEntry[]
+  passes        WalletPass[]
+
+  @@index([organizationId])
+  @@map("wallets")
+}
+
+enum WalletLedgerEntryType {
+  earn
+  redeem
+  bonus
+  campaign_bonus
+  manual_adjustment
+  refund_reversal
+  expiration
+  transfer
+  correction
+}
+
+enum WalletLedgerEntryStatus {
+  pending
+  available
+  reserved
+  redeemed
+  expired
+  reversed
+}
+
+enum WalletLedgerSource {
+  pos
+  manual
+  campaign
+  system
+}
+
+enum PerformedByType {
+  system
+  staff
+  customer_self_service
+}
+
+model WalletLedgerEntry {
+  id                    String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId              String                     @map("wallet_id") @db.Uuid
+  organizationId        String                     @map("organization_id") @db.Uuid
+  entryType             WalletLedgerEntryType      @map("entry_type")
+  amount                Decimal                    @db.Decimal(10, 2)
+  remainingAmount       Decimal?                   @map("remaining_amount") @db.Decimal(10, 2)
+  status                WalletLedgerEntryStatus?
+  source                WalletLedgerSource
+  transactionId         String?                    @map("transaction_id") @db.Uuid
+  rewardCalculationId   String?                    @map("reward_calculation_id") @db.Uuid
+  campaignId            String?                    @map("campaign_id") @db.Uuid
+  performedByUserId     String?                    @map("performed_by_user_id") @db.Uuid
+  performedByType       PerformedByType            @map("performed_by_type")
+  relatedLedgerEntryId  String?                    @map("related_ledger_entry_id") @db.Uuid
+  reason                String?
+  metadata              Json?
+  expiresAt             DateTime?                  @map("expires_at")
+  occurredAt            DateTime                   @map("occurred_at")
+  createdAt             DateTime                   @default(now()) @map("created_at")
+
+  wallet      Wallet             @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  transaction Transaction?       @relation(fields: [transactionId], references: [id])
+
+  allocationsAsDebit  WalletLedgerAllocation[] @relation("DebitEntry")
+  allocationsAsCredit WalletLedgerAllocation[] @relation("CreditEntry")
+
+  @@index([walletId, entryType])
+  @@index([organizationId])
+  @@index([walletId, status, expiresAt])
+  @@map("wallet_ledger_entries")
+}
+
+model WalletLedgerAllocation {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  debitEntryId   String   @map("debit_entry_id") @db.Uuid
+  creditEntryId  String   @map("credit_entry_id") @db.Uuid
+  amount         Decimal  @db.Decimal(10, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  debitEntry  WalletLedgerEntry @relation("DebitEntry", fields: [debitEntryId], references: [id], onDelete: Cascade)
+  creditEntry WalletLedgerEntry @relation("CreditEntry", fields: [creditEntryId], references: [id], onDelete: Cascade)
+
+  @@index([debitEntryId])
+  @@index([creditEntryId])
+  @@map("wallet_ledger_allocations")
+}
+
+enum WalletPassType {
+  apple
+  google
+}
+
+enum WalletPassStatus {
+  active
+  removed
+  not_installed
+}
+
+model WalletPass {
+  id                       String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId                 String            @map("wallet_id") @db.Uuid
+  passType                 WalletPassType    @map("pass_type")
+  serialNumber             String            @unique @map("serial_number")
+  deviceLibraryIdentifier  String?           @map("device_library_identifier")
+  pushToken                String?           @map("push_token")
+  status                   WalletPassStatus  @default(not_installed)
+  lastPushedAt             DateTime?         @map("last_pushed_at")
+  installedAt              DateTime?         @map("installed_at")
+  removedAt                DateTime?         @map("removed_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@map("wallet_passes")
+}
+
+model CreditRule {
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId              String   @map("organization_id") @db.Uuid
+  locationId                  String?  @map("location_id") @db.Uuid
+  validityDays                Int      @default(60) @map("validity_days")
+  usableFromNextVisit         Boolean  @default(true) @map("usable_from_next_visit")
+  minimumOrderAmount          Decimal? @map("minimum_order_amount") @db.Decimal(10, 2)
+  maximumRedeemPercentage     Decimal? @map("maximum_redeem_percentage") @db.Decimal(5, 2)
+  excludedProductCategories   Json?    @map("excluded_product_categories")
+  excludedDays                Json?    @map("excluded_days")
+  nonCombinableCampaignIds    Json?    @map("non_combinable_campaign_ids")
+  transfersAllowed            Boolean  @default(false) @map("transfers_allowed")
+  isActive                    Boolean  @default(true) @map("is_active")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([organizationId])
+  @@map("credit_rules")
 }
