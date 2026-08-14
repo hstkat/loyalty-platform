@@ -140,31 +140,129 @@ Op dit moment bevat de repo alleen schema/migraties, dus er is nog niets
 
 ---
 
+## 8. NestJS API draaien
+
+De API-laag implementeert de endpoints uit sectie 9 van het Module 1-ontwerp
+(`/customers`, `/resolve-identity`, `/merge`, consent-beheer, timeline,
+notes, tags, custom fields) met de permissiematrix uit sectie 10 als guards.
+
+```bash
+npm install
+npx prisma generate
+npm run build
+npm run start:dev
+```
+
+De server draait dan op `http://localhost:3000`.
+
+### Auth-stub (belangrijk om te weten)
+
+Er is nog geen Users/Roles/authenticatie-module gebouwd — dat hoort bij een
+gedeelde platform/auth-module die nog niet bestaat. Tot die er is, wordt de
+tenant- en actor-context uit request-headers gelezen:
+
+| Header | Betekenis |
+|---|---|
+| `x-organization-id` | UUID van de organisatie (**verplicht** op elk endpoint) |
+| `x-actor-id` | UUID van de staff-user of API-key (optioneel) |
+| `x-actor-type` | `staff` \| `system` \| `api_key` \| `customer_self_service` |
+| `x-permissions` | komma-gescheiden lijst, bv. `customer.read,customer.write` |
+
+Voorbeeld met `curl`:
+
+```bash
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/customers \
+  -H "Content-Type: application/json" \
+  -H "x-organization-id: <ORG_ID>" \
+  -H "x-actor-type: staff" \
+  -H "x-permissions: customer.write" \
+  -d '{"firstName":"Jan","lastName":"de Vries","email":"jan@example.nl","sourceChannel":"pos"}'
+```
+
+Zodra de echte auth-module er is, vervang je alleen
+`src/common/decorators/current-context.decorator.ts` — de rest van de
+codebase leest context via die ene decorator.
+
+### Belangrijkste endpoints
+
+```
+POST   /organizations/:orgId/customers
+GET    /organizations/:orgId/customers
+GET    /organizations/:orgId/customers/duplicates
+POST   /organizations/:orgId/customers/resolve-identity
+GET    /organizations/:orgId/customers/:id
+PATCH  /organizations/:orgId/customers/:id
+DELETE /organizations/:orgId/customers/:id
+POST   /organizations/:orgId/customers/:id/identities
+DELETE /organizations/:orgId/customers/:id/identities/:identityId
+GET    /organizations/:orgId/customers/:id/timeline
+POST   /organizations/:orgId/customers/:id/notes
+GET    /organizations/:orgId/customers/:id/notes
+POST   /organizations/:orgId/customers/:id/tags/:tagId
+DELETE /organizations/:orgId/customers/:id/tags/:tagId
+GET    /organizations/:orgId/customers/:id/consents
+POST   /organizations/:orgId/customers/:id/consents
+GET    /organizations/:orgId/customers/:id/consents/history
+POST   /organizations/:orgId/customers/:id/merge
+POST   /organizations/:orgId/customers/:id/export
+POST   /organizations/:orgId/customers/:id/anonymize
+GET    /organizations/:orgId/customers/:id/locations
+GET    /organizations/:orgId/tags
+POST   /organizations/:orgId/tags
+GET    /organizations/:orgId/custom-fields
+POST   /organizations/:orgId/custom-fields
+```
+
+## 9. Deployen naar Vercel
+
+De repo bevat nu `api/index.ts` (serverless entrypoint, wrapt de NestJS-app
+in een gecachete Express-handler) en `vercel.json` (routeert alle requests
+daarnaartoe).
+
+1. Importeer de GitHub-repo op [vercel.com/new](https://vercel.com/new)
+2. Zet `DATABASE_URL` en `DIRECT_URL` in **Project Settings → Environment
+   Variables**
+3. Deploy — Vercel draait automatisch `npm install` (met `postinstall:
+   prisma generate`) en `npm run build`
+
+> **Let op:** de Prisma Client-engine wordt bij `npm install` gedownload
+> van `binaries.prisma.sh`. Dat werkt gewoon op Vercel's build-servers en
+> op een normale ontwikkelmachine met internettoegang — alleen deze
+> specifieke ontwikkel-sandbox waarin dit project is opgezet had daar geen
+> toegang toe. Test dus altijd eerst lokaal (stap 8) vóór je naar Vercel
+> pusht.
+
 ## Volgende stap
 
-Twee opties om vanaf hier verder te bouwen:
-
-1. **NestJS API-laag voor Module 1** — de endpoints uit sectie 9 van het
-   ontwerp (`/customers`, `/customers/resolve-identity`,
-   `/customers/{id}/merge`, consent- en export-endpoints), met de
-   permissie-matrix uit sectie 10 als guards.
-2. **Doorbouwen naar Module 2 (Transactions & POS)** — de migratie die de
-   `visit_count`/`lifetime_spend`-velden op `customers` daadwerkelijk gaat
-   voeden via events.
+**Module 2 (Transactions & POS)** — de migratie en module die
+`visit_count`/`lifetime_spend` op `customers` daadwerkelijk gaat voeden via
+events, en die de basis legt voor Wallet & Credit (Module 3) daarna.
 
 ## Projectstructuur
 
 ```
 loyalty-platform/
+├── api/
+│   └── index.ts              # Vercel serverless entrypoint
+├── src/
+│   ├── audit/                 # Gedeelde audit-log service (sectie 13)
+│   ├── common/
+│   │   ├── decorators/         # @RequirePermissions, @Ctx (auth-stub)
+│   │   ├── guards/              # PermissionsGuard
+│   │   └── filters/             # Prisma error → HTTP response mapping
+│   ├── customers/               # Module 1 kern: CRUD, identity, consent, merge, AVG
+│   ├── org-resources/            # Tags & custom fields (organisatiebreed)
+│   ├── prisma/                    # Injectable PrismaService
+│   ├── app.module.ts
+│   └── main.ts
 ├── prisma/
 │   ├── schema.prisma
 │   ├── seed.ts
 │   └── migrations/
-│       ├── migration_lock.toml
-│       └── 20260813000000_init_customer_crm/
-│           └── migration.sql
 ├── .env.example
 ├── .gitignore
+├── nest-cli.json
+├── vercel.json
 ├── package.json
 ├── tsconfig.json
 └── README.md

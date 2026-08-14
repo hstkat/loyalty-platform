@@ -1,15 +1,21 @@
 {
   "compilerOptions": {
-    "target": "ES2021",
     "module": "commonjs",
+    "declaration": false,
+    "target": "ES2021",
     "lib": ["ES2021"],
+    "outDir": "dist",
+    "rootDir": ".",
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
     "strict": true,
+    "strictPropertyInitialization": false,
     "esModuleInterop": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
-    "outDir": "dist",
-    "rootDir": "."
+    "resolveJsonModule": true,
+    "moduleResolution": "node"
   },
-  "include": ["prisma/**/*.ts"],
+  "include": ["src/**/*.ts", "prisma/**/*.ts"],
   "exclude": ["node_modules", "dist"]
 }
