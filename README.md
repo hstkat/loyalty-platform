@@ -215,6 +215,52 @@ POST   /organizations/:orgId/custom-fields
 
 ## 9. Deployen naar Vercel
 
+### Nieuwe endpoints — Module 2 & 4
+
+```
+POST   /organizations/:orgId/transactions
+GET    /organizations/:orgId/transactions
+GET    /organizations/:orgId/transactions/:id
+POST   /organizations/:orgId/transactions/:id/refund
+POST   /organizations/:orgId/transactions/:id/void
+GET    /organizations/:orgId/pos-connections
+POST   /organizations/:orgId/pos-connections
+GET    /organizations/:orgId/pos-connections/:id/health
+GET    /organizations/:orgId/reward-rules
+POST   /organizations/:orgId/reward-rules
+PATCH  /organizations/:orgId/reward-rules/:id
+DELETE /organizations/:orgId/reward-rules/:id
+POST   /organizations/:orgId/reward-simulations
+GET    /organizations/:orgId/reward-calculations
+GET    /organizations/:orgId/reward-calculations/:id
+POST   /organizations/:orgId/reward-calculations/:id/resimulate
+```
+
+**Voorbeeld — het doorgerekende voorbeeld uit het Module 4-ontwerp, live via de simulator:**
+```bash
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/reward-simulations \
+  -H "Content-Type: application/json" \
+  -H "x-organization-id: <ORG_ID>" \
+  -H "x-permissions: reward_rule.read" \
+  -d '{"amount": 100, "tierId": "<GOLD_TIER_ID>"}'
+```
+
+### Eerlijk over de scope van deze API-laag
+
+Gebouwd en (na jouw lokale `npm run build`) compileerbaar:
+- **Transacties invoeren** (`POST /transactions`) — berekent automatisch de eligible amount uit regel-items en triggert de Reward Engine synchroon, in-process (niet via een echte event-bus/message-queue — dat is een architecturale vereenvoudiging t.o.v. het ontwerp, prima voor één-proces-deployment, maar zou in een groter systeem via een echte queue moeten lopen)
+- **Refund/void** met proportionele reward-reversal — een **vereenvoudigde** reversal (het bedrag wordt proportioneel teruggerekend zonder de volledige multi-stage berekening opnieuw te doorlopen op het verlaagde bedrag); een productierijpe versie zou dat wel moeten doen
+- **Reward-regels CRUD**, inclusief versioning zodra een regel al gebruikt is (sectie 15 van het ontwerp)
+- **Rule Simulator** (`POST /reward-simulations`) — hergebruikt exact dezelfde rekencode als een live transactie, precies zoals het ontwerp vereist
+- **Calculation trace** — elke berekening (live of simulatie) bevat het volledige stap-voor-stap logboek
+
+**Bewust niet gebouwd in deze stap** (wel volledig ontworpen in de bijbehorende markdown-documenten):
+- Webhook-ontvangst per POS-provider, polling-worker, bulk/CSV-import
+- Reconciliation-job en het volledige integration-dashboard
+- Customer-caps en location-caps worden nog niet gehandhaafd in de berekening (staan als tabellen klaar in het schema, sectie 6, maar de cap-check in stadium 4 is nog niet geïmplementeerd — alleen `maximumRewardPerTransaction` werkt al)
+- Challenge-regels (stadium 5) — aparte pijplijn, nog niet gebouwd
+
+
 De repo bevat nu `api/index.ts` (serverless entrypoint, wrapt de NestJS-app
 in een gecachete Express-handler) en `vercel.json` (routeert alle requests
 daarnaartoe).
@@ -234,9 +280,40 @@ daarnaartoe).
 
 ## Volgende stap
 
-**Module 2 (Transactions & POS)** — de migratie en module die
-`visit_count`/`lifetime_spend` op `customers` daadwerkelijk gaat voeden via
-events, en die de basis legt voor Wallet & Credit (Module 3) daarna.
+**Module 2 (Transactions & POS) en Module 4 (Reward Engine)** zijn nu ook als
+database-migratie toegevoegd (`20260814000000_transactions_pos_reward_engine`).
+Deze migratie is **echt getest**, op dezelfde manier als de eerste: lokaal
+tegen een verse Postgres 16-installatie gedraaid, met een concrete
+dataset die exact het doorgerekende voorbeeld uit het Module 4-ontwerp
+reproduceert (base 5% + Gold-tier 1% = 6%, ×2 Double Credit-campagne =
+**€12,00** reward op een transactie van €100) — en de idempotency-constraint
+uit Module 2 (geen dubbele transactie met hetzelfde extern ID op dezelfde
+POS-koppeling) is expliciet gecontroleerd: een duplicaat-insert gaf terecht
+een database-fout.
+
+**Om deze migratie ook bij jou uit te voeren:**
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+npm run db:seed:rewards
+```
+
+> `db:seed:rewards` hergebruikt de organisatie uit de eerste seed
+> (`beach-hospitality-group`) — draai dus eerst `npm run db:seed` als je dat
+> nog niet had gedaan, of het script maakt 'm alsnog aan (upsert).
+
+**Wat deze migratie toevoegt (21 nieuwe tabellen):**
+- Module 2: `pos_connections`, `pos_events`, `transactions`,
+  `transaction_line_items` (+ modifiers), `transaction_refunds`,
+  `transaction_voids`, `transaction_chargebacks`, `pos_product_mappings`,
+  `pos_customer_mappings`, `failed_transactions`, `pos_sync_runs`
+- Module 4: `reward_rules`, `reward_customer_caps`, `reward_location_caps`,
+  `reward_calculations`, `reward_challenge_progress`
+
+**Nog te bouwen:** de NestJS API-laag voor deze twee modules (endpoints uit
+Module 2 sectie 5 en Module 4 sectie 11), en de webhook-adapter voor een
+eerste concrete POS-provider zodra dat relevant wordt.
 
 ## Projectstructuur
 

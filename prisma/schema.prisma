@@ -54,10 +54,18 @@ model Location {
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
-  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization        Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   customerLocations   CustomerLocation[]
   timelineEvents      CustomerTimelineEvent[]
   favoriteOfCustomers Customer[]          @relation("FavoriteLocation")
+
+  // Module 2 — Transactions & POS
+  posConnections PosConnection[]
+  transactions   Transaction[]
+
+  // Module 4 — Reward Engine
+  rewardRules        RewardRule[]
+  rewardLocationCaps RewardLocationCap[]
 
   @@index([organizationId])
   @@map("locations")
@@ -146,6 +154,15 @@ model Customer {
   mergedInto   CustomerMergeLog[] @relation("SurvivingCustomer")
   mergedFrom   CustomerMergeLog[] @relation("MergedCustomer")
 
+  // Module 2 — Transactions & POS
+  transactions           Transaction[]
+  posCustomerMappings    PosCustomerMapping[]
+
+  // Module 4 — Reward Engine
+  rewardCustomerCaps       RewardCustomerCap[]
+  rewardCalculations       RewardCalculation[]
+  rewardChallengeProgress  RewardChallengeProgress[]
+
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
   // prevents duplicate people lives on CustomerIdentity).
@@ -165,6 +182,7 @@ model LoyaltyTier {
   createdAt      DateTime @default(now()) @map("created_at")
 
   customers Customer[]
+  rewardRules RewardRule[]
 
   @@map("loyalty_tiers")
 }
@@ -537,4 +555,511 @@ model AuditLog {
   @@index([organizationId, entityType, entityId])
   @@index([organizationId, timestamp])
   @@map("audit_log")
+}
+
+// ============================================================================
+// Module 2 — Transactions & POS
+// ============================================================================
+
+enum PosConnectionMode {
+  webhook
+  polling
+  bulk_only
+}
+
+enum PosConnectionStatus {
+  active
+  paused
+  error
+  not_configured
+}
+
+model PosConnection {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  locationId     String              @map("location_id") @db.Uuid
+  // Deliberately a free-form string, not a fixed enum — new POS providers
+  // must be addable without a schema migration (see Module 2 design doc,
+  // section 9: "geen hardcoded enum-limiet").
+  provider              String
+  connectionMode        PosConnectionMode   @map("connection_mode")
+  apiCredentialsRef     String?             @map("api_credentials_ref")
+  webhookSecretRef      String?             @map("webhook_secret_ref")
+  pollingIntervalSeconds Int?               @map("polling_interval_seconds")
+  lastSyncedAt          DateTime?           @map("last_synced_at")
+  lastSuccessfulSyncAt  DateTime?           @map("last_successful_sync_at")
+  status                PosConnectionStatus @default(not_configured)
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  location             Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  events               PosEvent[]
+  transactions         Transaction[]
+  productMappings      PosProductMapping[]
+  customerMappings     PosCustomerMapping[]
+  syncRuns             PosSyncRun[]
+
+  @@index([organizationId])
+  @@index([locationId])
+  @@map("pos_connections")
+}
+
+enum IngestionMethod {
+  webhook
+  poll
+  bulk_import
+  csv_upload
+}
+
+enum PosEventProcessingStatus {
+  pending
+  processed
+  failed
+  ignored_duplicate
+}
+
+model PosEvent {
+  id                String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posConnectionId   String                    @map("pos_connection_id") @db.Uuid
+  ingestionMethod   IngestionMethod           @map("ingestion_method")
+  rawPayload        Json                      @map("raw_payload")
+  payloadHash       String                    @map("payload_hash")
+  receivedAt        DateTime                  @default(now()) @map("received_at")
+  processingStatus  PosEventProcessingStatus  @default(pending) @map("processing_status")
+  transactionId     String?                   @map("transaction_id") @db.Uuid
+
+  posConnection PosConnection @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+  transaction   Transaction?  @relation(fields: [transactionId], references: [id])
+  failedTransactions FailedTransaction[]
+
+  @@index([posConnectionId, payloadHash])
+  @@index([posConnectionId, receivedAt])
+  @@map("pos_events")
+}
+
+enum TransactionSource {
+  pos
+  manual
+  csv_import
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  failed
+  voided
+  partially_refunded
+  refunded
+  charged_back
+}
+
+enum PaymentMethod {
+  cash
+  card
+  ideal
+  voucher
+  split
+  other
+}
+
+model Transaction {
+  id                     String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String             @map("organization_id") @db.Uuid
+  locationId             String             @map("location_id") @db.Uuid
+  posConnectionId        String?            @map("pos_connection_id") @db.Uuid
+  source                 TransactionSource  @default(manual)
+  externalTransactionId  String?            @map("external_transaction_id")
+  customerId             String?            @map("customer_id") @db.Uuid
+  tableReference         String?            @map("table_reference")
+  reservationId          String?            @map("reservation_id") @db.Uuid
+  status                 TransactionStatus  @default(pending)
+  grossAmount            Decimal            @map("gross_amount") @db.Decimal(10, 2)
+  discountAmount         Decimal            @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  serviceAmount          Decimal            @default(0) @map("service_amount") @db.Decimal(10, 2)
+  vatAmount              Decimal            @default(0) @map("vat_amount") @db.Decimal(10, 2)
+  netAmount              Decimal            @map("net_amount") @db.Decimal(10, 2)
+  totalAmount            Decimal            @map("total_amount") @db.Decimal(10, 2)
+  paymentMethod          PaymentMethod      @map("payment_method")
+  occurredAt             DateTime           @map("occurred_at")
+  posCreatedAt           DateTime?          @map("pos_created_at")
+  createdAt              DateTime           @default(now()) @map("created_at")
+
+  location      Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  posConnection PosConnection?     @relation(fields: [posConnectionId], references: [id])
+  customer      Customer?          @relation(fields: [customerId], references: [id])
+
+  lineItems     TransactionLineItem[]
+  refunds       TransactionRefund[]
+  voids         TransactionVoid[]
+  chargebacks   TransactionChargeback[]
+  posEvents     PosEvent[]
+  rewardCalculations RewardCalculation[]
+
+  @@unique([posConnectionId, externalTransactionId])
+  @@index([organizationId])
+  @@index([locationId, occurredAt])
+  @@index([customerId])
+  @@map("transactions")
+}
+
+model TransactionLineItem {
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId             String   @map("transaction_id") @db.Uuid
+  posProductId              String?  @map("pos_product_id")
+  internalProductMappingId  String?  @map("internal_product_mapping_id") @db.Uuid
+  description                String
+  category                   String?
+  quantity                    Int
+  unitPrice                   Decimal @map("unit_price") @db.Decimal(10, 2)
+  lineGrossAmount              Decimal @map("line_gross_amount") @db.Decimal(10, 2)
+  lineDiscountAmount            Decimal @default(0) @map("line_discount_amount") @db.Decimal(10, 2)
+  lineNetAmount                  Decimal @map("line_net_amount") @db.Decimal(10, 2)
+  lineVatAmount                   Decimal @default(0) @map("line_vat_amount") @db.Decimal(10, 2)
+  rewardEligible                   Boolean @default(true) @map("reward_eligible")
+
+  transaction     Transaction         @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  productMapping  PosProductMapping?  @relation(fields: [internalProductMappingId], references: [id])
+  modifiers       TransactionLineItemModifier[]
+
+  @@index([transactionId])
+  @@map("transaction_line_items")
+}
+
+model TransactionLineItemModifier {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lineItemId        String  @map("line_item_id") @db.Uuid
+  name              String
+  priceAdjustment   Decimal @map("price_adjustment") @db.Decimal(10, 2)
+
+  lineItem TransactionLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+
+  @@map("transaction_line_item_modifiers")
+}
+
+enum RefundType {
+  partial
+  full
+}
+
+enum RefundInitiator {
+  pos
+  manual_staff
+}
+
+model TransactionRefund {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId         String          @map("transaction_id") @db.Uuid
+  refundType            RefundType      @map("refund_type")
+  refundedAmount        Decimal         @map("refunded_amount") @db.Decimal(10, 2)
+  refundedLineItems     Json?           @map("refunded_line_items")
+  reason                String
+  externalRefundId      String?         @map("external_refund_id")
+  initiatedBy           RefundInitiator @map("initiated_by")
+  performedByUserId     String?         @map("performed_by_user_id") @db.Uuid
+  occurredAt            DateTime        @map("occurred_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@map("transaction_refunds")
+}
+
+model TransactionVoid {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId      String    @map("transaction_id") @db.Uuid
+  reason             String
+  performedByUserId  String?   @map("performed_by_user_id") @db.Uuid
+  occurredAt         DateTime  @map("occurred_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@map("transaction_voids")
+}
+
+enum ChargebackStatus {
+  received
+  disputed
+  lost
+  won
+}
+
+model TransactionChargeback {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId     String           @map("transaction_id") @db.Uuid
+  chargebackAmount  Decimal          @map("chargeback_amount") @db.Decimal(10, 2)
+  reasonCode        String?          @map("reason_code")
+  status            ChargebackStatus @default(received)
+  receivedAt        DateTime         @map("received_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@map("transaction_chargebacks")
+}
+
+enum MappingStatus {
+  mapped
+  unmapped
+  needs_review
+}
+
+model PosProductMapping {
+  id                        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId            String        @map("organization_id") @db.Uuid
+  posConnectionId           String        @map("pos_connection_id") @db.Uuid
+  externalProductId         String        @map("external_product_id")
+  externalProductName       String?       @map("external_product_name")
+  internalCategory          String?       @map("internal_category")
+  rewardEligibleOverride    Boolean?      @map("reward_eligible_override")
+  mappingStatus             MappingStatus @default(unmapped) @map("mapping_status")
+  createdAt                 DateTime      @default(now()) @map("created_at")
+  updatedAt                 DateTime      @updatedAt @map("updated_at")
+
+  posConnection PosConnection          @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+  lineItems     TransactionLineItem[]
+
+  @@unique([posConnectionId, externalProductId])
+  @@map("pos_product_mappings")
+}
+
+enum MatchedVia {
+  external_id_direct
+  phone
+  email
+  manual
+}
+
+model PosCustomerMapping {
+  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posConnectionId    String      @map("pos_connection_id") @db.Uuid
+  externalCustomerId String      @map("external_customer_id")
+  customerId         String      @map("customer_id") @db.Uuid
+  matchedVia         MatchedVia  @map("matched_via")
+  createdAt          DateTime    @default(now()) @map("created_at")
+
+  posConnection PosConnection @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([posConnectionId, externalCustomerId])
+  @@map("pos_customer_mappings")
+}
+
+enum FailureStage {
+  normalization
+  validation
+  matching
+  storage
+}
+
+enum FailedTxStatus {
+  pending_retry
+  retrying
+  resolved
+  abandoned
+}
+
+enum ResolvedBy {
+  automatic_retry
+  manual_staff
+}
+
+model FailedTransaction {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posEventId     String           @map("pos_event_id") @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  locationId     String?          @map("location_id") @db.Uuid
+  failureStage   FailureStage     @map("failure_stage")
+  errorMessage   String           @map("error_message")
+  errorDetails   Json?            @map("error_details")
+  retryCount     Int              @default(0) @map("retry_count")
+  maxRetries     Int              @default(5) @map("max_retries")
+  nextRetryAt    DateTime?        @map("next_retry_at")
+  status         FailedTxStatus   @default(pending_retry)
+  resolvedAt     DateTime?        @map("resolved_at")
+  resolvedBy     ResolvedBy?      @map("resolved_by")
+
+  posEvent PosEvent @relation(fields: [posEventId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("failed_transactions")
+}
+
+enum SyncRunType {
+  polling
+  reconciliation
+  manual_trigger
+}
+
+enum SyncRunStatus {
+  success
+  partial_success
+  failed
+}
+
+model PosSyncRun {
+  id                          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posConnectionId             String        @map("pos_connection_id") @db.Uuid
+  runType                     SyncRunType   @map("run_type")
+  startedAt                   DateTime      @map("started_at")
+  completedAt                 DateTime?     @map("completed_at")
+  transactionsFoundAtPos      Int?          @map("transactions_found_at_pos")
+  transactionsIngested        Int           @default(0) @map("transactions_ingested")
+  discrepancyCount             Int           @default(0) @map("discrepancy_count")
+  discrepancyDetails            Json?         @map("discrepancy_details")
+  status                        SyncRunStatus @default(success)
+
+  posConnection PosConnection @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+
+  @@index([posConnectionId, startedAt])
+  @@map("pos_sync_runs")
+}
+
+// ============================================================================
+// Module 4 — Reward Engine
+// ============================================================================
+
+enum RewardRuleType {
+  base
+  tier
+  day
+  time
+  location
+  product
+  campaign
+  bonus
+  challenge
+}
+
+enum RewardBucket {
+  percentage
+  multiplier
+  flat_bonus
+  challenge
+}
+
+enum StackingMode {
+  additive
+  exclusive
+  highest_only
+}
+
+model RewardRule {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String          @map("organization_id") @db.Uuid
+  locationId             String?         @map("location_id") @db.Uuid
+  ruleType               RewardRuleType  @map("rule_type")
+  bucket                 RewardBucket
+  name                   String
+  priority               Int             @default(0)
+  stackingMode           StackingMode    @map("stacking_mode")
+  percentageValue        Decimal?        @map("percentage_value") @db.Decimal(5, 2)
+  multiplierValue        Decimal?        @map("multiplier_value") @db.Decimal(4, 2)
+  flatBonusAmount        Decimal?        @map("flat_bonus_amount") @db.Decimal(10, 2)
+  flatBonusThreshold     Decimal?        @map("flat_bonus_threshold") @db.Decimal(10, 2)
+  challengeCondition     Json?           @map("challenge_condition")
+  challengeRewardAmount  Decimal?        @map("challenge_reward_amount") @db.Decimal(10, 2)
+  tierId                 String?         @map("tier_id") @db.Uuid
+  appliesOnDay           Json?           @map("applies_on_day")
+  timeWindowStart        DateTime?       @map("time_window_start") @db.Time
+  timeWindowEnd          DateTime?       @map("time_window_end") @db.Time
+  productCategories      Json?           @map("product_categories")
+  isExclusion            Boolean         @default(false) @map("is_exclusion")
+  campaignId             String?         @map("campaign_id") @db.Uuid
+  maximumRewardPerTransaction Decimal?   @map("maximum_reward_per_transaction") @db.Decimal(10, 2)
+  activeFrom             DateTime?       @map("active_from")
+  activeUntil            DateTime?       @map("active_until")
+  isActive               Boolean         @default(true) @map("is_active")
+  version                Int             @default(1)
+  parentRuleId           String?         @map("parent_rule_id") @db.Uuid
+  supersededByRuleId     String?         @map("superseded_by_rule_id") @db.Uuid
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+
+  location Location? @relation(fields: [locationId], references: [id])
+  tier     LoyaltyTier? @relation(fields: [tierId], references: [id])
+
+  @@index([organizationId, isActive, bucket])
+  @@index([locationId])
+  @@map("reward_rules")
+}
+
+enum CapPeriodType {
+  daily
+  weekly
+  monthly
+}
+
+model RewardCustomerCap {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String        @map("organization_id") @db.Uuid
+  customerId            String        @map("customer_id") @db.Uuid
+  periodType            CapPeriodType @map("period_type")
+  maxAmount             Decimal       @map("max_amount") @db.Decimal(10, 2)
+  currentPeriodSpent    Decimal       @default(0) @map("current_period_spent") @db.Decimal(10, 2)
+  currentPeriodStart    DateTime      @map("current_period_start") @db.Date
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("reward_customer_caps")
+}
+
+model RewardLocationCap {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String        @map("organization_id") @db.Uuid
+  locationId            String        @map("location_id") @db.Uuid
+  periodType            CapPeriodType @map("period_type")
+  maxAmount             Decimal       @map("max_amount") @db.Decimal(10, 2)
+  currentPeriodSpent    Decimal       @default(0) @map("current_period_spent") @db.Decimal(10, 2)
+  currentPeriodStart    DateTime      @map("current_period_start") @db.Date
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+  @@map("reward_location_caps")
+}
+
+model RewardCalculation {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String    @map("organization_id") @db.Uuid
+  transactionId             String?   @map("transaction_id") @db.Uuid
+  customerId                 String?   @map("customer_id") @db.Uuid
+  eligibleAmount               Decimal   @map("eligible_amount") @db.Decimal(10, 2)
+  combinedPercentage             Decimal?  @map("combined_percentage") @db.Decimal(5, 2)
+  percentageSubtotal               Decimal?  @map("percentage_subtotal") @db.Decimal(10, 2)
+  effectiveMultiplier                 Decimal?  @map("effective_multiplier") @db.Decimal(4, 2)
+  multipliedSubtotal                   Decimal?  @map("multiplied_subtotal") @db.Decimal(10, 2)
+  flatBonusTotal                         Decimal   @default(0) @map("flat_bonus_total") @db.Decimal(10, 2)
+  preCapTotal                             Decimal   @map("pre_cap_total") @db.Decimal(10, 2)
+  appliedCaps                              Json?     @map("applied_caps")
+  finalRewardAmount                          Decimal   @map("final_reward_amount") @db.Decimal(10, 2)
+  calculationTrace                            Json      @map("calculation_trace")
+  appliedRuleIds                               Json      @map("applied_rule_ids")
+  isSimulation                                  Boolean   @default(false) @map("is_simulation")
+  supersededByCorrectionId                       String?   @map("superseded_by_correction_id") @db.Uuid
+  createdAt                                       DateTime  @default(now()) @map("created_at")
+
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId])
+  @@index([transactionId])
+  @@index([customerId])
+  @@map("reward_calculations")
+}
+
+model RewardChallengeProgress {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rewardRuleId          String    @map("reward_rule_id") @db.Uuid
+  customerId            String    @map("customer_id") @db.Uuid
+  progressCount         Int       @default(0) @map("progress_count")
+  windowStartedAt       DateTime  @map("window_started_at")
+  completedAt           DateTime? @map("completed_at")
+  rewardCalculationId   String?   @map("reward_calculation_id") @db.Uuid
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([rewardRuleId, customerId])
+  @@map("reward_challenge_progress")
 }

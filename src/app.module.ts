@@ -4,6 +4,10 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './audit/audit.module';
 import { CustomersModule } from './customers/customers.module';
 import { OrgResourcesModule } from './org-resources/org-resources.module';
+import { TransactionsModule } from './transactions/transactions.module';
+import { PosConnectionsModule } from './pos-connections/pos-connections.module';
+import { RewardRulesModule } from './reward-rules/reward-rules.module';
+import { RewardEngineModule } from './reward-engine/reward-engine.module';
 
 @Module({
   imports: [
@@ -12,6 +16,10 @@ import { OrgResourcesModule } from './org-resources/org-resources.module';
     AuditModule,
     CustomersModule,
     OrgResourcesModule,
+    TransactionsModule,
+    PosConnectionsModule,
+    RewardRulesModule,
+    RewardEngineModule,
   ],
 })
 export class AppModule {}
