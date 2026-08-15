@@ -36,6 +36,8 @@ interface CustomerView {
   creditBalance: number;
   marketingConsent: boolean;
   favoriteVisitDay: string | null;
+  isAtRisk: boolean;
+  churnRiskScore: number | null;
 }
 
 @Injectable()
@@ -48,6 +50,7 @@ export class AudienceFilterService {
       include: {
         wallet: true,
         consents: { where: { consentType: 'marketing' } },
+        churnRiskScore: true,
       },
       take: 5000, // pragmatic cap for this build pass, see class-level note
     });
@@ -62,6 +65,8 @@ export class AudienceFilterService {
       creditBalance: c.wallet ? Number(c.wallet.availableBalance) : 0,
       marketingConsent: c.consents.some((cs) => cs.granted),
       favoriteVisitDay: c.favoriteVisitDay,
+      isAtRisk: c.churnRiskScore?.isAtRisk ?? false,
+      churnRiskScore: c.churnRiskScore?.churnRiskScore ?? null,
     }));
 
     const matched = views.filter((v) => this.matchesGroup(v, filter));

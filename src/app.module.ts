@@ -11,6 +11,7 @@ import { RewardEngineModule } from './reward-engine/reward-engine.module';
 import { WalletModule } from './wallet/wallet.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { MessagingModule } from './messaging/messaging.module';
+import { SegmentationModule } from './segmentation/segmentation.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { MessagingModule } from './messaging/messaging.module';
     WalletModule,
     CampaignsModule,
     MessagingModule,
+    SegmentationModule,
   ],
 })
 export class AppModule {}

@@ -613,6 +613,62 @@ curl -X POST http://localhost:3000/organizations/<ORG_ID>/messaging/templates \
   wordt push-consent gebruikt (er is geen apart wallet-consenttype in
   Module 1's schema) — een kleine, gedocumenteerde vereenvoudiging.
 
+## 19. Nieuwe endpoints — Module 7 (Segmentation Engine)
+
+```
+POST   /organizations/:orgId/segments
+GET    /organizations/:orgId/segments
+POST   /organizations/:orgId/segments/preview
+GET    /organizations/:orgId/segments/:id
+PATCH  /organizations/:orgId/segments/:id
+DELETE /organizations/:orgId/segments/:id
+GET    /organizations/:orgId/segments/:id/members
+POST   /organizations/:orgId/segments/:id/recompute
+POST   /organizations/:orgId/segments/:id/duplicate
+POST   /organizations/:orgId/churn-risk/recompute
+GET    /organizations/:orgId/customers/:customerId/churn-risk
+```
+
+**Belangrijk:** de audience-filter-evaluator uit Module 5 is uitgebreid met
+`isAtRisk`/`churnRiskScore`, en wordt nu door Module 5 én 7 **gedeeld**
+(`src/common/audience-filter.service.ts`) — precies zoals het ontwerp
+voorschreef: één definitie van wat een conditie betekent, niet twee.
+
+**Het churn-algoritme uit sectie 11 van het ontwerp draait nu écht:**
+`POST /churn-risk/recompute` berekent voor elke klant de persoonlijke
+cadans-ratio (`daysSinceLastVisit / averageVisitFrequencyDays`), markeert
+als `isAtRisk` bij een ratio > 1,5, en valt terug op een organisatie-
+gemiddelde voor klanten met minder dan 2 bezoeken — exact zoals lokaal al
+getest.
+
+**Voorbeeld:**
+```bash
+# Bereken churn-risico voor de hele organisatie
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/churn-risk/recompute \
+  -H "x-organization-id: <ORG_ID>" -H "x-permissions: segment.write"
+
+# Maak het "High Value At Risk"-segment uit het ontwerp
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/segments \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
+  -H "x-permissions: segment.write" \
+  -d '{"name":"High Value At Risk","segmentType":"custom","evaluationMode":"cached","definition":{"combinator":"AND","conditions":[{"field":"lifetimeSpend","operator":"gt","value":1000},{"field":"isAtRisk","operator":"isTrue"}]}}'
+```
+
+### Eerlijk over de scope
+
+- **`recompute` moet handmatig aangeroepen worden** — er is geen
+  achtergrondjob die dit periodiek (uurlijks/dagelijks, zoals het ontwerp
+  beschrijft) automatisch doet. Hetzelfde geldt voor churn-risk-
+  herberekening.
+- **Geen incrementele, event-gedreven herevaluatie** (sectie 10 van het
+  ontwerp) — elke `recompute` is een volledige herberekening.
+- **Standaardsegmenten (sectie 13) zijn niet vooraf geseed** — je moet ze
+  zelf aanmaken via `POST /segments`.
+- **Nested groups (sub-groepen binnen groepen) worden wel correct
+  geëvalueerd** door de gedeelde `AudienceFilterService`, maar zijn nog
+  niet apart getest via de API — alleen lokaal, in de Postgres-tests van
+  eerder.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |
