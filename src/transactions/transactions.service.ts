@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RewardEngineService } from '../reward-engine/reward-engine.service';
 import { WalletService } from '../wallet/wallet.service';
+import { JourneyEngineService } from '../journeys/journey-engine.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RefundTransactionDto, VoidTransactionDto } from './dto/refund-transaction.dto';
 
@@ -25,6 +26,7 @@ export class TransactionsService {
     private prisma: PrismaService,
     private rewardEngine: RewardEngineService,
     private wallet: WalletService,
+    private journeyEngine: JourneyEngineService,
   ) {}
 
   async create(orgId: string, dto: CreateTransactionDto) {
@@ -145,6 +147,14 @@ export class TransactionsService {
           rewardCalculationId: rewardResult.id,
         });
       }
+    }
+
+    // Module 8 (Automated Journeys): trigger any published journeys
+    // listening for transaction.completed — the direct in-process
+    // equivalent of consuming that event (same simplification pattern
+    // as the Reward Engine / Wallet calls above).
+    if (dto.customerId) {
+      await this.journeyEngine.handleEvent(orgId, 'transaction.completed', dto.customerId, transaction.id);
     }
 
     return { transaction, reward: rewardResult };

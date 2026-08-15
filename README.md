@@ -669,6 +669,73 @@ curl -X POST http://localhost:3000/organizations/<ORG_ID>/segments \
   niet apart getest via de API — alleen lokaal, in de Postgres-tests van
   eerder.
 
+## 20. Nieuwe endpoints — Module 8 (Automated Journeys)
+
+```
+POST   /organizations/:orgId/journeys
+GET    /organizations/:orgId/journeys
+GET    /organizations/:orgId/journeys/:id
+POST   /organizations/:orgId/journeys/:id/publish
+POST   /organizations/:orgId/journeys/:id/pause
+POST   /organizations/:orgId/journeys/:id/resume
+POST   /organizations/:orgId/journeys/:id/stop
+GET    /organizations/:orgId/journeys/:id/enrollments
+POST   /organizations/:orgId/journeys/:id/test
+POST   /organizations/:orgId/journeys/scheduler/run
+```
+
+**Dit is de flow-uitvoeringsengine, geen simulatie.** Elke `POST
+/transactions` roept nu `JourneyEngineService.handleEvent(orgId,
+'transaction.completed', customerId)` aan, die alle gepubliceerde journeys
+met die trigger vindt en de klant inschrijft (mét duplicate-enrollment-
+preventie) — en direct begint met het doorlopen van de nodes.
+
+**Voorbeeld — het First Visit-voorbeeld uit het ontwerp, als échte
+API-aanroep** (gebruik `tempId`'s om nodes aan elkaar te knopen, de
+service zet ze om naar echte UUID's):
+```bash
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/journeys \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
+  -H "x-permissions: journey.write" \
+  -d '{
+    "name": "First Visit",
+    "triggerType": "event",
+    "eventName": "transaction.completed",
+    "nodes": [
+      {"tempId":"1","nodeType":"trigger"},
+      {"tempId":"2","nodeType":"send_push","config":{"templateGroupKey":"tegoed_check"}},
+      {"tempId":"3","nodeType":"end"}
+    ],
+    "edges": [
+      {"fromTempId":"1","toTempId":"2"},
+      {"fromTempId":"2","toTempId":"3"}
+    ]
+  }'
+
+# Publiceren (nodig, anders vuurt de trigger niet)
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/journeys/<JOURNEY_ID>/publish \
+  -H "x-organization-id: <ORG_ID>" -H "x-permissions: journey.publish"
+
+# Vanaf nu: elke nieuwe transactie voor een klant triggert deze journey
+```
+
+### Eerlijk over de scope
+
+- **Geen echte scheduler/cron** — `wait`-nodes zetten een enrollment
+  correct op `waiting` met een `resumeAt`, maar niets roept
+  `POST .../scheduler/run` automatisch aan. In productie hoort hier een
+  scheduled job (bv. elke 5 minuten) voor te draaien.
+- **`give_reward`- en `webhook`-nodes zijn niet geïmplementeerd** — ze
+  worden overgeslagen met een gelogde no-op, de flow loopt gewoon door.
+- **Versioning is vereenvoudigd**: `publish` markeert de enige bestaande
+  versie als gepubliceerd; het aanmaken van een *nieuwe* versie op een
+  al-gepubliceerde journey (sectie 10 van het ontwerp) is niet
+  geïmplementeerd — je kunt een journey nu niet bewerken ná publicatie.
+- **`condition`-nodes ondersteunen alleen `daysSinceLastVisit`** in deze
+  bouw-pas — niet de volledige AND/OR-DSL uit Module 7 (dat zou wel de
+  gedeelde `AudienceFilterService` kunnen hergebruiken, maar is nu nog
+  niet gekoppeld).
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

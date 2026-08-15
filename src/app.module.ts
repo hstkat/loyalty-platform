@@ -12,6 +12,7 @@ import { WalletModule } from './wallet/wallet.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { SegmentationModule } from './segmentation/segmentation.module';
+import { JourneysModule } from './journeys/journeys.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { SegmentationModule } from './segmentation/segmentation.module';
     CampaignsModule,
     MessagingModule,
     SegmentationModule,
+    JourneysModule,
   ],
 })
 export class AppModule {}
