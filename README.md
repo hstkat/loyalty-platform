@@ -391,6 +391,198 @@ curl -X POST http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID
 - **De expiratie-achtergrondjob draait niet** — het model ondersteunt expiratie volledig (zoals lokaal getest), maar er is geen scheduled job die hem in productie daadwerkelijk uitvoert.
 
 
+## 12. Module 5 (Campaign Manager) & Module 6 (Messaging) — database
+
+Toegevoegd via `20260816000000_campaign_messaging`: 15 nieuwe tabellen —
+`campaigns`, `campaign_templates`, `campaign_audience_snapshot`,
+`campaign_recipients`, `campaign_metrics_snapshots` (Module 5);
+`message_providers`, `message_templates`, `message_send_requests`,
+`message_queue_items`, `message_events`, `message_links`,
+`customer_push_tokens`, `message_frequency_caps`,
+`customer_message_send_log`, `brand_voice_profiles`, `ai_copy_requests`
+(Module 6).
+
+**Getest:** alle vier migraties samen (Module 1, 2+4, 3, 5+6) foutloos
+tegen een verse Postgres 16 — **56 tabellen** in totaal. Functioneel
+scenario doorlopen: een "Sunny Day"-campagne met een audience-snapshot die
+correct onderscheid maakt tussen de behandelde groep en de controlegroep,
+en een bericht dat het volledige pad template → gerenderde tekst → queue
+item → delivery-event doorloopt.
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+**Nog te bouwen:** de NestJS API-laag voor Module 5/6 (campagne-wizard-
+endpoints, message-verzending, AI-copy-aanroep) staat nog niet — alleen
+schema + migratie zijn nu klaar. De koppeling tussen Module 5's
+campagne-incentive en Module 4's `reward_rules` (het `campaignId`-veld
+bestaat al in Module 4's schema) moet nog daadwerkelijk in code gelegd
+worden, evenals de in Module 5's ontwerp benoemde uitbreiding op de
+Reward Engine (audience-restrictie op campagne-gekoppelde regels).
+
+## 13. Module 7 (Segmentation Engine) — database
+
+Toegevoegd via `20260817000000_segmentation`: `segments`,
+`segment_membership`, `churn_risk_scores`. **Belangrijk:** deze migratie
+vervangt de vooruitkijkende `segments`/`customer_segment_memberships`-stub
+uit Module 1 door de echte implementatie (drop-and-recreate — de stub werd
+nooit door applicatiecode gebruikt, dus dit is veilig).
+
+**Getest:** alle vijf migraties samen foutloos — 57 tabellen. Functioneel
+scenario: het exacte churn-voorbeeld uit het ontwerp doorgerekend — een
+klant die normaliter elke 20 dagen komt en nu 35 dagen weg is (ratio 1,75)
+wordt terecht als "At Risk" gemarkeerd, terwijl een klant die normaliter
+elke 60 dagen komt en nu 50 dagen weg is (ratio 0,83, dus binnen zijn eigen
+patroon) dat terecht **niet** wordt — het bewijst dat persoonlijke cadans
+werkt zoals bedoeld, niet een vaste termijn. Ook getest: het AND-segment
+uit de opdracht (`lifetimeSpend > 1000 AND isAtRisk`) selecteert correct
+alleen de juiste klant.
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+**Nog te bouwen:** de NestJS API-laag (segment-builder-endpoints, preview,
+de churn-batch-job zelf) staat nog niet — alleen schema + migratie.
+
+## 14. Module 8 (Automated Journeys) — database
+
+Toegevoegd via `20260818000000_automated_journeys`: `journeys`,
+`journey_versions`, `journey_nodes`, `journey_edges`,
+`journey_enrollments`, `journey_node_executions`, `journey_goals` — 7
+nieuwe tabellen, samen goed voor **64 tabellen totaal** in het platform.
+
+**Getest:** alle zes migraties samen foutloos. Functioneel het **exacte
+First Visit-voorbeeld uit het ontwerp** opgebouwd — trigger → send_push →
+wait 14 dagen → condition → send_push/end — als een echte graaf van nodes
+en edges in de database, en drie kernmechanismen bevestigd:
+1. Duplicate-enrollment-detectie vindt een reeds actieve inschrijving
+2. De scheduler-query vindt een `waiting`-enrollment terecht **niet** zolang
+   de wait-periode nog loopt
+3. Diezelfde query vindt de enrollment wél zodra de wait-periode voorbij is
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+**Nog te bouwen:** de NestJS API-laag (flow-uitvoeringsengine, de
+scheduler-worker zelf, de builder-UI-endpoints) staat nog niet — alleen
+schema + migratie.
+
+## 15. Module 9 (Reservations & Occupancy Booster) — database
+
+Toegevoegd via `20260819000000_reservations_occupancy`: 8 nieuwe tabellen
+— `location_capacity_settings`, `reservation_connections`,
+`reservations`, `weather_forecasts`, `forecast_runs`,
+`occupancy_opportunities`, `occupancy_recommendations`,
+`occupancy_attribution_results` — samen goed voor **72 tabellen totaal**.
+
+**Getest:** alle zeven migraties samen foutloos. Functioneel het **exacte
+"Sunny Lunch Booster"-scenario uit het ontwerp** opgebouwd en geverifieerd:
+- Bezettingsberekening: 76 geboekte covers / 200 capaciteit = **38%**,
+  exact het cijfer uit de opdracht
+- Weer gekoppeld: 27°C, zonnig
+- Het volledige voorstel: naam, doelgroep (624), incentive (double credit),
+  geschatte max. reward-kosten (€1.248), status `pending_approval` — een
+  voorstel, nog geen actieve campagne, precies de vereiste scheiding
+  tussen recommendation en execution
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+**Nog te bouwen:** de NestJS API-laag (forecast-berekening, opportunity-
+detectiejob, de koppeling die een goedgekeurd voorstel omzet in een
+Module 5-draft-campagne) staat nog niet — alleen schema + migratie.
+
+## 16. Module 10 (Analytics & AI Campaign Assistant) — database
+
+Toegevoegd via `20260820000000_analytics_ai_assistant`: `analytics_snapshots`,
+`cohort_retention_snapshots`, `ai_assistant_conversations`,
+`ai_assistant_messages`, `ai_tool_calls`, `ai_campaign_suggestions`,
+`proactive_insights` — 7 tabellen, en daarmee **compleet: 79 tabellen,
+alle 10 kernmodules van het platform.**
+
+**Getest:** alle acht migraties samen foutloos. Functioneel het **exacte
+AI-assistent-voorbeeld uit het ontwerp** opgebouwd: de vraag "Morgen
+slecht weer, lunch staat maar 30% vol" met drie echte tool-aanroepen
+(`getOccupancyForecast: 31%`, `getHistoricalOccupancy: 56%`,
+`getSegmentPreview: 412`), een AI-antwoord dat uitsluitend die cijfers
+citeert, en een voorstel — **412 klanten, €3.090 geschatte max. exposure,
+status `pending_approval`** — nooit een actieve campagne. Elk cijfer in
+het voorstel is herleidbaar tot een `ai_tool_calls`-rij; geen enkel
+verzonnen getal.
+
+```bash
+npx prisma generate
+npx prisma migrate deploy
+```
+
+**Nog te bouwen:** de NestJS API-laag (het dashboard, de KPI-berekeningsjobs,
+de daadwerkelijke AI-conversatie-engine met een LLM-koppeling) staat nog
+niet — alleen schema + migratie, net als bij de voorgaande modules.
+
+## 17. Nieuwe endpoints — Module 5 (Campaign Manager)
+
+```
+POST   /organizations/:orgId/campaigns
+GET    /organizations/:orgId/campaigns
+POST   /organizations/:orgId/campaigns/preview
+GET    /organizations/:orgId/campaigns/:id
+PATCH  /organizations/:orgId/campaigns/:id
+POST   /organizations/:orgId/campaigns/:id/launch
+POST   /organizations/:orgId/campaigns/:id/pause
+POST   /organizations/:orgId/campaigns/:id/resume
+POST   /organizations/:orgId/campaigns/:id/cancel
+GET    /organizations/:orgId/campaigns/:id/results
+```
+
+**Belangrijk:** `launch` doet echt werk — audience-resolutie, controlegroep-
+splitsing, en (indien een incentive is ingesteld) het aanmaken van de
+onderliggende Module 4-`reward_rule` met `campaignId` gevuld. Vanaf dat
+moment tellen nieuwe transacties van gasten in de doelgroep automatisch
+mee in de reward-berekening.
+
+### Eerlijk over de scope
+
+- **De audience-filter-evaluatie gebeurt in applicatiecode** (laadt tot
+  5.000 klanten van de organisatie en filtert in JavaScript), niet als
+  een geoptimaliseerde, geïndexeerde SQL-query. Dit is correct maar niet
+  geschikt voor zeer grote klantenbestanden — Module 7's "query
+  generator" (nog niet gebouwd) hoort dit uiteindelijk te vervangen.
+- **De audience-restrictie op campagne-gekoppelde reward-regels is NIET
+  geïmplementeerd** — het ontwerp benoemt expliciet dat de Reward Engine
+  hiervoor moet controleren of een klant in de campagne-snapshot zit
+  (sectie 6 van het ontwerp); die controle staat nu nog niet in
+  `RewardEngineService`. Dit betekent dat een gelanceerde campagne-
+  incentive **voor de hele organisatie** geldt, niet alleen de
+  doelgroep — een bekend gat, met de oplossing al ontworpen maar nog niet
+  gebouwd.
+- **Scheduling (period/recurring), approvals en daadwerkelijke
+  berichtverzending zijn niet geïmplementeerd** — `launch` ondersteunt
+  alleen directe uitvoering, en registreert ontvangers zonder iets te
+  versturen (Module 6's API staat er ook nog niet).
+
+## Alle tien modules — overzicht
+
+| # | Module | Ontwerp | Schema/migratie | API |
+|---|---|---|---|---|
+| 1 | Customer & CRM | ✅ | ✅ getest, live | ✅ getest, live |
+| 2 | Transactions & POS | ✅ | ✅ getest, live | ✅ getest, live |
+| 3 | Wallet & Credit | ✅ | ✅ getest, live | ✅ getest, live |
+| 4 | Reward Engine | ✅ | ✅ getest, live | ✅ getest, live |
+| 5 | Campaign Manager | ✅ | ✅ getest | — |
+| 6 | Messaging | ✅ | ✅ getest | — |
+| 7 | Segmentation Engine | ✅ | ✅ getest | — |
+| 8 | Automated Journeys | ✅ | ✅ getest | — |
+| 9 | Reservations & Occupancy | ✅ | ✅ getest | — |
+| 10 | Analytics & AI Assistant | ✅ | ✅ getest | — |
+
 ## Projectstructuur
 
 ```

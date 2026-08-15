@@ -70,6 +70,14 @@ model Location {
   // Module 3 — Wallet & Credit
   creditRules CreditRule[]
 
+  // Module 9 — Reservations & Occupancy Booster
+  capacitySettings       LocationCapacitySetting[]
+  reservationConnections ReservationConnection[]
+  reservations           Reservation[]
+  weatherForecasts       WeatherForecast[]
+  forecastRuns           ForecastRun[]
+  occupancyOpportunities OccupancyOpportunity[]
+
   @@index([organizationId])
   @@map("locations")
 }
@@ -152,7 +160,6 @@ model Customer {
   notes              CustomerNote[]
   tags               CustomerTagMap[]
   customFieldValues  CustomerCustomFieldValue[]
-  segmentMemberships CustomerSegmentMembership[]
 
   mergedInto   CustomerMergeLog[] @relation("SurvivingCustomer")
   mergedFrom   CustomerMergeLog[] @relation("MergedCustomer")
@@ -168,6 +175,25 @@ model Customer {
 
   // Module 3 — Wallet & Credit
   wallet Wallet?
+
+  // Module 5 — Campaign Manager
+  campaignAudienceSnapshots CampaignAudienceSnapshot[]
+  campaignRecipients        CampaignRecipient[]
+
+  // Module 6 — Messaging
+  pushTokens          CustomerPushToken[]
+  messageQueueItems   MessageQueueItem[]
+  messageSendLogs     CustomerMessageSendLog[]
+
+  // Module 7 — Segmentation Engine
+  segmentMemberships SegmentMembership[]
+  churnRiskScore     ChurnRiskScore?
+
+  // Module 8 — Automated Journeys
+  journeyEnrollments JourneyEnrollment[]
+
+  // Module 9 — Reservations & Occupancy Booster
+  reservations Reservation[]
 
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
@@ -496,31 +522,11 @@ model CustomerMergeLog {
 }
 
 // ----------------------------------------------------------------------------
-// Segmentation (forward-looking stub — full engine is Module 7)
+// Segmentation is fully implemented in Module 7 (see below). The forward-
+// looking stub that used to live here has been replaced by the real
+// Segment/SegmentMembership models further down this file.
 // ----------------------------------------------------------------------------
 
-model Segment {
-  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  organizationId String   @map("organization_id") @db.Uuid
-  name           String
-  createdAt      DateTime @default(now()) @map("created_at")
-
-  memberships CustomerSegmentMembership[]
-
-  @@map("segments")
-}
-
-model CustomerSegmentMembership {
-  customerId String   @map("customer_id") @db.Uuid
-  segmentId  String   @map("segment_id") @db.Uuid
-  enteredAt  DateTime @default(now()) @map("entered_at")
-
-  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  segment  Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
-
-  @@id([customerId, segmentId])
-  @@map("customer_segment_memberships")
-}
 
 // ----------------------------------------------------------------------------
 // Audit log (shared infrastructure, used by all modules)
@@ -1227,4 +1233,966 @@ model CreditRule {
 
   @@index([organizationId])
   @@map("credit_rules")
+}
+
+// ============================================================================
+// Module 5 — Campaign Manager
+// ============================================================================
+
+enum CampaignGoal {
+  meer_bezoekers
+  lunch_vullen
+  slapende_gasten_activeren
+  credit_laten_inwisselen
+  omzet_verhogen
+  vip_event_vullen
+}
+
+enum CampaignStatus {
+  draft
+  pending_approval
+  scheduled
+  active
+  paused
+  completed
+  cancelled
+  archived
+}
+
+enum IncentiveType {
+  flat_bonus
+  multiplier
+  percentage_bonus
+  coupon
+  none
+}
+
+enum ScheduleType {
+  direct
+  datetime
+  period
+  recurring
+}
+
+model CampaignTemplate {
+  id                     String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String?       @map("organization_id") @db.Uuid
+  name                   String
+  icon                   String?
+  defaultGoal            CampaignGoal  @map("default_goal")
+  defaultAudienceFilter  Json?         @map("default_audience_filter")
+  defaultIncentiveType   IncentiveType @map("default_incentive_type")
+  defaultIncentiveValue  Json?         @map("default_incentive_value")
+  defaultChannels        Json?         @map("default_channels")
+  defaultScheduleType    ScheduleType  @map("default_schedule_type")
+  suggestedBudgetLimits  Json?         @map("suggested_budget_limits")
+  createdAt              DateTime      @default(now()) @map("created_at")
+
+  @@map("campaign_templates")
+}
+
+model Campaign {
+  id                       String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String          @map("organization_id") @db.Uuid
+  templateId               String?         @map("template_id") @db.Uuid
+  name                     String
+  goal                     CampaignGoal
+  status                   CampaignStatus  @default(draft)
+  audienceFilter           Json?           @map("audience_filter")
+  incentiveType            IncentiveType   @default(none) @map("incentive_type")
+  incentiveValue           Json?           @map("incentive_value")
+  rewardRuleId             String?         @map("reward_rule_id") @db.Uuid
+  channels                 Json            @default("[]")
+  scheduleType             ScheduleType    @default(direct) @map("schedule_type")
+  startAt                  DateTime?       @map("start_at")
+  endAt                    DateTime?       @map("end_at")
+  recurrenceRule           String?         @map("recurrence_rule")
+  maxRecipients            Int?            @map("max_recipients")
+  maxRewardExposure        Decimal?        @map("max_reward_exposure") @db.Decimal(10, 2)
+  maxRedemptionCost        Decimal?        @map("max_redemption_cost") @db.Decimal(10, 2)
+  maxIncentivePerCustomer  Int             @default(1) @map("max_incentive_per_customer")
+  currentRewardExposure    Decimal         @default(0) @map("current_reward_exposure") @db.Decimal(10, 2)
+  currentRedemptionCost    Decimal         @default(0) @map("current_redemption_cost") @db.Decimal(10, 2)
+  controlGroupPercentage   Decimal?        @map("control_group_percentage") @db.Decimal(5, 2)
+  createdByUserId          String?         @map("created_by_user_id") @db.Uuid
+  approvedByUserId         String?         @map("approved_by_user_id") @db.Uuid
+  rejectionReason          String?         @map("rejection_reason")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+
+  audienceSnapshot  CampaignAudienceSnapshot[]
+  recipients        CampaignRecipient[]
+  metricsSnapshots  CampaignMetricsSnapshot[]
+
+  @@index([organizationId, status])
+  @@map("campaigns")
+}
+
+model CampaignAudienceSnapshot {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId      String   @map("campaign_id") @db.Uuid
+  runNumber       Int      @map("run_number")
+  customerId      String   @map("customer_id") @db.Uuid
+  matchedAt       DateTime @default(now()) @map("matched_at")
+  inControlGroup  Boolean  @default(false) @map("in_control_group")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, runNumber])
+  @@map("campaign_audience_snapshot")
+}
+
+enum RecipientChannel {
+  push
+  wallet
+  email
+  sms
+}
+
+enum RecipientStatus {
+  queued
+  delivered
+  opened
+  clicked
+  failed
+}
+
+model CampaignRecipient {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId      String            @map("campaign_id") @db.Uuid
+  customerId      String            @map("customer_id") @db.Uuid
+  runNumber       Int               @map("run_number")
+  channel         RecipientChannel
+  status          RecipientStatus   @default(queued)
+  queuedAt        DateTime?         @map("queued_at")
+  deliveredAt     DateTime?         @map("delivered_at")
+  openedAt        DateTime?         @map("opened_at")
+  clickedAt       DateTime?         @map("clicked_at")
+  failureReason   String?           @map("failure_reason")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+  @@map("campaign_recipients")
+}
+
+model CampaignMetricsSnapshot {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId          String   @map("campaign_id") @db.Uuid
+  snapshotAt          DateTime @default(now()) @map("snapshot_at")
+  recipients          Int      @default(0)
+  delivered           Int      @default(0)
+  opens               Int      @default(0)
+  clicks              Int      @default(0)
+  reservations        Int      @default(0)
+  visits              Int      @default(0)
+  revenue             Decimal  @default(0) @db.Decimal(10, 2)
+  averageCheck        Decimal? @map("average_check") @db.Decimal(10, 2)
+  rewardIssued        Decimal  @default(0) @map("reward_issued") @db.Decimal(10, 2)
+  rewardRedeemed      Decimal  @default(0) @map("reward_redeemed") @db.Decimal(10, 2)
+  incrementalRevenue  Decimal? @map("incremental_revenue") @db.Decimal(10, 2)
+  estimatedRoi        Decimal? @map("estimated_roi") @db.Decimal(6, 2)
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, snapshotAt])
+  @@map("campaign_metrics_snapshots")
+}
+
+// ============================================================================
+// Module 6 — Messaging
+// ============================================================================
+
+enum MessageChannel {
+  push
+  wallet
+  email
+  sms
+  whatsapp
+}
+
+enum MessageCategory {
+  transactional
+  marketing
+}
+
+enum ProviderStatus {
+  active
+  paused
+  error
+}
+
+model MessageProvider {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  channel        MessageChannel
+  providerName   String          @map("provider_name")
+  credentialsRef String?         @map("credentials_ref")
+  status         ProviderStatus  @default(active)
+  isDefault      Boolean         @default(false) @map("is_default")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  queueItems MessageQueueItem[]
+
+  @@index([organizationId, channel])
+  @@map("message_providers")
+}
+
+model MessageTemplate {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String?           @map("organization_id") @db.Uuid
+  templateGroupKey String            @map("template_group_key")
+  channel          MessageChannel
+  category         MessageCategory
+  name             String
+  locale           String            @default("nl")
+  subject          String?
+  body             String
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  queueItems MessageQueueItem[]
+
+  @@index([organizationId, templateGroupKey])
+  @@map("message_templates")
+}
+
+enum SendRequestSourceType {
+  campaign
+  journey
+  system
+}
+
+model MessageSendRequest {
+  id               String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String                  @map("organization_id") @db.Uuid
+  sourceType       SendRequestSourceType   @map("source_type")
+  sourceId         String?                 @map("source_id") @db.Uuid
+  templateGroupKey String                  @map("template_group_key")
+  createdAt        DateTime                @default(now()) @map("created_at")
+
+  queueItems MessageQueueItem[]
+
+  @@map("message_send_requests")
+}
+
+enum QueueItemStatus {
+  pending
+  ready_to_send
+  sending
+  sent
+  delivered
+  bounced
+  failed
+  skipped_no_consent
+  skipped_frequency_cap
+  skipped_no_channel
+  delayed_quiet_hours
+}
+
+model MessageQueueItem {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sendRequestId     String            @map("send_request_id") @db.Uuid
+  organizationId    String            @map("organization_id") @db.Uuid
+  customerId        String            @map("customer_id") @db.Uuid
+  locationId        String?           @map("location_id") @db.Uuid
+  channel           MessageChannel
+  templateId        String            @map("template_id") @db.Uuid
+  renderedSubject   String?           @map("rendered_subject")
+  renderedBody      String            @map("rendered_body")
+  status            QueueItemStatus   @default(pending)
+  providerId        String?           @map("provider_id") @db.Uuid
+  providerMessageId String?           @map("provider_message_id")
+  scheduledFor      DateTime          @map("scheduled_for")
+  sentAt            DateTime?         @map("sent_at")
+  deliveredAt       DateTime?         @map("delivered_at")
+  failedAt          DateTime?         @map("failed_at")
+  failureReason     String?           @map("failure_reason")
+  retryCount        Int               @default(0) @map("retry_count")
+
+  sendRequest MessageSendRequest @relation(fields: [sendRequestId], references: [id], onDelete: Cascade)
+  customer    Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  template    MessageTemplate    @relation(fields: [templateId], references: [id])
+  provider    MessageProvider?   @relation(fields: [providerId], references: [id])
+
+  events MessageEvent[]
+  links  MessageLink[]
+
+  @@index([organizationId, status])
+  @@index([customerId, channel])
+  @@map("message_queue_items")
+}
+
+enum MessageEventType {
+  delivered
+  opened
+  clicked
+  bounced
+  unsubscribed
+}
+
+model MessageEvent {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queueItemId String            @map("queue_item_id") @db.Uuid
+  eventType   MessageEventType  @map("event_type")
+  occurredAt  DateTime          @default(now()) @map("occurred_at")
+  metadata    Json?
+
+  queueItem MessageQueueItem @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+
+  @@index([queueItemId])
+  @@map("message_events")
+}
+
+model MessageLink {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queueItemId     String    @map("queue_item_id") @db.Uuid
+  originalUrl     String    @map("original_url")
+  clickCount      Int       @default(0) @map("click_count")
+  firstClickedAt  DateTime? @map("first_clicked_at")
+
+  queueItem MessageQueueItem @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+
+  @@index([queueItemId])
+  @@map("message_links")
+}
+
+enum PushPlatform {
+  ios
+  android
+  web
+}
+
+model CustomerPushToken {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId   String        @map("customer_id") @db.Uuid
+  platform     PushPlatform
+  token        String
+  isActive     Boolean       @default(true) @map("is_active")
+  lastUsedAt   DateTime?     @map("last_used_at")
+  registeredAt DateTime      @default(now()) @map("registered_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, token])
+  @@map("customer_push_tokens")
+}
+
+model MessageFrequencyCap {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  channel        MessageChannel
+  category       MessageCategory
+  maxMessages    Int              @map("max_messages")
+  periodDays     Int              @map("period_days")
+
+  @@index([organizationId, channel])
+  @@map("message_frequency_caps")
+}
+
+model CustomerMessageSendLog {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String           @map("customer_id") @db.Uuid
+  channel    MessageChannel
+  category   MessageCategory
+  sentAt     DateTime         @default(now()) @map("sent_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, channel, category, sentAt])
+  @@map("customer_message_send_log")
+}
+
+model BrandVoiceProfile {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String   @unique @map("organization_id") @db.Uuid
+  toneDescription   String?  @map("tone_description")
+  exampleMessages   Json?    @map("example_messages")
+
+  @@map("brand_voice_profiles")
+}
+
+model AiCopyRequest {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  requestedByUserId    String?   @map("requested_by_user_id") @db.Uuid
+  promptText           String    @map("prompt_text")
+  generatedVariants    Json      @map("generated_variants")
+  chosenVariantIndex   Int?      @map("chosen_variant_index")
+  finalEditedText      String?   @map("final_edited_text")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@map("ai_copy_requests")
+}
+
+// ============================================================================
+// Module 7 — Segmentation Engine
+// ============================================================================
+
+enum SegmentType {
+  standard
+  custom
+}
+
+enum EvaluationMode {
+  realtime
+  cached
+}
+
+enum RefreshFrequency {
+  realtime
+  hourly
+  daily
+}
+
+model Segment {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String            @map("organization_id") @db.Uuid
+  name               String
+  description        String?
+  segmentType        SegmentType       @map("segment_type")
+  definition         Json
+  evaluationMode     EvaluationMode    @map("evaluation_mode")
+  refreshFrequency   RefreshFrequency? @map("refresh_frequency")
+  isPinned           Boolean           @default(false) @map("is_pinned")
+  lastComputedAt     DateTime?         @map("last_computed_at")
+  lastComputedCount  Int?              @map("last_computed_count")
+  createdByUserId    String?           @map("created_by_user_id") @db.Uuid
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  members SegmentMembership[]
+
+  @@index([organizationId, segmentType])
+  @@map("segments")
+}
+
+model SegmentMembership {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  segmentId  String   @map("segment_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  matchedAt  DateTime @default(now()) @map("matched_at")
+
+  segment  Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([segmentId, customerId])
+  @@index([customerId])
+  @@map("segment_membership")
+}
+
+model ChurnRiskScore {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String   @unique @map("customer_id") @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  riskRatio             Decimal  @map("risk_ratio") @db.Decimal(6, 2)
+  churnRiskScore        Int      @map("churn_risk_score")
+  isAtRisk              Boolean  @default(false) @map("is_at_risk")
+  basedOnPersonalCadence Boolean @default(true) @map("based_on_personal_cadence")
+  computedAt            DateTime @default(now()) @map("computed_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isAtRisk])
+  @@map("churn_risk_scores")
+}
+
+// ============================================================================
+// Module 8 — Automated Journeys
+// ============================================================================
+
+enum JourneyStatus {
+  draft
+  published
+  paused
+  stopped
+}
+
+enum ReEnrollmentPolicy {
+  once_ever
+  once_per_completion
+  always
+}
+
+model Journey {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String              @map("organization_id") @db.Uuid
+  name               String
+  isStandard         Boolean             @default(false) @map("is_standard")
+  status             JourneyStatus       @default(draft)
+  reEnrollmentPolicy ReEnrollmentPolicy  @default(once_ever) @map("re_enrollment_policy")
+  currentVersionId   String?             @map("current_version_id") @db.Uuid
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  versions    JourneyVersion[]    @relation("JourneyVersions")
+  enrollments JourneyEnrollment[]
+  goals       JourneyGoal[]
+
+  @@index([organizationId, status])
+  @@map("journeys")
+}
+
+enum JourneyTriggerType {
+  event
+  scheduled_date
+}
+
+model JourneyVersion {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyId      String    @map("journey_id") @db.Uuid
+  versionNumber  Int       @map("version_number")
+  triggerType    JourneyTriggerType @map("trigger_type")
+  eventName      String?   @map("event_name")
+  eventFilter    Json?     @map("event_filter")
+  dateField      String?   @map("date_field")
+  dateOffsetDays Int?      @map("date_offset_days")
+  publishedAt    DateTime? @map("published_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  journey     Journey             @relation("JourneyVersions", fields: [journeyId], references: [id], onDelete: Cascade)
+  nodes       JourneyNode[]
+  edges       JourneyEdge[]
+  enrollments JourneyEnrollment[]
+
+  @@index([journeyId, versionNumber])
+  @@map("journey_versions")
+}
+
+enum JourneyNodeType {
+  trigger
+  wait
+  condition
+  segment_condition
+  send_push
+  send_email
+  send_sms
+  add_credit
+  give_reward
+  add_tag
+  change_tier
+  webhook
+  split_test
+  end
+}
+
+model JourneyNode {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyVersionId  String          @map("journey_version_id") @db.Uuid
+  nodeType          JourneyNodeType @map("node_type")
+  config            Json            @default("{}")
+  positionX         Int             @default(0) @map("position_x")
+  positionY         Int             @default(0) @map("position_y")
+
+  journeyVersion JourneyVersion @relation(fields: [journeyVersionId], references: [id], onDelete: Cascade)
+
+  edgesFrom JourneyEdge[]           @relation("EdgeFrom")
+  edgesTo   JourneyEdge[]           @relation("EdgeTo")
+  executions JourneyNodeExecution[]
+
+  @@index([journeyVersionId])
+  @@map("journey_nodes")
+}
+
+model JourneyEdge {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyVersionId  String   @map("journey_version_id") @db.Uuid
+  fromNodeId        String   @map("from_node_id") @db.Uuid
+  toNodeId          String   @map("to_node_id") @db.Uuid
+  branchLabel       String?  @map("branch_label")
+
+  journeyVersion JourneyVersion @relation(fields: [journeyVersionId], references: [id], onDelete: Cascade)
+  fromNode       JourneyNode    @relation("EdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode         JourneyNode    @relation("EdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@index([journeyVersionId])
+  @@map("journey_edges")
+}
+
+enum EnrollmentStatus {
+  enrolled
+  executing
+  waiting
+  completed
+  goal_reached
+  exited
+  error
+}
+
+model JourneyEnrollment {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyId         String            @map("journey_id") @db.Uuid
+  journeyVersionId  String            @map("journey_version_id") @db.Uuid
+  customerId        String            @map("customer_id") @db.Uuid
+  status            EnrollmentStatus  @default(enrolled)
+  currentNodeId     String?           @map("current_node_id") @db.Uuid
+  resumeAt          DateTime?         @map("resume_at")
+  splitTestBranch   String?           @map("split_test_branch")
+  enrolledAt        DateTime          @default(now()) @map("enrolled_at")
+  completedAt       DateTime?         @map("completed_at")
+  exitReason        String?           @map("exit_reason")
+
+  journey        Journey        @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  journeyVersion JourneyVersion @relation(fields: [journeyVersionId], references: [id])
+  customer       Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  nodeExecutions JourneyNodeExecution[]
+
+  @@index([journeyId, status])
+  @@index([status, resumeAt])
+  @@index([customerId])
+  @@map("journey_enrollments")
+}
+
+enum NodeExecutionStatus {
+  success
+  failed
+  retrying
+}
+
+model JourneyNodeExecution {
+  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  enrollmentId  String                @map("enrollment_id") @db.Uuid
+  nodeId        String                @map("node_id") @db.Uuid
+  status        NodeExecutionStatus
+  result        Json?
+  executedAt    DateTime              @default(now()) @map("executed_at")
+
+  enrollment JourneyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  node       JourneyNode       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@index([nodeId])
+  @@map("journey_node_executions")
+}
+
+model JourneyGoal {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyId      String  @map("journey_id") @db.Uuid
+  goalEventName  String  @map("goal_event_name")
+  goalCondition  Json?   @map("goal_condition")
+  withinDays     Int     @map("within_days")
+
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@map("journey_goals")
+}
+
+// ============================================================================
+// Module 9 — Reservations & Occupancy Booster
+// ============================================================================
+
+enum ServicePeriod {
+  lunch
+  dinner
+  all_day
+}
+
+model LocationCapacitySetting {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  locationId     String        @map("location_id") @db.Uuid
+  area           String?
+  servicePeriod  ServicePeriod @map("service_period")
+  maxCovers      Int           @map("max_covers")
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+  @@map("location_capacity_settings")
+}
+
+model ReservationConnection {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  provider       String
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  location     Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+
+  @@index([organizationId])
+  @@map("reservation_connections")
+}
+
+enum ReservationStatus {
+  confirmed
+  cancelled
+  no_show
+  seated
+  completed
+}
+
+model Reservation {
+  id                       String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String              @map("organization_id") @db.Uuid
+  locationId               String              @map("location_id") @db.Uuid
+  reservationConnectionId  String?             @map("reservation_connection_id") @db.Uuid
+  externalReservationId    String?             @map("external_reservation_id")
+  customerId               String?             @map("customer_id") @db.Uuid
+  dateTime                 DateTime            @map("date_time")
+  servicePeriod             ServicePeriod       @map("service_period")
+  covers                    Int
+  tableReference             String?            @map("table_reference")
+  area                        String?
+  status                       ReservationStatus  @default(confirmed)
+  createdAt                    DateTime           @default(now()) @map("created_at")
+
+  location  Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  connection ReservationConnection? @relation(fields: [reservationConnectionId], references: [id])
+  customer  Customer?              @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId])
+  @@index([locationId, dateTime])
+  @@index([customerId])
+  @@map("reservations")
+}
+
+model WeatherForecast {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  locationId            String   @map("location_id") @db.Uuid
+  forecastDate          DateTime @map("forecast_date") @db.Date
+  temperatureCelsius    Decimal  @map("temperature_celsius") @db.Decimal(4, 1)
+  condition             String
+  precipitationChance   Decimal? @map("precipitation_chance") @db.Decimal(5, 2)
+  fetchedAt             DateTime @default(now()) @map("fetched_at")
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, forecastDate])
+  @@map("weather_forecasts")
+}
+
+model ForecastRun {
+  id                           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  locationId                   String        @map("location_id") @db.Uuid
+  forecastDate                 DateTime      @map("forecast_date") @db.Date
+  servicePeriod                ServicePeriod @map("service_period")
+  area                          String?
+  modelVersion                  String        @map("model_version")
+  forecastOccupancyPercentage    Decimal       @map("forecast_occupancy_percentage") @db.Decimal(5, 2)
+  factorsUsed                     Json?         @map("factors_used")
+  computedAt                       DateTime      @default(now()) @map("computed_at")
+
+  location      Location                 @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  opportunities OccupancyOpportunity[]
+
+  @@index([locationId, forecastDate])
+  @@map("forecast_runs")
+}
+
+enum OpportunityStatus {
+  detected
+  recommendation_created
+  dismissed
+  expired
+}
+
+model OccupancyOpportunity {
+  id                            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId                String            @map("organization_id") @db.Uuid
+  locationId                    String            @map("location_id") @db.Uuid
+  opportunityDate                DateTime          @map("opportunity_date") @db.Date
+  servicePeriod                   ServicePeriod     @map("service_period")
+  area                              String?
+  forecastRunId                      String            @map("forecast_run_id") @db.Uuid
+  forecastOccupancyPercentage          Decimal           @map("forecast_occupancy_percentage") @db.Decimal(5, 2)
+  status                                 OpportunityStatus @default(detected)
+  detectedAt                              DateTime          @default(now()) @map("detected_at")
+
+  location       Location                @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  forecastRun    ForecastRun             @relation(fields: [forecastRunId], references: [id])
+  recommendations OccupancyRecommendation[]
+  attributionResults OccupancyAttributionResult[]
+
+  @@index([organizationId])
+  @@index([locationId, opportunityDate])
+  @@map("occupancy_opportunities")
+}
+
+enum RecommendationStatus {
+  pending_approval
+  approved
+  dismissed
+  expired
+}
+
+model OccupancyRecommendation {
+  id                          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId               String                @map("opportunity_id") @db.Uuid
+  organizationId               String                @map("organization_id") @db.Uuid
+  suggestedName                 String                @map("suggested_name")
+  audienceFilter                  Json                  @map("audience_filter")
+  audienceCount                    Int                   @map("audience_count")
+  incentiveType                      IncentiveType         @map("incentive_type")
+  incentiveValue                       Json?                 @map("incentive_value")
+  suggestedMessage                       String                @map("suggested_message")
+  estimatedMaxRewardExposure               Decimal               @map("estimated_max_reward_exposure") @db.Decimal(10, 2)
+  status                                     RecommendationStatus  @default(pending_approval)
+  reviewedByUserId                             String?               @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt                                     DateTime?             @map("reviewed_at")
+  resultingCampaignId                              String?               @map("resulting_campaign_id") @db.Uuid
+  createdAt                                          DateTime              @default(now()) @map("created_at")
+
+  opportunity OccupancyOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("occupancy_recommendations")
+}
+
+model OccupancyAttributionResult {
+  id                             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId                  String   @map("opportunity_id") @db.Uuid
+  campaignId                     String   @map("campaign_id") @db.Uuid
+  forecastOccupancyPercentage    Decimal  @map("forecast_occupancy_percentage") @db.Decimal(5, 2)
+  actualOccupancyPercentage      Decimal  @map("actual_occupancy_percentage") @db.Decimal(5, 2)
+  occupancyUplift                Decimal  @map("occupancy_uplift") @db.Decimal(5, 2)
+  computedAt                     DateTime @default(now()) @map("computed_at")
+
+  opportunity OccupancyOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@map("occupancy_attribution_results")
+}
+
+// ============================================================================
+// Module 10 — Analytics & AI Campaign Assistant
+// ============================================================================
+
+enum AnalyticsPeriodType {
+  daily
+  monthly
+}
+
+model AnalyticsSnapshot {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String              @map("organization_id") @db.Uuid
+  locationId           String?             @map("location_id") @db.Uuid
+  snapshotDate         DateTime            @map("snapshot_date") @db.Date
+  periodType           AnalyticsPeriodType @map("period_type")
+  memberCount          Int                 @map("member_count")
+  newMembersInPeriod   Int                 @map("new_members_in_period")
+  loyaltyRevenue       Decimal             @map("loyalty_revenue") @db.Decimal(10, 2)
+  averageSpend         Decimal?            @map("average_spend") @db.Decimal(10, 2)
+  repeatVisitRate      Decimal?            @map("repeat_visit_rate") @db.Decimal(5, 2)
+  outstandingCredit    Decimal             @map("outstanding_credit") @db.Decimal(10, 2)
+  creditExpiringSoon   Decimal             @map("credit_expiring_soon") @db.Decimal(10, 2)
+  atRiskCount          Int                 @map("at_risk_count")
+  vipCount             Int                 @map("vip_count")
+  creditIssued         Decimal             @map("credit_issued") @db.Decimal(10, 2)
+  creditRedeemed       Decimal             @map("credit_redeemed") @db.Decimal(10, 2)
+  creditExpired        Decimal             @map("credit_expired") @db.Decimal(10, 2)
+  computedAt           DateTime            @default(now()) @map("computed_at")
+
+  @@index([organizationId, locationId, periodType, snapshotDate])
+  @@map("analytics_snapshots")
+}
+
+model CohortRetentionSnapshot {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  cohortMonth          DateTime @map("cohort_month") @db.Date
+  monthsSinceCohort    Int      @map("months_since_cohort")
+  cohortSize           Int      @map("cohort_size")
+  activeCount          Int      @map("active_count")
+  retentionPercentage  Decimal  @map("retention_percentage") @db.Decimal(5, 2)
+  computedAt           DateTime @default(now()) @map("computed_at")
+
+  @@index([organizationId, cohortMonth])
+  @@map("cohort_retention_snapshots")
+}
+
+model AiAssistantConversation {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  startedAt      DateTime @default(now()) @map("started_at")
+
+  messages    AiAssistantMessage[]
+  suggestions AiCampaignSuggestion[]
+
+  @@index([organizationId])
+  @@map("ai_assistant_conversations")
+}
+
+enum AiMessageRole {
+  user
+  assistant
+}
+
+model AiAssistantMessage {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String        @map("conversation_id") @db.Uuid
+  role           AiMessageRole
+  content        String
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  conversation AiAssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  toolCalls    AiToolCall[]
+
+  @@index([conversationId])
+  @@map("ai_assistant_messages")
+}
+
+model AiToolCall {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId  String   @map("message_id") @db.Uuid
+  toolName   String   @map("tool_name")
+  parameters Json?
+  result     Json?
+  calledAt   DateTime @default(now()) @map("called_at")
+
+  message AiAssistantMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("ai_tool_calls")
+}
+
+model AiCampaignSuggestion {
+  id                      String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId          String                @map("organization_id") @db.Uuid
+  conversationId          String?               @map("conversation_id") @db.Uuid
+  suggestedName           String                @map("suggested_name")
+  audienceFilter          Json                  @map("audience_filter")
+  audienceCount           Int                   @map("audience_count")
+  incentiveType           IncentiveType         @map("incentive_type")
+  incentiveValue          Json?                 @map("incentive_value")
+  suggestedMessage        String                @map("suggested_message")
+  estimatedMaxExposure    Decimal               @map("estimated_max_exposure") @db.Decimal(10, 2)
+  underlyingDataSnapshot  Json?                 @map("underlying_data_snapshot")
+  status                  RecommendationStatus  @default(pending_approval)
+  reviewedByUserId        String?               @map("reviewed_by_user_id") @db.Uuid
+  resultingCampaignId     String?               @map("resulting_campaign_id") @db.Uuid
+  createdAt               DateTime              @default(now()) @map("created_at")
+
+  conversation AiAssistantConversation? @relation(fields: [conversationId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("ai_campaign_suggestions")
+}
+
+enum InsightSeverity {
+  info
+  attention
+  warning
+}
+
+model ProactiveInsight {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String          @map("organization_id") @db.Uuid
+  insightType            String          @map("insight_type")
+  summary                String
+  underlyingDataSnapshot Json?           @map("underlying_data_snapshot")
+  severity               InsightSeverity @default(info)
+  dismissedAt            DateTime?       @map("dismissed_at")
+  createdAt              DateTime        @default(now()) @map("created_at")
+
+  @@index([organizationId, dismissedAt])
+  @@map("proactive_insights")
 }
