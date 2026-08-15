@@ -135,9 +135,27 @@ export class OccupancyService {
       historicalCoversByDate.set(key, (historicalCoversByDate.get(key) ?? 0) + r.covers);
     }
     const historicalOccupancies = [...historicalCoversByDate.values()].map((c) => (c / capacity) * 100);
+
+    // Current-bookings signal: how full is the target date ALREADY, right
+    // now? Without this, a date with zero booking history (common for a
+    // new organization) always falls back to a flat 50%, even when the
+    // actual current bookings clearly show a quiet day. Weighted heavily
+    // when there's no historical data yet, lightly once real history exists.
+    const currentCoversResult = await this.prisma.reservation.aggregate({
+      where: {
+        locationId,
+        servicePeriod: servicePeriod as never,
+        area: area || undefined,
+        status: { in: ['confirmed', 'seated', 'completed'] },
+        dateTime: { gte: new Date(`${date}T00:00:00.000Z`), lte: new Date(`${date}T23:59:59.999Z`) },
+      },
+      _sum: { covers: true },
+    });
+    const currentBookedPercentage = ((currentCoversResult._sum.covers ?? 0) / capacity) * 100;
+
     const historicalAverage = historicalOccupancies.length
       ? historicalOccupancies.reduce((s, v) => s + v, 0) / historicalOccupancies.length
-      : 50; // no history yet: neutral default
+      : currentBookedPercentage; // no history yet: lean fully on today's actual bookings, not a flat 50%
 
     // Weather correction: sunny + warm boosts the estimate slightly.
     const weather = await this.prisma.weatherForecast.findFirst({ where: { locationId, forecastDate: targetDate } });
@@ -159,6 +177,8 @@ export class OccupancyService {
         forecastOccupancyPercentage,
         factorsUsed: {
           historicalAverage: Math.round(historicalAverage * 100) / 100,
+          currentBookedPercentage: Math.round(currentBookedPercentage * 100) / 100,
+          usedFallbackToCurrentBookings: historicalOccupancies.length === 0,
           weatherCorrection,
           sampleSize: historicalOccupancies.length,
           weather: weather ? { temperature: Number(weather.temperatureCelsius), condition: weather.condition } : null,
