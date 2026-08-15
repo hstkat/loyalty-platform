@@ -240,7 +240,7 @@ export class OccupancyService {
         audienceCount: audience.count,
         incentiveType,
         incentiveValue: { multiplier } as never,
-        suggestedMessage: `Morgen ${forecastRun.servicePeriod === 'lunch' ? 'lunch' : 'diner'} nog rustig — kom langs en verdien ${multiplier}x Strand tegoed!`,
+        suggestedMessage: `Morgen ${forecastRun.servicePeriod === 'lunch' ? 'lunch' : 'diner'} nog rustig — kom langs en spaar ${multiplier}x Strand tegoed!`,
         estimatedMaxRewardExposure,
         status: 'pending_approval',
       },
