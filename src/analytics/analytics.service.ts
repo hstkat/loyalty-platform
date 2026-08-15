@@ -125,6 +125,67 @@ export class AnalyticsService {
     }
     return results.sort((a, b) => b.recipients - a.recipients);
   }
+
+  /**
+   * Daily accounting closing (added on request): the figures a
+   * bookkeeper needs for a single day — transaction count and revenue,
+   * points issued, points redeemed with their euro-equivalent at THAT
+   * day's exchange rate, and points expired. Distinct from Module 10's
+   * all-time credit analytics (section 7 of the design doc), which is
+   * cumulative rather than day-scoped.
+   */
+  async getDailyClosing(orgId: string, date: string) {
+    const dayStart = new Date(`${date}T00:00:00.000Z`);
+    const dayEnd = new Date(`${date}T23:59:59.999Z`);
+
+    const [transactions, issued, redeemed, expired, rateRule] = await Promise.all([
+      this.prisma.transaction.findMany({
+        where: { organizationId: orgId, status: 'completed', occurredAt: { gte: dayStart, lte: dayEnd } },
+        select: { totalAmount: true, customerId: true },
+      }),
+      this.prisma.walletLedgerEntry.aggregate({
+        where: {
+          organizationId: orgId,
+          entryType: { in: ['earn', 'bonus', 'campaign_bonus'] },
+          occurredAt: { gte: dayStart, lte: dayEnd },
+        },
+        _sum: { amount: true },
+      }),
+      this.prisma.walletLedgerEntry.aggregate({
+        where: { organizationId: orgId, entryType: 'redeem', occurredAt: { gte: dayStart, lte: dayEnd } },
+        _sum: { amount: true },
+      }),
+      this.prisma.walletLedgerEntry.aggregate({
+        where: { organizationId: orgId, entryType: 'expiration', occurredAt: { gte: dayStart, lte: dayEnd } },
+        _sum: { amount: true },
+      }),
+      this.prisma.redemptionRateRule.findFirst({ where: { organizationId: orgId, isActive: true } }),
+    ]);
+
+    const grossRevenue = transactions.reduce((sum, t) => sum + Number(t.totalAmount), 0);
+    const pointsIssued = Number(issued._sum.amount ?? 0);
+    const pointsRedeemed = Math.abs(Number(redeemed._sum.amount ?? 0));
+    const pointsExpired = Math.abs(Number(expired._sum.amount ?? 0));
+
+    // Redeemed points' euro-equivalent uses the SAME day's rate they were
+    // redeemed at — not today's rate, since the rate varies by day
+    // (design doc: 250 punten = €10 op maandag, €5 op vrijdag).
+    const dayName = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'][dayStart.getUTCDay()];
+    const pointsPerEuro = rateRule ? Number(rateRule.pointsPerEuro) : 1;
+    const redeemedEuroValue = pointsPerEuro > 0 ? round2(pointsRedeemed / pointsPerEuro) : 0;
+
+    return {
+      date,
+      dayName,
+      transactionCount: transactions.length,
+      grossRevenue: round2(grossRevenue),
+      pointsIssued: round2(pointsIssued),
+      pointsRedeemed: round2(pointsRedeemed),
+      redeemedEuroValue,
+      pointsExpired: round2(pointsExpired),
+      pointsPerEuroThatDay: pointsPerEuro,
+    };
+  }
 }
 
 function round2(value: number): number {

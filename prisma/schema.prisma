@@ -70,6 +70,7 @@ model Location {
   // Module 3 — Wallet & Credit
   creditRules CreditRule[]
   redemptionRateRules RedemptionRateRule[]
+  rewardCatalogItems RewardCatalogItem[]
 
   // Module 9 — Reservations & Occupancy Booster
   capacitySettings       LocationCapacitySetting[]
@@ -1223,6 +1224,7 @@ model CreditRule {
   minimumOrderAmount          Decimal? @map("minimum_order_amount") @db.Decimal(10, 2)
   maximumRedeemPercentage     Decimal? @map("maximum_redeem_percentage") @db.Decimal(5, 2)
   minimumRedemptionBalance    Decimal? @map("minimum_redemption_balance") @db.Decimal(10, 2)
+  redemptionBlockSize         Int?     @map("redemption_block_size")
   excludedProductCategories   Json?    @map("excluded_product_categories")
   excludedDays                Json?    @map("excluded_days")
   nonCombinableCampaignIds    Json?    @map("non_combinable_campaign_ids")
@@ -1253,6 +1255,26 @@ model RedemptionRateRule {
 
   @@index([organizationId, isActive])
   @@map("redemption_rate_rules")
+}
+
+// Cadeaucatalogus: vaste items inwisselbaar tegen een vast puntenaantal
+// (bijv. "Gebakje bij de koffie — 100 punten"), naast de generieke
+// blokgewijze tegoed-inwisseling hierboven.
+model RewardCatalogItem {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String?  @map("location_id") @db.Uuid
+  name           String
+  description    String?
+  pointsCost     Int      @map("points_cost")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([organizationId, isActive])
+  @@map("reward_catalog_items")
 }
 
 // ============================================================================

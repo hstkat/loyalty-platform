@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strand tegoed — Campagnes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --dark: #0e1c2a; --amber: #1b3a5c; --amber-light: #2e5f8a; --sand: #f0f4f7;
+    --text-light: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
+    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45; --mid: #3a4a5c;
+    --line: rgba(240, 244, 247, 0.08);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--dark); color: var(--sand); font-family: 'Inter', sans-serif; min-height: 100vh; }
+
+  .tideline { position: relative; height: 3px; overflow: hidden; background: var(--line); }
+  .tideline::before {
+    content: ''; position: absolute; inset: 0; width: 200%;
+    background: linear-gradient(90deg, transparent, var(--coral), var(--teal-light), transparent);
+    animation: tide 8s linear infinite;
+  }
+  @keyframes tide { from { transform: translateX(-50%); } to { transform: translateX(0%); } }
+  @media (prefers-reduced-motion: reduce) { .tideline::before { animation: none; } }
+
+  header {
+    max-width: 1180px; margin: 0 auto; padding: 32px 32px 20px;
+    display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;
+  }
+  .brand-eyebrow { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-light); margin: 0 0 6px; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 28px; margin: 0; letter-spacing: -0.01em; }
+  nav a {
+    color: var(--text-light); text-decoration: none; font-size: 13px; margin-left: 18px;
+    border-bottom: 1px solid transparent; padding-bottom: 2px;
+  }
+  nav a:hover, nav a:focus-visible { color: var(--sand); border-color: var(--coral); }
+  nav a.active { color: var(--coral); }
+  .config-toggle {
+    background: none; border: 1px solid var(--line); color: var(--text-light); font-family: 'Inter', sans-serif;
+    font-size: 13px; padding: 8px 14px; border-radius: 20px; cursor: pointer;
+  }
+  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--sand); }
+
+  #config-panel { max-width: 1180px; margin: 0 auto; padding: 0 32px 20px; display: none; gap: 12px; flex-wrap: wrap; }
+  #config-panel.open { display: flex; }
+  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-light); gap: 4px; flex: 1; min-width: 220px; }
+  #config-panel input {
+    background: var(--amber); border: 1px solid var(--line); color: var(--sand);
+    padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px;
+  }
+  #config-panel button {
+    align-self: flex-end; background: var(--coral); color: var(--dark); border: none;
+    padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  main { max-width: 1180px; margin: 0 auto; padding: 8px 32px 80px; }
+  .status-line { font-size: 13px; color: var(--text-light); margin-bottom: 20px; min-height: 18px; }
+  .status-line.error { color: var(--coral); }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px; }
+  .new-campaign-btn {
+    background: var(--coral); color: var(--dark); border: none; padding: 11px 20px;
+    border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;
+  }
+
+  .campaign-list { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+  .campaign-row {
+    background: var(--amber); border: 1px solid var(--line); border-radius: 12px;
+    padding: 18px 22px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
+  }
+  .campaign-row .name { font-family: 'Fraunces', serif; font-size: 17px; }
+  .campaign-row .meta { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+  .campaign-row .right { display: flex; align-items: center; gap: 14px; }
+  .status-badge {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 4px 10px; border-radius: 20px;
+  }
+  .status-badge.draft { background: rgba(122,142,160,0.15); color: var(--text-light); }
+  .status-badge.active { background: rgba(100,150,181,0.2); color: var(--teal-light); }
+  .status-badge.paused { background: rgba(196,122,69,0.2); color: var(--wood); }
+  .status-badge.cancelled, .status-badge.completed { background: rgba(232,96,74,0.15); color: var(--coral); }
+  .launch-btn {
+    background: none; border: 1px solid var(--teal-light); color: var(--teal-light);
+    padding: 7px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  }
+  .launch-btn:hover { background: var(--teal-light); color: var(--dark); }
+  .empty-note { color: var(--text-light); font-size: 13px; padding: 20px; text-align: center; }
+
+  .panel {
+    background: var(--amber); border: 1px solid var(--line); border-radius: 16px; padding: 28px 32px;
+    display: none; margin-bottom: 32px;
+  }
+  .panel.open { display: block; }
+  .panel h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 20px; margin: 0 0 20px; }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+  @media (max-width: 700px) { .form-grid { grid-template-columns: 1fr; } }
+  .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .form-field.full { grid-column: 1 / -1; }
+  .form-field label { font-size: 12px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-field input, .form-field select, .form-field textarea {
+    background: var(--dark); border: 1px solid var(--line); color: var(--sand);
+    padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
+  }
+  .form-field textarea { font-family: 'Menlo', monospace; font-size: 12px; min-height: 90px; resize: vertical; }
+  .form-field input:focus-visible, .form-field select:focus-visible, .form-field textarea:focus-visible {
+    outline: 2px solid var(--coral); outline-offset: 1px;
+  }
+  .form-hint { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+
+  .preview-strip {
+    background: var(--dark); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 16px; font-size: 13px; margin: 16px 0; display: flex; justify-content: space-between; align-items: center;
+  }
+  .preview-strip .count { font-family: 'Fraunces', serif; color: var(--coral); font-size: 18px; }
+  .preview-btn {
+    background: none; border: 1px solid var(--line); color: var(--text-light);
+    padding: 8px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  }
+
+  .form-actions { display: flex; gap: 10px; margin-top: 20px; }
+  .btn-primary { background: var(--coral); color: var(--dark); border: none; padding: 11px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .btn-secondary { background: none; border: 1px solid var(--line); color: var(--text-light); padding: 11px 22px; border-radius: 8px; font-size: 14px; cursor: pointer; }
+
+  footer { max-width: 1180px; margin: 0 auto; padding: 0 32px 40px; font-size: 12px; color: var(--text-light); }
+</style>
+</head>
+<body>
+
+<div class="tideline"></div>
+
+<header>
+  <div>
+    <p class="brand-eyebrow">Het Strand & Zomers</p>
+    <h1>Campagnes</h1>
+  </div>
+  <div>
+    <nav>
+      <a href="dashboard.html">Overzicht</a>
+      <a href="customers.html">Klanten</a>
+      <a href="#" class="active" aria-current="page">Campagnes</a>
+      <a href="transacties.html">Kassa</a>
+      <a href="cadeaus.html">Cadeaus</a>
+    </nav>
+    <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+  </div>
+</header>
+
+<div id="config-panel">
+  <label>API-basis-URL<input type="text" id="api-base" placeholder="https://loyalty-platform-live.vercel.app"></label>
+  <label>Organisatie-ID<input type="text" id="org-id" placeholder="ab51a93c-..."></label>
+  <button id="config-save">Opslaan &amp; laden</button>
+</div>
+
+<main>
+  <p class="status-line" id="status-line">Campagnes laden…</p>
+
+  <div class="toolbar">
+    <span></span>
+    <button class="new-campaign-btn" id="new-campaign-btn">+ Nieuwe campagne</button>
+  </div>
+
+  <div class="panel" id="new-panel">
+    <h2>Nieuwe campagne</h2>
+    <form id="campaign-form">
+      <div class="form-grid">
+        <div class="form-field">
+          <label for="f-name">Naam</label>
+          <input type="text" id="f-name" required placeholder="Bijv. Zonnige Lunch Boost">
+        </div>
+        <div class="form-field">
+          <label for="f-goal">Doel</label>
+          <select id="f-goal">
+            <option value="meer_bezoekers">Meer bezoekers</option>
+            <option value="lunch_vullen">Lunch vullen</option>
+            <option value="slapende_gasten_activeren">Slapende gasten activeren</option>
+            <option value="credit_laten_inwisselen">Strand tegoed laten inwisselen</option>
+            <option value="omzet_verhogen">Omzet verhogen</option>
+            <option value="vip_event_vullen">VIP-event vullen</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="f-incentive-type">Beloningstype</label>
+          <select id="f-incentive-type">
+            <option value="multiplier">Vermenigvuldiging (bv. 2x punten)</option>
+            <option value="flat_bonus">Vast bonusbedrag (punten)</option>
+            <option value="percentage_bonus">Extra percentage</option>
+            <option value="none">Geen beloning</option>
+          </select>
+        </div>
+        <div class="form-field">
+          <label for="f-incentive-value">Waarde</label>
+          <input type="number" id="f-incentive-value" step="0.1" placeholder="Bijv. 2 (voor 2x) of 50 (voor 50 punten bonus)">
+        </div>
+        <div class="form-field full">
+          <label for="f-audience">Doelgroep-filter (AND/OR-criteria)</label>
+          <textarea id="f-audience">{"combinator":"AND","conditions":[{"field":"marketingConsent","operator":"isTrue"}]}</textarea>
+          <div class="form-hint">Velden: lifetimeSpend, daysSinceLastVisit, visitCount, tierId, creditBalance, marketingConsent, favoriteVisitDay, isAtRisk. Operatoren: eq, neq, gt, gte, lt, lte, in, notIn, isTrue, isFalse.</div>
+        </div>
+      </div>
+
+      <div class="preview-strip">
+        <span>Geschatte doelgroep: <span class="count" id="preview-count">—</span> klanten</span>
+        <button type="button" class="preview-btn" id="preview-btn">Doelgroep berekenen</button>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Campagne aanmaken (concept)</button>
+        <button type="button" class="btn-secondary" id="cancel-btn">Annuleren</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="campaign-list" id="campaign-list"></div>
+</main>
+
+<footer>Campagnes worden aangemaakt als concept — lanceren is een aparte, bewuste stap.</footer>
+
+<script>
+  const DEFAULTS = { apiBase: 'https://loyalty-platform-live.vercel.app', orgId: 'ab51a93c-43a2-40cd-8635-f8522f68a8c8' };
+  const PERMISSIONS = 'campaign.read,campaign.write,campaign.launch';
+
+  function getConfig() {
+    return {
+      apiBase: localStorage.getItem('bc_api_base') || DEFAULTS.apiBase,
+      orgId: localStorage.getItem('bc_org_id') || DEFAULTS.orgId,
+    };
+  }
+
+  async function apiGet(path) {
+    const { apiBase, orgId } = getConfig();
+    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': PERMISSIONS } });
+    if (!res.ok) throw new Error('API-fout: ' + res.status);
+    return res.json();
+  }
+
+  async function apiPost(path, body) {
+    const { apiBase, orgId } = getConfig();
+    const res = await fetch(apiBase + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': PERMISSIONS },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.message ? [].concat(errBody.message).join(', ') : 'API-fout: ' + res.status);
+    }
+    return res.json();
+  }
+
+  const STATUS_LABELS = { draft: 'Concept', active: 'Actief', paused: 'Gepauzeerd', cancelled: 'Geannuleerd', completed: 'Afgerond', scheduled: 'Gepland' };
+
+  const els = {
+    statusLine: document.getElementById('status-line'),
+    list: document.getElementById('campaign-list'),
+    newBtn: document.getElementById('new-campaign-btn'),
+    panel: document.getElementById('new-panel'),
+    form: document.getElementById('campaign-form'),
+    cancelBtn: document.getElementById('cancel-btn'),
+    previewBtn: document.getElementById('preview-btn'),
+    previewCount: document.getElementById('preview-count'),
+    configToggle: document.getElementById('config-toggle'),
+    configPanel: document.getElementById('config-panel'),
+    configSave: document.getElementById('config-save'),
+    apiBaseInput: document.getElementById('api-base'),
+    orgIdInput: document.getElementById('org-id'),
+  };
+
+  async function loadCampaigns() {
+    els.statusLine.textContent = 'Campagnes laden…';
+    els.statusLine.classList.remove('error');
+    try {
+      const { orgId } = getConfig();
+      const campaigns = await apiGet('/organizations/' + orgId + '/campaigns');
+      renderList(campaigns);
+      els.statusLine.textContent = campaigns.length + ' campagne(s)';
+    } catch (err) {
+      els.statusLine.textContent = 'Kon campagnes niet laden: ' + err.message;
+      els.statusLine.classList.add('error');
+    }
+  }
+
+  function renderList(campaigns) {
+    if (campaigns.length === 0) {
+      els.list.innerHTML = '<div class="empty-note">Nog geen campagnes. Maak de eerste aan met de knop hierboven.</div>';
+      return;
+    }
+    els.list.innerHTML = campaigns.map((c) => `
+      <div class="campaign-row">
+        <div>
+          <div class="name">${c.name}</div>
+          <div class="meta">${c.goal.replace(/_/g, ' ')} · ${c.incentiveType !== 'none' ? c.incentiveType.replace(/_/g, ' ') : 'geen beloning'}</div>
+        </div>
+        <div class="right">
+          <span class="status-badge ${c.status}">${STATUS_LABELS[c.status] || c.status}</span>
+          ${c.status === 'draft' || c.status === 'scheduled' ? `<button class="launch-btn" data-id="${c.id}">Lanceren</button>` : ''}
+        </div>
+      </div>
+    `).join('');
+
+    els.list.querySelectorAll('.launch-btn').forEach((btn) => {
+      btn.addEventListener('click', () => launchCampaign(btn.dataset.id, btn));
+    });
+  }
+
+  async function launchCampaign(id, btn) {
+    btn.disabled = true;
+    btn.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      await apiPost('/organizations/' + orgId + '/campaigns/' + id + '/launch', {});
+      loadCampaigns();
+    } catch (err) {
+      alert('Lanceren mislukt: ' + err.message);
+      btn.disabled = false;
+      btn.textContent = 'Lanceren';
+    }
+  }
+
+  els.newBtn.addEventListener('click', () => els.panel.classList.add('open'));
+  els.cancelBtn.addEventListener('click', () => els.panel.classList.remove('open'));
+
+  els.previewBtn.addEventListener('click', async () => {
+    els.previewCount.textContent = '…';
+    try {
+      const filter = JSON.parse(document.getElementById('f-audience').value);
+      const { orgId } = getConfig();
+      const result = await apiPost('/organizations/' + orgId + '/campaigns/preview', { audienceFilter: filter });
+      els.previewCount.textContent = result.audienceCount;
+    } catch (err) {
+      els.previewCount.textContent = 'fout';
+      alert('Kon doelgroep niet berekenen: ' + err.message);
+    }
+  });
+
+  els.form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const filter = JSON.parse(document.getElementById('f-audience').value);
+      const incentiveType = document.getElementById('f-incentive-type').value;
+      const rawValue = parseFloat(document.getElementById('f-incentive-value').value) || 0;
+
+      let incentiveValue = undefined;
+      if (incentiveType === 'multiplier') incentiveValue = { multiplier: rawValue };
+      else if (incentiveType === 'flat_bonus') incentiveValue = { flatBonus: rawValue };
+      else if (incentiveType === 'percentage_bonus') incentiveValue = { percentage: rawValue };
+
+      const { orgId } = getConfig();
+      await apiPost('/organizations/' + orgId + '/campaigns', {
+        name: document.getElementById('f-name').value,
+        goal: document.getElementById('f-goal').value,
+        audienceFilter: filter,
+        incentiveType,
+        incentiveValue,
+        channels: ['push'],
+        scheduleType: 'direct',
+      });
+
+      els.panel.classList.remove('open');
+      els.form.reset();
+      loadCampaigns();
+    } catch (err) {
+      alert('Aanmaken mislukt: ' + err.message);
+    }
+  });
+
+  els.configToggle.addEventListener('click', () => {
+    const open = els.configPanel.classList.toggle('open');
+    els.configToggle.setAttribute('aria-expanded', String(open));
+    if (open) {
+      const { apiBase, orgId } = getConfig();
+      els.apiBaseInput.value = apiBase;
+      els.orgIdInput.value = orgId;
+    }
+  });
+  els.configSave.addEventListener('click', () => {
+    localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+    localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+    els.configPanel.classList.remove('open');
+    loadCampaigns();
+  });
+
+  loadCampaigns();
+</script>
+
+</body>
+</html>

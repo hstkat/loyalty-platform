@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strand tegoed — Cadeaus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --dark: #0e1c2a; --amber: #1b3a5c; --amber-light: #2e5f8a; --sand: #f0f4f7;
+    --text-light: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
+    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45; --mid: #3a4a5c;
+    --line: rgba(240, 244, 247, 0.08);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--dark); color: var(--sand); font-family: 'Inter', sans-serif; min-height: 100vh; }
+
+  .tideline { position: relative; height: 3px; overflow: hidden; background: var(--line); }
+  .tideline::before {
+    content: ''; position: absolute; inset: 0; width: 200%;
+    background: linear-gradient(90deg, transparent, var(--coral), var(--teal-light), transparent);
+    animation: tide 8s linear infinite;
+  }
+  @keyframes tide { from { transform: translateX(-50%); } to { transform: translateX(0%); } }
+  @media (prefers-reduced-motion: reduce) { .tideline::before { animation: none; } }
+
+  header {
+    max-width: 900px; margin: 0 auto; padding: 32px 32px 20px;
+    display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;
+  }
+  .brand-eyebrow { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-light); margin: 0 0 6px; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 28px; margin: 0; letter-spacing: -0.01em; }
+  nav a {
+    color: var(--text-light); text-decoration: none; font-size: 13px; margin-left: 18px;
+    border-bottom: 1px solid transparent; padding-bottom: 2px;
+  }
+  nav a:hover, nav a:focus-visible { color: var(--sand); border-color: var(--coral); }
+  nav a.active { color: var(--coral); }
+  .config-toggle {
+    background: none; border: 1px solid var(--line); color: var(--text-light); font-family: 'Inter', sans-serif;
+    font-size: 13px; padding: 8px 14px; border-radius: 20px; cursor: pointer;
+  }
+  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--sand); }
+
+  #config-panel { max-width: 900px; margin: 0 auto; padding: 0 32px 20px; display: none; gap: 12px; flex-wrap: wrap; }
+  #config-panel.open { display: flex; }
+  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-light); gap: 4px; flex: 1; min-width: 220px; }
+  #config-panel input {
+    background: var(--amber); border: 1px solid var(--line); color: var(--sand);
+    padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px;
+  }
+  #config-panel button {
+    align-self: flex-end; background: var(--coral); color: var(--dark); border: none;
+    padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  main { max-width: 900px; margin: 0 auto; padding: 8px 32px 80px; }
+  .status-line { font-size: 13px; color: var(--text-light); margin-bottom: 20px; min-height: 18px; }
+  .status-line.error { color: var(--coral); }
+
+  .block-panel {
+    background: var(--amber); border: 1px solid var(--line); border-radius: 16px; padding: 24px 28px; margin-bottom: 24px;
+  }
+  .block-panel h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0 0 6px; }
+  .block-panel .sub { font-size: 13px; color: var(--text-light); margin-bottom: 16px; }
+  .block-row { display: flex; gap: 10px; align-items: center; }
+  .block-row input {
+    width: 140px; background: var(--dark); border: 1px solid var(--line); color: var(--sand);
+    padding: 11px 14px; border-radius: 8px; font-family: 'Fraunces', serif; font-size: 18px;
+  }
+  .block-row span { font-size: 13px; color: var(--text-light); }
+  .block-row button {
+    background: var(--coral); color: var(--dark); border: none; padding: 11px 20px;
+    border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .toolbar h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0; }
+  .new-btn {
+    background: var(--coral); color: var(--dark); border: none; padding: 10px 18px;
+    border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  .item-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+  .item-row {
+    background: var(--amber); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+  }
+  .item-row.inactive { opacity: 0.5; }
+  .item-row .name { font-family: 'Fraunces', serif; font-size: 15px; }
+  .item-row .desc { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+  .item-row .right { display: flex; align-items: center; gap: 12px; }
+  .item-row .cost { font-family: 'Fraunces', serif; color: var(--wood); font-size: 16px; }
+  .item-row button {
+    background: none; border: 1px solid var(--line); color: var(--text-light);
+    padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  }
+  .item-row button:hover { border-color: var(--coral); color: var(--sand); }
+  .empty-note { color: var(--text-light); font-size: 13px; padding: 20px; text-align: center; }
+
+  .panel {
+    background: var(--amber); border: 1px solid var(--line); border-radius: 16px; padding: 24px 28px;
+    display: none; margin-bottom: 24px;
+  }
+  .panel.open { display: block; }
+  .form-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 560px) { .form-row { grid-template-columns: 1fr; } }
+  .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .form-field.full { grid-column: 1 / -1; }
+  .form-field label { font-size: 12px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-field input {
+    background: var(--dark); border: 1px solid var(--line); color: var(--sand);
+    padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
+  }
+  .form-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .btn-primary { background: var(--coral); color: var(--dark); border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn-secondary { background: none; border: 1px solid var(--line); color: var(--text-light); padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+
+  footer { max-width: 900px; margin: 0 auto; padding: 0 32px 40px; font-size: 12px; color: var(--text-light); }
+</style>
+</head>
+<body>
+
+<div class="tideline"></div>
+
+<header>
+  <div>
+    <p class="brand-eyebrow">Het Strand & Zomers</p>
+    <h1>Cadeaus &amp; inwisselen</h1>
+  </div>
+  <div>
+    <nav>
+      <a href="dashboard.html">Overzicht</a>
+      <a href="customers.html">Klanten</a>
+      <a href="campaigns.html">Campagnes</a>
+      <a href="transacties.html">Kassa</a>
+      <a href="#" class="active" aria-current="page">Cadeaus</a>
+    </nav>
+    <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+  </div>
+</header>
+
+<div id="config-panel">
+  <label>API-basis-URL<input type="text" id="api-base" placeholder="https://loyalty-platform-live.vercel.app"></label>
+  <label>Organisatie-ID<input type="text" id="org-id" placeholder="ab51a93c-..."></label>
+  <button id="config-save">Opslaan &amp; laden</button>
+</div>
+
+<main>
+  <p class="status-line" id="status-line">Laden…</p>
+
+  <div class="block-panel">
+    <h2>Vaste inwissel-blokgrootte</h2>
+    <p class="sub">Punten worden altijd in dit vaste aantal per keer ingewisseld — bijv. 250, dan 500, 750, enzovoort. Nooit een los bedrag.</p>
+    <div class="block-row">
+      <input type="number" id="block-size-input" step="1" min="1" placeholder="250">
+      <span>punten per blok</span>
+      <button type="button" id="block-size-save">Opslaan</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <h2>Cadeaucatalogus</h2>
+    <button class="new-btn" id="new-item-btn">+ Nieuw cadeau</button>
+  </div>
+
+  <div class="panel" id="new-panel">
+    <form id="item-form">
+      <div class="form-row">
+        <div class="form-field">
+          <label for="f-name">Naam</label>
+          <input type="text" id="f-name" required placeholder="Bijv. Gebakje bij de koffie">
+        </div>
+        <div class="form-field">
+          <label for="f-cost">Punten</label>
+          <input type="number" id="f-cost" min="1" step="1" required placeholder="100">
+        </div>
+        <div class="form-field full">
+          <label for="f-desc">Omschrijving (optioneel)</label>
+          <input type="text" id="f-desc" placeholder="Korte toelichting voor het personeel">
+        </div>
+      </div>
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Cadeau opslaan</button>
+        <button type="button" class="btn-secondary" id="cancel-btn">Annuleren</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="item-list" id="item-list"></div>
+</main>
+
+<footer>Cadeaus en de blokgrootte zijn direct bruikbaar in de kassa, bij "Tegoed inwisselen".</footer>
+
+<script>
+  const DEFAULTS = { apiBase: 'https://loyalty-platform-live.vercel.app', orgId: 'ab51a93c-43a2-40cd-8635-f8522f68a8c8' };
+  const PERMISSIONS = 'credit_rules.read,credit_rules.write';
+
+  function getConfig() {
+    return {
+      apiBase: localStorage.getItem('bc_api_base') || DEFAULTS.apiBase,
+      orgId: localStorage.getItem('bc_org_id') || DEFAULTS.orgId,
+    };
+  }
+
+  async function apiGet(path) {
+    const { apiBase, orgId } = getConfig();
+    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': PERMISSIONS } });
+    if (!res.ok) throw new Error('API-fout: ' + res.status);
+    return res.json();
+  }
+
+  async function apiSend(method, path, body) {
+    const { apiBase, orgId } = getConfig();
+    const res = await fetch(apiBase + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': PERMISSIONS },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.message ? [].concat(errBody.message).join(', ') : 'API-fout: ' + res.status);
+    }
+    return res.json();
+  }
+
+  const els = {
+    statusLine: document.getElementById('status-line'),
+    blockSizeInput: document.getElementById('block-size-input'),
+    blockSizeSave: document.getElementById('block-size-save'),
+    itemList: document.getElementById('item-list'),
+    newBtn: document.getElementById('new-item-btn'),
+    panel: document.getElementById('new-panel'),
+    form: document.getElementById('item-form'),
+    cancelBtn: document.getElementById('cancel-btn'),
+    configToggle: document.getElementById('config-toggle'),
+    configPanel: document.getElementById('config-panel'),
+    configSave: document.getElementById('config-save'),
+    apiBaseInput: document.getElementById('api-base'),
+    orgIdInput: document.getElementById('org-id'),
+  };
+
+  async function loadAll() {
+    els.statusLine.textContent = 'Laden…';
+    els.statusLine.classList.remove('error');
+    try {
+      const { orgId } = getConfig();
+      const [blockSizeResult, items] = await Promise.all([
+        apiGet('/organizations/' + orgId + '/redemption-block-size'),
+        apiGet('/organizations/' + orgId + '/reward-catalog'),
+      ]);
+      els.blockSizeInput.value = blockSizeResult.blockSize || '';
+      renderItems(items);
+      els.statusLine.textContent = items.length + ' cadeau(s) in de catalogus';
+    } catch (err) {
+      els.statusLine.textContent = 'Kon gegevens niet laden: ' + err.message;
+      els.statusLine.classList.add('error');
+    }
+  }
+
+  function renderItems(items) {
+    if (items.length === 0) {
+      els.itemList.innerHTML = '<div class="empty-note">Nog geen cadeaus. Voeg de eerste toe met de knop hierboven.</div>';
+      return;
+    }
+    els.itemList.innerHTML = items.map((item) => `
+      <div class="item-row ${item.isActive ? '' : 'inactive'}">
+        <div>
+          <div class="name">${item.name}</div>
+          ${item.description ? `<div class="desc">${item.description}</div>` : ''}
+        </div>
+        <div class="right">
+          <span class="cost">${item.pointsCost} pt</span>
+          <button type="button" data-id="${item.id}" data-active="${item.isActive}" class="toggle-btn">${item.isActive ? 'Deactiveren' : 'Activeren'}</button>
+          <button type="button" data-id="${item.id}" class="delete-btn">Verwijderen</button>
+        </div>
+      </div>
+    `).join('');
+
+    els.itemList.querySelectorAll('.toggle-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const { orgId } = getConfig();
+        await apiSend('PATCH', '/organizations/' + orgId + '/reward-catalog/' + btn.dataset.id, {
+          isActive: btn.dataset.active !== 'true',
+        });
+        loadAll();
+      });
+    });
+    els.itemList.querySelectorAll('.delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Dit cadeau definitief verwijderen?')) return;
+        const { orgId } = getConfig();
+        await apiSend('DELETE', '/organizations/' + orgId + '/reward-catalog/' + btn.dataset.id);
+        loadAll();
+      });
+    });
+  }
+
+  els.blockSizeSave.addEventListener('click', async () => {
+    const size = parseInt(els.blockSizeInput.value, 10);
+    if (!size || size < 1) {
+      alert('Vul een geldig aantal punten in.');
+      return;
+    }
+    try {
+      const { orgId } = getConfig();
+      await apiSend('POST', '/organizations/' + orgId + '/credit-rules', { redemptionBlockSize: size });
+      els.statusLine.textContent = 'Blokgrootte opgeslagen: ' + size + ' punten.';
+      els.statusLine.classList.remove('error');
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    }
+  });
+
+  els.newBtn.addEventListener('click', () => els.panel.classList.add('open'));
+  els.cancelBtn.addEventListener('click', () => els.panel.classList.remove('open'));
+
+  els.form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const { orgId } = getConfig();
+      await apiSend('POST', '/organizations/' + orgId + '/reward-catalog', {
+        name: document.getElementById('f-name').value,
+        pointsCost: parseInt(document.getElementById('f-cost').value, 10),
+        description: document.getElementById('f-desc').value || undefined,
+      });
+      els.panel.classList.remove('open');
+      els.form.reset();
+      loadAll();
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    }
+  });
+
+  els.configToggle.addEventListener('click', () => {
+    const open = els.configPanel.classList.toggle('open');
+    els.configToggle.setAttribute('aria-expanded', String(open));
+    if (open) {
+      const { apiBase, orgId } = getConfig();
+      els.apiBaseInput.value = apiBase;
+      els.orgIdInput.value = orgId;
+    }
+  });
+  els.configSave.addEventListener('click', () => {
+    localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+    localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+    els.configPanel.classList.remove('open');
+    loadAll();
+  });
+
+  loadAll();
+</script>
+
+</body>
+</html>

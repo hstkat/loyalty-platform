@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
 import { AiAssistantService } from './ai-assistant.service';
+import { DailyClosingService } from './daily-closing.service';
 import { AskAssistantDto } from './dto/ask-assistant.dto';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -11,6 +12,7 @@ export class AnalyticsController {
   constructor(
     private analytics: AnalyticsService,
     private aiAssistant: AiAssistantService,
+    private dailyClosing: DailyClosingService,
   ) {}
 
   @Get('dashboard')
@@ -29,6 +31,21 @@ export class AnalyticsController {
   @RequirePermissions('analytics.read')
   getCampaignRoiRanking(@Param('orgId') orgId: string) {
     return this.analytics.getCampaignRoiRanking(orgId);
+  }
+
+  @Get('analytics/daily-closing')
+  @RequirePermissions('analytics.read')
+  getDailyClosing(@Param('orgId') orgId: string, @Query('date') date: string) {
+    return this.analytics.getDailyClosing(orgId, date);
+  }
+
+  @Post('analytics/daily-closing/send')
+  @RequirePermissions('analytics.read')
+  sendDailyClosingManual(
+    @Param('orgId') orgId: string,
+    @Body() body: { date: string; recipient?: string },
+  ) {
+    return this.dailyClosing.sendDailyClosingEmail(orgId, body.date, body.recipient);
   }
 
   @Post('ai-assistant/ask')

@@ -239,7 +239,7 @@ export class WalletService {
     return { reservationId, amount: dto.amount, expiresInSeconds: RESERVATION_TTL_MS / 1000, replayed: false };
   }
 
-  async confirmRedemption(orgId: string, customerId: string, reservationId: string) {
+  async confirmRedemption(orgId: string, customerId: string, reservationId: string, options?: { reason?: string }) {
     const reservation = this.getActiveReservation(reservationId);
 
     const wallet = await this.getOrCreateWallet(orgId, customerId);
@@ -255,6 +255,7 @@ export class WalletService {
           transactionId: reservation.transactionId,
           performedByType: 'staff',
           occurredAt: new Date(),
+          reason: options?.reason,
         },
       });
 
