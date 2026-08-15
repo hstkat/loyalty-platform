@@ -14,6 +14,7 @@ import { MessagingModule } from './messaging/messaging.module';
 import { SegmentationModule } from './segmentation/segmentation.module';
 import { JourneysModule } from './journeys/journeys.module';
 import { OccupancyModule } from './occupancy/occupancy.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { OccupancyModule } from './occupancy/occupancy.module';
     SegmentationModule,
     JourneysModule,
     OccupancyModule,
+    AnalyticsModule,
   ],
 })
 export class AppModule {}

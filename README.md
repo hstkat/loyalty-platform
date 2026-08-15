@@ -872,6 +872,54 @@ curl -X POST http://localhost:3000/organizations/<ORG_ID>/occupancy-recommendati
 - **Geen achtergrondjob** die periodiek automatisch forecasts/opportunities
   genereert — elke stap wordt nu handmatig via de API getriggerd.
 
+## 23. Nieuwe endpoints — Module 10 (Analytics & AI Campaign Assistant)
+
+```
+GET    /organizations/:orgId/dashboard
+GET    /organizations/:orgId/analytics/credit
+GET    /organizations/:orgId/analytics/campaigns
+POST   /organizations/:orgId/ai-assistant/ask
+GET    /organizations/:orgId/ai-assistant/conversations/:id
+GET    /organizations/:orgId/ai-campaign-suggestions
+POST   /organizations/:orgId/ai-campaign-suggestions/:id/approve
+POST   /organizations/:orgId/ai-campaign-suggestions/:id/dismiss
+```
+
+**Alle dashboard-KPI's zijn live berekend uit echte data** — geen aparte
+analyticsdatabase: leden, nieuwe leden deze maand, loyalty-omzet, repeat
+visit rate, outstanding credit, credit dat binnen 14 dagen verloopt, At
+Risk-aantal — stuk voor stuk direct uit Module 1/2/3/7's eigen tabellen.
+
+**De AI-assistent gebruikt echte tool-aanroepen, volledig gelogd
+(`ai_tool_calls`) — nooit een verzonnen cijfer.** `POST
+/ai-assistant/ask` roept Module 9's forecastmodel en de gedeelde
+`AudienceFilterService` aan, en genereert alleen een voorstel als de
+cijfers dat rechtvaardigen. Ook hier: **approve** maakt een Module
+5-conceptcampagne aan, nooit een actieve.
+
+**Voorbeeld — het weer-en-bezetting-scenario uit het ontwerp:**
+```bash
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/ai-assistant/ask \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: ai_assistant.use" \
+  -d '{"promptText":"Morgen slecht weer, lunch staat maar 30% vol. Wat kunnen we doen?","locationId":"<LOC_ID>","date":"2026-08-20"}'
+```
+
+### Eerlijk over de scope — dit is de belangrijkste nuance van deze module
+
+**Er wordt geen externe LLM aangeroepen om vrije tekst te interpreteren en
+zelf te bepalen welke tools nodig zijn.** In plaats daarvan draait `ask()`
+een **vaste, deterministische reeks tool-aanroepen** die past bij het
+canonieke weer-en-bezettingsscenario uit het ontwerp (forecast ophalen,
+doelgroep bepalen), en stelt het antwoord samen uit de **echte** resultaten
+van die aanroepen. De architectuur — tool-functies, volledige logging,
+nooit-verzonnen-cijfers, de recommendation/approval-scheiding — is wél
+precies zoals ontworpen. Wat ontbreekt is de taalbegrip-laag: een manager
+kan nu niet zomaar elke willekeurige vraag stellen ("waarom daalt repeat
+visit?", "welke VIP's zijn lang niet geweest?") en een zinvol antwoord
+verwachten — alleen de weer/bezetting-vraag wordt daadwerkelijk goed
+beantwoord. Een echte integratie met een taalmodel (dat zelf tools kiest
+op basis van de vraag) is de voor de hand liggende vervolgstap.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

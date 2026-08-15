@@ -8,5 +8,6 @@ import { CampaignsModule } from '../campaigns/campaigns.module';
   imports: [CampaignsModule],
   controllers: [OccupancyController],
   providers: [OccupancyService, AudienceFilterService],
+  exports: [OccupancyService],
 })
 export class OccupancyModule {}
