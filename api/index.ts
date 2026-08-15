@@ -19,6 +19,7 @@ async function getApp(): Promise<INestApplication> {
   const expressInstance = express();
   const app = await NestFactory.create(AppModule, new ExpressAdapter(expressInstance));
 
+  app.enableCors({ origin: true });
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
   app.useGlobalFilters(new PrismaExceptionFilter());
 
