@@ -210,6 +210,7 @@
       <a href="campaigns.html">Campagnes</a>
       <a href="#" class="active" aria-current="page">Kassa</a>
       <a href="cadeaus.html">Cadeaus</a>
+      <a href="inschrijven.html">Inschrijven</a>
     </nav>
     <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
   </div>
@@ -363,7 +364,7 @@
 
   async function apiGet(path) {
     const { apiBase, orgId } = getConfig();
-    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem' } });
+    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write' } });
     if (!res.ok) throw new Error('API-fout: ' + res.status);
     return res.json();
   }
@@ -372,7 +373,7 @@
     const { apiBase, orgId } = getConfig();
     const res = await fetch(apiBase + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem' },
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write' },
       body: JSON.stringify(body),
     });
     if (!res.ok) {

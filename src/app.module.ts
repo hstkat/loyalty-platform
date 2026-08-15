@@ -15,6 +15,7 @@ import { SegmentationModule } from './segmentation/segmentation.module';
 import { JourneysModule } from './journeys/journeys.module';
 import { OccupancyModule } from './occupancy/occupancy.module';
 import { AnalyticsModule } from './analytics/analytics.module';
+import { PassModule } from './pass/pass.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
     JourneysModule,
     OccupancyModule,
     AnalyticsModule,
+    PassModule,
   ],
 })
 export class AppModule {}
