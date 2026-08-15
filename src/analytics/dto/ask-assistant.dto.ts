@@ -4,7 +4,10 @@ export class AskAssistantDto {
   @IsString()
   promptText!: string;
 
-  @IsUUID()
+  // Not @IsUUID(): see the same fix in CreateTransactionDto — production
+  // data is validated by Postgres, which is looser than class-validator's
+  // strict RFC4122 check.
+  @IsString()
   locationId!: string;
 
   @IsString()
