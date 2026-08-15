@@ -75,7 +75,7 @@ export class AiAssistantService {
 
       const estimatedMaxExposure = round2(audience.count * avgSpendEstimate * 0.05 * multiplier);
 
-      const suggestedMessage = `🌧 Geen strandweer? Binnen maken we het gezellig.\nLunch morgen en ontvang extra Beach Credit bij besteding.`;
+      const suggestedMessage = `🌧 Geen strandweer? Binnen maken we het gezellig.\nLunch morgen en ontvang extra Strand tegoed bij besteding.`;
 
       suggestion = await this.prisma.aiCampaignSuggestion.create({
         data: {
@@ -100,7 +100,7 @@ export class AiAssistantService {
       responseText =
         `Opportunity detected: lunch occupancy ${forecastPct}% (huidige boekingen: ${occupancyNow.occupancyPercentage ?? '?'}%). ` +
         `Aanbevolen doelgroep: ${audience.count} klanten (geen bezoek laatste 21 dagen, marketing-consent). ` +
-        `Aanbevolen incentive: ${multiplier}x Beach Credit. Geschatte max. exposure: €${estimatedMaxExposure}.`;
+        `Aanbevolen incentive: ${multiplier}x Strand tegoed. Geschatte max. exposure: ${estimatedMaxExposure} punten.`;
     } else {
       responseText =
         forecastPct >= 45

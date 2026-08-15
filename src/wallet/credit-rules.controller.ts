@@ -1,12 +1,16 @@
 import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ExchangeRateService } from './exchange-rate.service';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
 
 @Controller('organizations/:orgId')
 @UseGuards(PermissionsGuard)
 export class CreditRulesController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private exchangeRate: ExchangeRateService,
+  ) {}
 
   @Get('credit-rules')
   @RequirePermissions('credit_rules.read')
@@ -33,5 +37,16 @@ export class CreditRulesController {
   @RequirePermissions('credit_rules.write')
   createRateRule(@Param('orgId') orgId: string, @Body() dto: Record<string, unknown>) {
     return this.prisma.redemptionRateRule.create({ data: { organizationId: orgId, ...dto } as never });
+  }
+
+  // Aggregate, customer-independent "what's today's rate" — used by the
+  // backoffice dashboard to show an approximate euro-equivalent for a
+  // points-based outstanding-credit total, without needing a specific
+  // customer's wallet.
+  @Get('redemption-rate/today')
+  @RequirePermissions('credit_rules.read')
+  async getTodayRate(@Param('orgId') orgId: string) {
+    const pointsPerEuro = await this.exchangeRate.getPointsPerEuro(orgId);
+    return { pointsPerEuro, isPointsMode: pointsPerEuro !== 1 };
   }
 }
