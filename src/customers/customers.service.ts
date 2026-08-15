@@ -132,11 +132,22 @@ export class CustomersService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
+        include: { wallet: true },
       }),
       this.prisma.customer.count({ where }),
     ]);
 
-    return { items, total, page, pageSize };
+    // NOTE: Customer.currentBalance is a legacy Module 1 field that
+    // Module 3's WalletService never writes to — the real, authoritative
+    // balance lives on Wallet.availableBalance. Surface it explicitly
+    // here so API consumers (like the backoffice) don't accidentally use
+    // the always-zero stub field.
+    const itemsWithBalance = items.map((customer) => ({
+      ...customer,
+      availableBalance: customer.wallet ? customer.wallet.availableBalance : 0,
+    }));
+
+    return { items: itemsWithBalance, total, page, pageSize };
   }
 
   async findOne(orgId: string, id: string) {
