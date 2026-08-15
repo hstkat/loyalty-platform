@@ -69,6 +69,7 @@ model Location {
 
   // Module 3 — Wallet & Credit
   creditRules CreditRule[]
+  redemptionRateRules RedemptionRateRule[]
 
   // Module 9 — Reservations & Occupancy Booster
   capacitySettings       LocationCapacitySetting[]
@@ -1221,6 +1222,7 @@ model CreditRule {
   usableFromNextVisit         Boolean  @default(true) @map("usable_from_next_visit")
   minimumOrderAmount          Decimal? @map("minimum_order_amount") @db.Decimal(10, 2)
   maximumRedeemPercentage     Decimal? @map("maximum_redeem_percentage") @db.Decimal(5, 2)
+  minimumRedemptionBalance    Decimal? @map("minimum_redemption_balance") @db.Decimal(10, 2)
   excludedProductCategories   Json?    @map("excluded_product_categories")
   excludedDays                Json?    @map("excluded_days")
   nonCombinableCampaignIds    Json?    @map("non_combinable_campaign_ids")
@@ -1233,6 +1235,24 @@ model CreditRule {
 
   @@index([organizationId])
   @@map("credit_rules")
+}
+
+model RedemptionRateRule {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String?  @map("location_id") @db.Uuid
+  name           String
+  appliesOnDays  Json     @map("applies_on_days") // e.g. ["monday","tuesday","wednesday","thursday"]
+  pointsPerEuro  Decimal  @map("points_per_euro") @db.Decimal(10, 4) // e.g. 25 -> 250 points = €10
+  priority       Int      @default(0)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([organizationId, isActive])
+  @@map("redemption_rate_rules")
 }
 
 // ============================================================================

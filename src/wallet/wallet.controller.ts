@@ -15,6 +15,17 @@ export class WalletController {
     return this.wallet.getWallet(orgId, customerId);
   }
 
+  @Get('redemption-quote')
+  @RequirePermissions('wallet.read')
+  getRedemptionQuote(
+    @Param('orgId') orgId: string,
+    @Param('customerId') customerId: string,
+    @Query('euroAmount') euroAmount: string,
+    @Query('locationId') locationId?: string,
+  ) {
+    return this.wallet.getRedemptionQuote(orgId, customerId, parseFloat(euroAmount), locationId);
+  }
+
   @Get('ledger')
   @RequirePermissions('wallet.read')
   getLedger(

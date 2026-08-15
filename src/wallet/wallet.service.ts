@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { ReserveRedemptionDto, ManualAdjustmentDto } from './dto/wallet.dto';
+import { ExchangeRateService } from './exchange-rate.service';
 
 interface PendingReservation {
   organizationId: string;
@@ -33,7 +34,10 @@ export class WalletService {
   private reservations = new Map<string, PendingReservation>();
   private idempotencyIndex = new Map<string, string>(); // idempotencyKey -> reservationId
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private exchangeRate: ExchangeRateService,
+  ) {}
 
   private async getOrCreateWallet(orgId: string, customerId: string) {
     let wallet = await this.prisma.wallet.findUnique({ where: { customerId } });
@@ -131,6 +135,33 @@ export class WalletService {
 
   // -- Redemption: reserve / confirm / cancel (design doc section 6) -----
 
+  /**
+   * Points-mode helper: tells a checkout/POS how many wallet units
+   * ("points") are needed to cover a given euro amount TODAY, using the
+   * active RedemptionRateRule for the current day of week. Also reports
+   * whether the customer's balance even meets the minimum-redemption
+   * threshold. Purely informational — does not reserve anything.
+   */
+  async getRedemptionQuote(orgId: string, customerId: string, euroAmount: number, locationId?: string) {
+    const wallet = await this.getOrCreateWallet(orgId, customerId);
+    const pointsPerEuro = await this.exchangeRate.getPointsPerEuro(orgId, locationId);
+    const pointsNeeded = Math.ceil(euroAmount * pointsPerEuro);
+
+    const creditRule = await this.prisma.creditRule.findFirst({ where: { organizationId: orgId, isActive: true } });
+    const minimumRedemptionBalance = creditRule?.minimumRedemptionBalance ? Number(creditRule.minimumRedemptionBalance) : null;
+    const meetsMinimum = minimumRedemptionBalance === null || Number(wallet.availableBalance) >= minimumRedemptionBalance;
+
+    return {
+      euroAmount,
+      pointsPerEuro,
+      pointsNeeded,
+      availablePoints: Number(wallet.availableBalance),
+      minimumRedemptionBalance,
+      meetsMinimum,
+      canAfford: meetsMinimum && Number(wallet.availableBalance) >= pointsNeeded,
+    };
+  }
+
   async reserveRedemption(orgId: string, customerId: string, dto: ReserveRedemptionDto) {
     const existingReservationId = this.idempotencyIndex.get(dto.idempotencyKey);
     if (existingReservationId && this.reservations.has(existingReservationId)) {
@@ -138,6 +169,18 @@ export class WalletService {
     }
 
     const wallet = await this.getOrCreateWallet(orgId, customerId);
+
+    // Minimum redemption balance ("250 punten"-drempel): if configured,
+    // the customer's TOTAL available balance must meet the threshold
+    // before ANY redemption is allowed — even a partial one.
+    const creditRule = await this.prisma.creditRule.findFirst({
+      where: { organizationId: orgId, isActive: true },
+    });
+    if (creditRule?.minimumRedemptionBalance && Number(wallet.availableBalance) < Number(creditRule.minimumRedemptionBalance)) {
+      throw new BadRequestException(
+        `Minimum redemption balance not met: ${wallet.availableBalance} available, ${creditRule.minimumRedemptionBalance} required`,
+      );
+    }
 
     // Eligible lots: available, not expired, and NOT earned on the same
     // transaction the customer is currently paying (section 2: "pas

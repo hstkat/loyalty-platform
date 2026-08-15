@@ -736,6 +736,68 @@ curl -X POST http://localhost:3000/organizations/<ORG_ID>/journeys/<JOURNEY_ID>/
   gedeelde `AudienceFilterService` kunnen hergebruiken, maar is nu nog
   niet gekoppeld).
 
+## 21. Uitbreiding: puntensysteem met variabele wisselkoers
+
+Op verzoek toegevoegd — een alternatief voor het standaard euro-gebaseerde
+Beach Credit, geïnspireerd op een eerder puntensysteem: "1 punt per euro
+besteed, inwisselbaar vanaf 250 punten, waarbij 250 punten doordeweeks
+€10 waard is en in het weekend nog maar €5" — precies de yield-management-
+toepassing die al in de allereerste basisprincipes van het platform stond.
+
+**Nieuw:**
+- `credit_rules.minimumRedemptionBalance` — een harde drempel: onder dit
+  saldo is helemaal niets inwisselbaar, ook niet gedeeltelijk
+- `redemption_rate_rules` — dag-gebaseerde wisselkoersregels (punten per
+  euro), het spiegelbeeld van Module 4's dag/tijd-multipliers, maar dan
+  aan de inwissel-kant in plaats van de verdien-kant
+- `GET .../wallet/redemption-quote?euroAmount=X` — vertaalt een gewenst
+  euro-bedrag naar het benodigde aantal punten **tegen de koers van
+  vandaag**, en meldt of de drempel is gehaald
+
+**Getest (lokaal, tegen echte Postgres):** exact het scenario uit het
+oude systeem gereproduceerd — 250 punten leverden op een maandag €10,00
+op en op een vrijdag €5,00, en een saldo van 200 punten werd terecht
+geblokkeerd (`mag_inwisselen: false`) tegen de 250-drempel.
+
+**Ontwerpkeuze — géén organisatiebrede "modus"-schakelaar:** een
+organisatie die geen `redemption_rate_rules` instelt, krijgt automatisch
+de bestaande 1-punt-is-1-euro-werking (`pointsPerEuro` default `1`) —
+niets aan de huidige euro-gebaseerde flow verandert tenzij een organisatie
+bewust wisselkoersregels toevoegt.
+
+**Voorbeeld:**
+```bash
+# Wisselkoers-regels instellen (exact het oude systeem)
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/redemption-rate-rules \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: credit_rules.write" \
+  -d '{"name":"Weekdagen","appliesOnDays":["monday","tuesday","wednesday","thursday"],"pointsPerEuro":25}'
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/redemption-rate-rules \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: credit_rules.write" \
+  -d '{"name":"Weekend","appliesOnDays":["friday","saturday","sunday"],"pointsPerEuro":50}'
+
+# Drempel instellen
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/credit-rules \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: credit_rules.write" \
+  -d '{"minimumRedemptionBalance":250}'
+
+# Quote opvragen — hoeveel punten kost €10 vandaag?
+curl "http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet/redemption-quote?euroAmount=10" \
+  -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.read"
+```
+
+### Eerlijk over de scope
+
+- **`reserveRedemption` gebruikt nog steeds "punten/wallet-eenheden" als
+  invoer**, niet een euro-bedrag — de bedoelde flow is: eerst een quote
+  opvragen (hoeveel punten voor dit euro-bedrag vandaag), en dát
+  puntenaantal aan `reserveRedemption` meegeven. Een geïntegreerde
+  "reserveer €10 tegen de koers van vandaag"-endpoint (die dit in één
+  stap doet) is niet gebouwd.
+- **Geen tijdvenster binnen een dag** (alleen dag-van-de-week) — het
+  ontwerp van Module 4 ondersteunt wel tijdvensters (`timeWindowStart/End`)
+  voor reward-multipliers; `redemption_rate_rules` heeft dat veld bewust
+  nog niet, kan later op dezelfde manier worden toegevoegd.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |
