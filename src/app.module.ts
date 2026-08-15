@@ -13,6 +13,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { SegmentationModule } from './segmentation/segmentation.module';
 import { JourneysModule } from './journeys/journeys.module';
+import { OccupancyModule } from './occupancy/occupancy.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { JourneysModule } from './journeys/journeys.module';
     MessagingModule,
     SegmentationModule,
     JourneysModule,
+    OccupancyModule,
   ],
 })
 export class AppModule {}

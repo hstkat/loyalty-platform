@@ -8,6 +8,6 @@ import { MessagingModule } from '../messaging/messaging.module';
   imports: [MessagingModule],
   controllers: [CampaignsController],
   providers: [CampaignsService, AudienceFilterService],
-  exports: [AudienceFilterService],
+  exports: [AudienceFilterService, CampaignsService],
 })
 export class CampaignsModule {}

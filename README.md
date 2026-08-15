@@ -798,6 +798,80 @@ curl "http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/walle
   voor reward-multipliers; `redemption_rate_rules` heeft dat veld bewust
   nog niet, kan later op dezelfde manier worden toegevoegd.
 
+## 22. Nieuwe endpoints — Module 9 (Reservations & Occupancy Booster)
+
+```
+POST   /organizations/:orgId/reservations
+GET    /organizations/:orgId/reservations
+PATCH  /organizations/:orgId/reservations/:id/status
+POST   /organizations/:orgId/location-capacity-settings
+GET    /organizations/:orgId/locations/:locationId/capacity-settings
+POST   /organizations/:orgId/weather-forecasts
+GET    /organizations/:orgId/locations/:locationId/occupancy?date=...&servicePeriod=...
+POST   /organizations/:orgId/locations/:locationId/occupancy/forecast
+POST   /organizations/:orgId/occupancy-opportunities/detect
+GET    /organizations/:orgId/occupancy-recommendations
+GET    /organizations/:orgId/occupancy-recommendations/:id
+POST   /organizations/:orgId/occupancy-recommendations/:id/approve
+POST   /organizations/:orgId/occupancy-recommendations/:id/dismiss
+```
+
+**De drie-staps-scheiding werkt écht:** `approve` maakt een echte Module
+5-campagne aan met `status: draft`, gebruikmakend van dezelfde
+`CampaignsService.create()` als een handmatig aangemaakte campagne — de
+daadwerkelijke lancering blijft een aparte, bewuste `POST
+/campaigns/:id/launch`-aanroep. Geen enkel pad in deze module kan een
+campagne automatisch starten.
+
+**Voorbeeld — het complete "Sunny Lunch Booster"-pad:**
+```bash
+# 1. Capaciteit instellen
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/location-capacity-settings \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
+  -d '{"locationId":"<LOC_ID>","servicePeriod":"lunch","maxCovers":200}'
+
+# 2. Reservering(en) invoeren
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/reservations \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
+  -d '{"locationId":"<LOC_ID>","dateTime":"2026-08-20T13:00:00Z","servicePeriod":"lunch","covers":76}'
+
+# 3. Weer invoeren
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/weather-forecasts \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
+  -d '{"locationId":"<LOC_ID>","forecastDate":"2026-08-20","temperatureCelsius":27,"condition":"sunny"}'
+
+# 4. Bezetting bekijken (het "MORGEN"-scherm)
+curl "http://localhost:3000/organizations/<ORG_ID>/locations/<LOC_ID>/occupancy?date=2026-08-20&servicePeriod=lunch" \
+  -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.read"
+
+# 5. Forecast berekenen
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/locations/<LOC_ID>/occupancy/forecast \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
+  -d '{"date":"2026-08-20","servicePeriod":"lunch"}'
+
+# 6. Opportunity detecteren (forecastRunId uit stap 5)
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/occupancy-opportunities/detect \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
+  -d '{"locationId":"<LOC_ID>","forecastRunId":"<RUN_ID>"}'
+
+# 7. Voorstel goedkeuren -> Module 5-draft-campagne
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/occupancy-recommendations/<REC_ID>/approve \
+  -H "x-organization-id: <ORG_ID>" -H "x-permissions: campaign.launch"
+```
+
+### Eerlijk over de scope
+
+- **Forecastmodel gebruikt alleen historisch gemiddelde + weer** — geen
+  seizoens-, events-, feestdag- of lead-time-correctie (ontwerp sectie 3).
+  Zonder genoeg historische data valt het terug op een neutrale 50%.
+- **Incentive-drempels zijn hardcoded** (< 30% → 3×, < 45% → 2×), niet de
+  configureerbare `occupancy_incentive_policy` uit het ontwerp.
+- **`estimatedMaxRewardExposure` gebruikt een vaste aanname** (€60
+  gemiddelde besteding) in plaats van de werkelijke gemiddelde besteding
+  per gematchte klant — een pragmatische versimpeling.
+- **Geen achtergrondjob** die periodiek automatisch forecasts/opportunities
+  genereert — elke stap wordt nu handmatig via de API getriggerd.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |
