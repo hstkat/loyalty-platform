@@ -70,6 +70,42 @@ export class TransactionsService {
         });
       }
 
+      // Module 1 cache-field update (Module 2 design doc, section 9):
+      // visitCount/lifetimeSpend/lastVisitAt etc. are denormalized on
+      // Customer, updated here as the direct equivalent of consuming a
+      // transaction.completed event.
+      if (customer) {
+        const newVisitCount = customer.visitCount + 1;
+        const newLifetimeSpend = Number(customer.lifetimeSpend) + Number(dto.totalAmount);
+        const newAverageSpend = newLifetimeSpend / newVisitCount;
+
+        let newAverageVisitFrequencyDays = customer.averageVisitFrequencyDays;
+        if (customer.lastVisitAt) {
+          const daysSincePrevious = Math.max(
+            1,
+            Math.round((occurredAt.getTime() - customer.lastVisitAt.getTime()) / 86400000),
+          );
+          newAverageVisitFrequencyDays = customer.averageVisitFrequencyDays
+            ? Math.round(
+                (customer.averageVisitFrequencyDays * (newVisitCount - 2) + daysSincePrevious) / (newVisitCount - 1),
+              )
+            : daysSincePrevious;
+        }
+
+        await tx.customer.update({
+          where: { id: customer.id },
+          data: {
+            visitCount: newVisitCount,
+            lifetimeSpend: newLifetimeSpend,
+            averageSpend: newAverageSpend,
+            firstVisitAt: customer.firstVisitAt ?? occurredAt,
+            lastVisitAt: occurredAt,
+            averageVisitFrequencyDays: newAverageVisitFrequencyDays,
+            favoriteLocationId: customer.favoriteLocationId ?? dto.locationId,
+          },
+        });
+      }
+
       return created;
     });
 
