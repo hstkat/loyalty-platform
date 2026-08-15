@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AudienceFilterService, FilterGroup } from '../common/audience-filter.service';
+import { MessagingService } from '../messaging/messaging.service';
 import { CreateCampaignDto, PreviewCampaignDto } from './dto/campaign.dto';
 
 /**
@@ -19,6 +20,7 @@ export class CampaignsService {
   constructor(
     private prisma: PrismaService,
     private audienceFilter: AudienceFilterService,
+    private messaging: MessagingService,
   ) {}
 
   create(orgId: string, dto: CreateCampaignDto) {
@@ -130,15 +132,6 @@ export class CampaignsService {
         rewardRuleId = rule.id;
       }
 
-      const channels = (campaign.channels as string[]) ?? [];
-      for (const customerId of limited.filter((cId) => !controlGroupIds.has(cId))) {
-        for (const channel of channels) {
-          await tx.campaignRecipient.create({
-            data: { campaignId: id, customerId, runNumber: 1, channel: channel as never, status: 'queued' },
-          });
-        }
-      }
-
       const updated = await tx.campaign.update({
         where: { id },
         data: { status: 'active', rewardRuleId },
@@ -147,10 +140,41 @@ export class CampaignsService {
       return updated;
     });
 
+    // Sending happens AFTER the main transaction commits — Module 6's
+    // MessagingService runs its own transactions per recipient, and
+    // nesting interactive transactions is not supported by Prisma.
+    const channels = (campaign.channels as string[]) ?? [];
+    const treatmentGroup = limited.filter((cId) => !controlGroupIds.has(cId));
+    const sendResultsByChannel: Record<string, unknown> = {};
+
+    for (const channel of channels) {
+      const sendResult = await this.messaging.send(orgId, {
+        sourceType: 'campaign',
+        sourceId: id,
+        templateGroupKey: campaign.name.toLowerCase().replace(/\s+/g, '_'),
+        customerIds: treatmentGroup,
+        channel: channel as never,
+      });
+      sendResultsByChannel[channel] = sendResult;
+
+      await this.prisma.campaignRecipient.createMany({
+        data: (sendResult.results as Array<{ customerId: string; status: string; reason?: string }>).map((r) => ({
+          campaignId: id,
+          customerId: r.customerId,
+          runNumber: 1,
+          channel: channel as never,
+          status: r.status === 'sent' ? 'queued' : 'failed',
+          queuedAt: r.status === 'sent' ? new Date() : undefined,
+          failureReason: r.status !== 'sent' ? (r.reason ?? r.status) : undefined,
+        })),
+      });
+    }
+
     return {
       campaign: result,
       audienceSize: limited.length,
       controlGroupSize: controlGroupIds.size,
+      sendResultsByChannel,
     };
   }
 

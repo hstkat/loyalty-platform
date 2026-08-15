@@ -10,6 +10,7 @@ import { RewardRulesModule } from './reward-rules/reward-rules.module';
 import { RewardEngineModule } from './reward-engine/reward-engine.module';
 import { WalletModule } from './wallet/wallet.module';
 import { CampaignsModule } from './campaigns/campaigns.module';
+import { MessagingModule } from './messaging/messaging.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { CampaignsModule } from './campaigns/campaigns.module';
     RewardEngineModule,
     WalletModule,
     CampaignsModule,
+    MessagingModule,
   ],
 })
 export class AppModule {}

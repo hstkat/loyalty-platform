@@ -568,6 +568,51 @@ mee in de reward-berekening.
   alleen directe uitvoering, en registreert ontvangers zonder iets te
   versturen (Module 6's API staat er ook nog niet).
 
+## 18. Nieuwe endpoints — Module 6 (Messaging)
+
+```
+POST   /organizations/:orgId/messaging/send
+GET    /organizations/:orgId/messaging/templates
+POST   /organizations/:orgId/messaging/templates
+GET    /organizations/:orgId/messaging/queue
+GET    /organizations/:orgId/messaging/queue/:id
+```
+
+**Het "campagne → verzending"-pad werkt nu écht:** `POST
+/campaigns/:id/launch` roept intern `MessagingService.send()` aan voor
+elke gekozen kanaal, met échte consent- en frequency-cap-controle tegen
+Module 1's data. Dit is het eerste moment waarop een campagne meer doet
+dan alleen een reward-regel aanmaken — er gaat nu ook daadwerkelijk een
+bericht "uit" (gesimuleerd, zie hieronder).
+
+**Voorbeeld — een template aanmaken en een campagne ermee lanceren:**
+```bash
+# 1. Template aanmaken (templateGroupKey moet overeenkomen met de
+#    campagnenaam in lowercase-met-underscores)
+curl -X POST http://localhost:3000/organizations/<ORG_ID>/messaging/templates \
+  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
+  -H "x-permissions: message.template.write" \
+  -d '{"templateGroupKey":"sunny_day","channel":"push","category":"marketing","name":"Sunny Day","locale":"nl","body":"Hi {{first_name}}, je hebt nog {{credit_balance}} Beach Credit. {{#if credit_balance_raw > 10}}Genoeg voor een drankje!{{/if}}"}'
+
+# 2. Campagne aanmaken en lanceren (zie Module 5-voorbeelden)
+```
+
+### Eerlijk over de scope
+
+- **Geen echte provider-adapters** (APNs/FCM/Postmark/Twilio) — een
+  "verzending" schrijft direct een `message_queue_items`-rij met status
+  `sent`, zonder iets echt te versturen. De architectuur (provider-
+  abstractie, sectie 2 van het ontwerp) staat klaar, maar is niet
+  aangesloten op een echte dienst.
+- **Quiet hours (sectie 8) zijn niet geïmplementeerd** — berichten
+  worden nooit uitgesteld, ongeacht tijdstip.
+- **Retries (sectie 11), link tracking (sectie 13), push tokens (sectie 14)
+  en AI copy (sectie 16) zijn niet gebouwd** — alleen de kern: template-
+  rendering, consent-check, frequency-cap-check, en de wachtrij-registratie.
+- **Consent-check is een pragmatische aanname**: voor `wallet`-kanaal
+  wordt push-consent gebruikt (er is geen apart wallet-consenttype in
+  Module 1's schema) — een kleine, gedocumenteerde vereenvoudiging.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |
