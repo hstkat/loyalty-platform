@@ -9,6 +9,6 @@ import { RewardCatalogService } from './reward-catalog.service';
 @Module({
   controllers: [WalletController, CreditRulesController, RewardCatalogController],
   providers: [WalletService, ExchangeRateService, RewardCatalogService],
-  exports: [WalletService],
+  exports: [WalletService, ExchangeRateService],
 })
 export class WalletModule {}
