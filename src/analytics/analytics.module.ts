@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { AiAssistantService } from './ai-assistant.service';
-import { MailgunService } from './mailgun.service';
+import { MailgunService } from '../common/mailgun.service';
 import { DailyClosingService } from './daily-closing.service';
 import { CronController } from './cron.controller';
 import { AudienceFilterService } from '../common/audience-filter.service';

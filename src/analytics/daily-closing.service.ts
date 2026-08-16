@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
-import { MailgunService } from './mailgun.service';
+import { MailgunService } from '../common/mailgun.service';
 
 @Injectable()
 export class DailyClosingService {

@@ -920,6 +920,28 @@ verwachten — alleen de weer/bezetting-vraag wordt daadwerkelijk goed
 beantwoord. Een echte integratie met een taalmodel (dat zelf tools kiest
 op basis van de vraag) is de voor de hand liggende vervolgstap.
 
+## 24. Echte e-mailverzending voor campagnes/journeys (Module 6)
+
+Op verzoek toegevoegd: het `email`-kanaal in `MessagingService` stuurt nu
+**écht** een e-mail via Mailgun (dezelfde koppeling als de dagafsluiting),
+in plaats van alleen een database-registratie te maken. Push, wallet en
+SMS blijven gesimuleerd — die vereisen elk hun eigen, aparte
+providerkoppeling (native pushinfrastructuur, resp. een SMS-provider
+zoals MessageBird/Twilio) die nog niet is aangesloten.
+
+**Praktisch effect:** zodra een campagne of journey een `send_email`-actie
+uitvoert naar een klant met een bekend e-mailadres, komt dat bericht nu
+daadwerkelijk aan — mits `MAILGUN_API_KEY`/`MAILGUN_DOMAIN` zijn
+ingesteld (dezelfde variabelen als bij de dagafsluiting-e-mail). Als
+Mailgun niet geconfigureerd is, of de verzending faalt, wordt dat netjes
+vastgelegd in `message_queue_items.status = 'failed'` — de campagne/
+journey-flow zelf blokkeert of breekt daar nooit op.
+
+**`MailgunService` is verplaatst** van `src/analytics/` naar
+`src/common/` — nodig om een cirkelvormige module-afhankelijkheid te
+voorkomen (Analytics → Campaigns → Messaging → Analytics), aangezien
+zowel Messaging als Analytics deze service nu gebruiken.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

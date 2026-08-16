@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { renderTemplate } from './template-renderer';
 import { SendMessageDto } from './dto/messaging.dto';
+import { MailgunService } from '../common/mailgun.service';
 
 const DEFAULT_FREQUENCY_CAP = { maxMessages: 2, periodDays: 7 }; // marketing default, section 7
 
@@ -18,7 +19,10 @@ const DEFAULT_FREQUENCY_CAP = { maxMessages: 2, periodDays: 7 }; // marketing de
  */
 @Injectable()
 export class MessagingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mailgun: MailgunService,
+  ) {}
 
   async send(orgId: string, dto: SendMessageDto) {
     const sendRequest = await this.prisma.messageSendRequest.create({
@@ -160,6 +164,27 @@ export class MessagingService {
 
       return item;
     });
+
+    // Real delivery for the email channel (reuses the Mailgun account
+    // already set up for the daily accounting report). Push/wallet/SMS
+    // remain simulated — those need separate provider accounts (native
+    // push infra, or an SMS provider like MessageBird/Twilio) that
+    // aren't connected yet. If Mailgun isn't configured, or the send
+    // fails, the queue item above still records the attempt — this
+    // never blocks or breaks the campaign/journey flow that called it.
+    if (channel === 'email' && customer.email && this.mailgun.isConfigured()) {
+      const sendResult = await this.mailgun.sendEmail(
+        customer.email,
+        renderedSubject || resolvedTemplate.name,
+        renderedBody,
+      );
+      if (!sendResult.sent) {
+        await this.prisma.messageQueueItem.update({
+          where: { id: queueItem.id },
+          data: { status: 'failed', failureReason: sendResult.reason },
+        });
+      }
+    }
 
     return { customerId, status: 'sent', queueItemId: queueItem.id, renderedBody };
   }
