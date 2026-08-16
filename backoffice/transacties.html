@@ -683,7 +683,7 @@
       const { orgId } = getConfig();
       const [blockResult, items] = await Promise.all([
         apiGet('/organizations/' + orgId + '/redemption-block-size'),
-        apiGet('/organizations/' + orgId + '/reward-catalog?activeOnly=true'),
+        apiGet('/organizations/' + orgId + '/reward-catalog?activeOnly=true&currentlyAvailableOnly=true'),
       ]);
       blockSize = blockResult.blockSize;
       catalogItems = items;

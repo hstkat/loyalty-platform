@@ -115,6 +115,22 @@
     padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
   }
   .form-actions { display: flex; gap: 10px; margin-top: 14px; }
+
+  .availability-block {
+    margin-top: 18px; padding: 16px; background: var(--dark); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .availability-title { font-family: 'Fraunces', serif; font-size: 14px; margin-bottom: 6px; }
+  .availability-hint { font-size: 11px; color: var(--text-light); line-height: 1.6; margin: 0 0 12px; }
+  .day-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+  .day-picker label {
+    display: flex; align-items: center; gap: 5px; background: var(--amber); border: 1px solid var(--line);
+    border-radius: 20px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+  }
+  .day-picker label:has(input:checked) { border-color: var(--wood); color: var(--wood); }
+  .item-row .availability-badge {
+    font-size: 11px; color: var(--wood); background: rgba(196,122,69,0.12); padding: 2px 8px;
+    border-radius: 12px; margin-top: 4px; display: inline-block;
+  }
   .btn-primary { background: var(--coral); color: var(--dark); border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
   .btn-secondary { background: none; border: 1px solid var(--line); color: var(--text-light); padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; }
 
@@ -183,6 +199,34 @@
           <input type="text" id="f-desc" placeholder="Korte toelichting voor het personeel">
         </div>
       </div>
+
+      <div class="availability-block">
+        <div class="availability-title">Beschikbaarheid (optioneel)</div>
+        <p class="availability-hint">Laat alles leeg voor "altijd beschikbaar". Kies specifieke dagen en/of een periode om te beperken — bijv. alleen maandag/dinsdag gedurende 4 weken, of alleen op één specifieke datum.</p>
+
+        <div class="day-picker" id="day-picker">
+          <label><input type="checkbox" value="monday"> Ma</label>
+          <label><input type="checkbox" value="tuesday"> Di</label>
+          <label><input type="checkbox" value="wednesday"> Wo</label>
+          <label><input type="checkbox" value="thursday"> Do</label>
+          <label><input type="checkbox" value="friday"> Vr</label>
+          <label><input type="checkbox" value="saturday"> Za</label>
+          <label><input type="checkbox" value="sunday"> Zo</label>
+        </div>
+
+        <div class="form-row" style="margin-top: 12px;">
+          <div class="form-field">
+            <label for="f-valid-from">Geldig vanaf</label>
+            <input type="date" id="f-valid-from">
+          </div>
+          <div class="form-field">
+            <label for="f-valid-until">Geldig tot en met</label>
+            <input type="date" id="f-valid-until">
+          </div>
+        </div>
+        <p class="availability-hint">Tip: voor "alleen op 31 augustus", vul bij beide dezelfde datum in.</p>
+      </div>
+
       <div class="form-actions">
         <button type="submit" class="btn-primary">Cadeau opslaan</button>
         <button type="button" class="btn-secondary" id="cancel-btn">Annuleren</button>
@@ -261,6 +305,24 @@
     }
   }
 
+  const DAY_LABELS = { monday: 'ma', tuesday: 'di', wednesday: 'wo', thursday: 'do', friday: 'vr', saturday: 'za', sunday: 'zo' };
+
+  function formatAvailability(item) {
+    const parts = [];
+    if (item.availableDays && item.availableDays.length > 0) {
+      parts.push('alleen ' + item.availableDays.map((d) => DAY_LABELS[d] || d).join('/'));
+    }
+    if (item.validFrom && item.validUntil && item.validFrom === item.validUntil) {
+      parts.push('alleen op ' + new Date(item.validFrom).toLocaleDateString('nl-NL'));
+    } else {
+      if (item.validFrom) parts.push('vanaf ' + new Date(item.validFrom).toLocaleDateString('nl-NL'));
+      if (item.validUntil) parts.push('t/m ' + new Date(item.validUntil).toLocaleDateString('nl-NL'));
+    }
+    if (parts.length === 0) return null;
+    const availableNow = item.isCurrentlyAvailable;
+    return `<span class="availability-badge" style="${availableNow ? '' : 'color:var(--coral);background:rgba(232,96,74,0.12);'}">${parts.join(', ')}${availableNow ? '' : ' — nu niet beschikbaar'}</span>`;
+  }
+
   function renderItems(items) {
     if (items.length === 0) {
       els.itemList.innerHTML = '<div class="empty-note">Nog geen cadeaus. Voeg de eerste toe met de knop hierboven.</div>';
@@ -271,6 +333,7 @@
         <div>
           <div class="name">${item.name}</div>
           ${item.description ? `<div class="desc">${item.description}</div>` : ''}
+          ${formatAvailability(item) || ''}
         </div>
         <div class="right">
           <span class="cost">${item.pointsCost} pt</span>
@@ -322,10 +385,17 @@
     e.preventDefault();
     try {
       const { orgId } = getConfig();
+      const selectedDays = Array.from(document.querySelectorAll('#day-picker input:checked')).map((cb) => cb.value);
+      const validFrom = document.getElementById('f-valid-from').value || undefined;
+      const validUntil = document.getElementById('f-valid-until').value || undefined;
+
       await apiSend('POST', '/organizations/' + orgId + '/reward-catalog', {
         name: document.getElementById('f-name').value,
         pointsCost: parseInt(document.getElementById('f-cost').value, 10),
         description: document.getElementById('f-desc').value || undefined,
+        availableDays: selectedDays.length > 0 ? selectedDays : undefined,
+        validFrom,
+        validUntil,
       });
       els.panel.classList.remove('open');
       els.form.reset();

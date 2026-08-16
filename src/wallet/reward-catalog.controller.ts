@@ -10,13 +10,25 @@ export class RewardCatalogController {
 
   @Get('reward-catalog')
   @RequirePermissions('credit_rules.read')
-  listItems(@Param('orgId') orgId: string, @Query('activeOnly') activeOnly?: string) {
-    return this.catalog.listItems(orgId, activeOnly === 'true');
+  listItems(@Param('orgId') orgId: string, @Query('activeOnly') activeOnly?: string, @Query('currentlyAvailableOnly') currentlyAvailableOnly?: string) {
+    return this.catalog.listItems(orgId, activeOnly === 'true', currentlyAvailableOnly === 'true');
   }
 
   @Post('reward-catalog')
   @RequirePermissions('credit_rules.write')
-  createItem(@Param('orgId') orgId: string, @Body() dto: { name: string; description?: string; pointsCost: number; locationId?: string }) {
+  createItem(
+    @Param('orgId') orgId: string,
+    @Body()
+    dto: {
+      name: string;
+      description?: string;
+      pointsCost: number;
+      locationId?: string;
+      availableDays?: string[];
+      validFrom?: string;
+      validUntil?: string;
+    },
+  ) {
     return this.catalog.createItem(orgId, dto);
   }
 
@@ -25,7 +37,16 @@ export class RewardCatalogController {
   updateItem(
     @Param('orgId') orgId: string,
     @Param('id') id: string,
-    @Body() dto: Partial<{ name: string; description: string; pointsCost: number; isActive: boolean }>,
+    @Body()
+    dto: Partial<{
+      name: string;
+      description: string;
+      pointsCost: number;
+      isActive: boolean;
+      availableDays: string[] | null;
+      validFrom: string | null;
+      validUntil: string | null;
+    }>,
   ) {
     return this.catalog.updateItem(orgId, id, dto);
   }

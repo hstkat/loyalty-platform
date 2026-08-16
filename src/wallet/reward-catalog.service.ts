@@ -2,6 +2,8 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletService } from './wallet.service';
 
+const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
 /**
  * On request: replaces the "enter any euro amount" redemption UX with
  * two more constrained, more accurate-to-the-original-program models:
@@ -13,6 +15,13 @@ import { WalletService } from './wallet.service';
  * 2. Reward catalog: fixed items redeemable for a fixed point cost
  *    (e.g. "Gebakje bij de koffie — 100 punten"), independent of the
  *    day's exchange rate — a gift has one price, not a fluctuating one.
+ *
+ * Catalog items optionally support day-of-week and/or date-range
+ * availability (e.g. "only Mon/Tue for 4 weeks", or "only Aug 31st").
+ * The same isCurrentlyAvailable() check runs BOTH when listing items for
+ * the kassa AND at actual redemption time — never trust a possibly-stale
+ * client-side list as the source of truth for something that spends
+ * real points.
  */
 @Injectable()
 export class RewardCatalogService {
@@ -23,14 +32,32 @@ export class RewardCatalogService {
 
   // -- Catalog management ---------------------------------------------------
 
-  async listItems(orgId: string, activeOnly = false) {
-    return this.prisma.rewardCatalogItem.findMany({
+  async listItems(orgId: string, activeOnly = false, currentlyAvailableOnly = false) {
+    const items = await this.prisma.rewardCatalogItem.findMany({
       where: { organizationId: orgId, isActive: activeOnly ? true : undefined },
       orderBy: { pointsCost: 'asc' },
     });
+
+    const withAvailability = items.map((item) => ({
+      ...item,
+      isCurrentlyAvailable: this.isCurrentlyAvailable(item),
+    }));
+
+    return currentlyAvailableOnly ? withAvailability.filter((i) => i.isCurrentlyAvailable) : withAvailability;
   }
 
-  async createItem(orgId: string, dto: { name: string; description?: string; pointsCost: number; locationId?: string }) {
+  async createItem(
+    orgId: string,
+    dto: {
+      name: string;
+      description?: string;
+      pointsCost: number;
+      locationId?: string;
+      availableDays?: string[];
+      validFrom?: string;
+      validUntil?: string;
+    },
+  ) {
     return this.prisma.rewardCatalogItem.create({
       data: {
         organizationId: orgId,
@@ -38,14 +65,34 @@ export class RewardCatalogService {
         description: dto.description,
         pointsCost: dto.pointsCost,
         locationId: dto.locationId,
+        availableDays: dto.availableDays as never,
+        validFrom: dto.validFrom ? new Date(dto.validFrom) : undefined,
+        validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
       },
     });
   }
 
-  async updateItem(orgId: string, id: string, dto: Partial<{ name: string; description: string; pointsCost: number; isActive: boolean }>) {
+  async updateItem(
+    orgId: string,
+    id: string,
+    dto: Partial<{
+      name: string;
+      description: string;
+      pointsCost: number;
+      isActive: boolean;
+      availableDays: string[] | null;
+      validFrom: string | null;
+      validUntil: string | null;
+    }>,
+  ) {
     const item = await this.prisma.rewardCatalogItem.findFirst({ where: { id, organizationId: orgId } });
     if (!item) throw new NotFoundException('Reward catalog item not found');
-    return this.prisma.rewardCatalogItem.update({ where: { id }, data: dto });
+
+    const data: Record<string, unknown> = { ...dto };
+    if ('validFrom' in dto) data.validFrom = dto.validFrom ? new Date(dto.validFrom) : null;
+    if ('validUntil' in dto) data.validUntil = dto.validUntil ? new Date(dto.validUntil) : null;
+
+    return this.prisma.rewardCatalogItem.update({ where: { id }, data: data as never });
   }
 
   async deleteItem(orgId: string, id: string) {
@@ -53,6 +100,22 @@ export class RewardCatalogService {
     if (!item) throw new NotFoundException('Reward catalog item not found');
     await this.prisma.rewardCatalogItem.delete({ where: { id } });
     return { deleted: true };
+  }
+
+  // -- Availability check (day-of-week + date range), shared by list & redeem --
+
+  private isCurrentlyAvailable(item: { availableDays: unknown; validFrom: Date | null; validUntil: Date | null }, now: Date = new Date()): boolean {
+    if (item.validFrom && now < item.validFrom) return false;
+    if (item.validUntil) {
+      const endOfDay = new Date(item.validUntil);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      if (now > endOfDay) return false;
+    }
+    if (item.availableDays) {
+      const days = item.availableDays as string[];
+      if (days.length > 0 && !days.includes(WEEKDAYS[now.getUTCDay()])) return false;
+    }
+    return true;
   }
 
   // -- Fixed-block redemption size (credit_rules.redemptionBlockSize) -------
@@ -99,6 +162,9 @@ export class RewardCatalogService {
       where: { id: catalogItemId, organizationId: orgId, isActive: true },
     });
     if (!item) throw new NotFoundException('Cadeau niet gevonden of niet actief');
+    if (!this.isCurrentlyAvailable(item)) {
+      throw new BadRequestException('Dit cadeau is vandaag niet beschikbaar (dag- of periodebeperking)');
+    }
 
     const reservation = await this.wallet.reserveRedemption(orgId, customerId, {
       amount: item.pointsCost,
