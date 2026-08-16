@@ -8,9 +8,10 @@ import { CronController } from './cron.controller';
 import { AudienceFilterService } from '../common/audience-filter.service';
 import { OccupancyModule } from '../occupancy/occupancy.module';
 import { CampaignsModule } from '../campaigns/campaigns.module';
+import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
-  imports: [OccupancyModule, CampaignsModule],
+  imports: [OccupancyModule, CampaignsModule, WalletModule],
   controllers: [AnalyticsController, CronController],
   providers: [AnalyticsService, AiAssistantService, AudienceFilterService, MailgunService, DailyClosingService],
 })

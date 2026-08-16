@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ExchangeRateService } from '../wallet/exchange-rate.service';
 
 /**
  * Implements Module 10's KPI definitions (design doc section 2), computed
@@ -8,7 +9,10 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Injectable()
 export class AnalyticsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private exchangeRate: ExchangeRateService,
+  ) {}
 
   async getDashboard(orgId: string) {
     const monthStart = new Date();
@@ -138,7 +142,7 @@ export class AnalyticsService {
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(`${date}T23:59:59.999Z`);
 
-    const [transactions, issued, redeemedEntries, expired, rateRule] = await Promise.all([
+    const [transactions, issued, redeemedEntries, expired] = await Promise.all([
       this.prisma.transaction.findMany({
         where: { organizationId: orgId, status: 'completed', occurredAt: { gte: dayStart, lte: dayEnd } },
         select: { totalAmount: true, customerId: true },
@@ -163,7 +167,6 @@ export class AnalyticsService {
         where: { organizationId: orgId, entryType: 'expiration', occurredAt: { gte: dayStart, lte: dayEnd } },
         _sum: { amount: true },
       }),
-      this.prisma.redemptionRateRule.findFirst({ where: { organizationId: orgId, isActive: true } }),
     ]);
 
     const grossRevenue = transactions.reduce((sum, t) => sum + Number(t.totalAmount), 0);
@@ -184,10 +187,12 @@ export class AnalyticsService {
     const pointsExpired = Math.abs(Number(expired._sum.amount ?? 0));
 
     // Redeemed points' euro-equivalent uses the SAME day's rate they were
-    // redeemed at — not today's rate, since the rate varies by day
-    // (design doc: 250 punten = €10 op maandag, €5 op vrijdag).
+    // redeemed at — not "any active rule", since the rate varies by day
+    // (design doc: 250 punten = €10 op maandag, €5 op vrijdag). Reuses
+    // ExchangeRateService's real day-matching logic, the same one the
+    // kassa itself uses — no second, divergent implementation.
     const dayName = ['zondag', 'maandag', 'dinsdag', 'woensdag', 'donderdag', 'vrijdag', 'zaterdag'][dayStart.getUTCDay()];
-    const pointsPerEuro = rateRule ? Number(rateRule.pointsPerEuro) : 1;
+    const pointsPerEuro = await this.exchangeRate.getPointsPerEuro(orgId, undefined, dayStart);
     const redeemedEuroValue = pointsPerEuro > 0 ? round2(pointsRedeemed / pointsPerEuro) : 0;
 
     return {
