@@ -12,9 +12,9 @@ const FIELD_ALIASES: Record<string, string[]> = {
   external_customer_id: ['customerid', 'customer id', 'memberid', 'member id', 'piggyid', 'piggy id', 'externalid', 'id'],
   created_at: ['createdat', 'created at', 'registrationdate', 'registratiedatum', 'signupdate', 'joindate'],
   language: ['language', 'taal', 'locale'],
-  points_balance: ['points', 'pointsbalance', 'points balance', 'balance', 'saldo', 'puntensaldo', 'currentpoints', 'current points'],
-  lifetime_earned: ['lifetimeearned', 'lifetime earned', 'totalearned', 'total earned', 'totaalgespaard'],
-  lifetime_redeemed: ['lifetimeredeemed', 'lifetime redeemed', 'totalredeemed', 'total redeemed', 'totaalbesteed'],
+  points_balance: ['points', 'punten', 'punt', 'pointsbalance', 'points balance', 'balance', 'saldo', 'puntensaldo', 'currentpoints', 'current points'],
+  lifetime_earned: ['lifetimeearned', 'lifetime earned', 'totalearned', 'total earned', 'totaalgespaard', 'gespaard'],
+  lifetime_redeemed: ['lifetimeredeemed', 'lifetime redeemed', 'totalredeemed', 'total redeemed', 'totaalbesteed', 'besteed'],
   tier: ['tier', 'status', 'level', 'niveau'],
   tags: ['tags', 'labels'],
 };
