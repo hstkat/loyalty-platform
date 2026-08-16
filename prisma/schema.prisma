@@ -200,6 +200,7 @@ model Customer {
   // Guest App Authentication
   guestLoginCodes GuestLoginCode[]
   guestSessions   GuestSession[]
+  guestPushTokens GuestPushToken[]
 
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
@@ -1319,6 +1320,24 @@ model GuestSession {
 
   @@index([customerId])
   @@map("guest_sessions")
+}
+
+// Expo push-tokens per toestel — één klant kan meerdere toestellen hebben
+// (bijv. na een telefoonwissel blijft het oude token even bestaan totdat
+// het ongeldig raakt). Nooit gevoelig, maar wel persoonlijk: alleen
+// gebruikt om die specifieke klant een melding te kunnen sturen.
+model GuestPushToken {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  expoPushToken String @unique @map("expo_push_token")
+  deviceInfo String?  @map("device_info")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("guest_push_tokens")
 }
 
 // ============================================================================

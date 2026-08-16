@@ -22,6 +22,15 @@ class VerifyCodeDto {
   deviceInfo?: string;
 }
 
+class RegisterPushTokenDto {
+  @IsString()
+  expoPushToken!: string;
+
+  @IsOptional()
+  @IsString()
+  deviceInfo?: string;
+}
+
 /**
  * The guest-app API surface: public login endpoints (no guard — a guest
  * has no token yet when logging in) plus authenticated "my profile"
@@ -129,5 +138,31 @@ export class GuestAppController {
       blockSize,
       blockEuroValue: blockSize ? Math.round((blockSize / Number(rule.pointsPerEuro)) * 100) / 100 : null,
     }));
+  }
+
+  @Post('me/push-token')
+  @UseGuards(GuestSessionGuard)
+  async registerPushToken(
+    @Req() req: { guestCustomer: { id: string } },
+    @Body() dto: RegisterPushTokenDto,
+  ) {
+    // Upsert on the token itself (unique) rather than on customer+token,
+    // so if a guest logs in on a NEW phone, the token that phone reports
+    // gets reassigned to them — a stale token from a previous owner
+    // (e.g. a second-hand phone) never silently keeps receiving someone
+    // else's messages.
+    await this.prisma.guestPushToken.upsert({
+      where: { expoPushToken: dto.expoPushToken },
+      create: {
+        customerId: req.guestCustomer.id,
+        expoPushToken: dto.expoPushToken,
+        deviceInfo: dto.deviceInfo,
+      },
+      update: {
+        customerId: req.guestCustomer.id,
+        deviceInfo: dto.deviceInfo,
+      },
+    });
+    return { registered: true };
   }
 }

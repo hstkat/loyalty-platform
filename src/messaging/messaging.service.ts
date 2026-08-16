@@ -5,6 +5,7 @@ import { renderTemplate } from './template-renderer';
 import { SendMessageDto } from './dto/messaging.dto';
 import { MailgunService } from '../common/mailgun.service';
 import { WhatsAppService } from '../common/whatsapp.service';
+import { PushNotificationService } from '../common/push-notification.service';
 
 const DEFAULT_FREQUENCY_CAP = { maxMessages: 2, periodDays: 7 }; // marketing default, section 7
 
@@ -24,6 +25,7 @@ export class MessagingService {
     private prisma: PrismaService,
     private mailgun: MailgunService,
     private whatsapp: WhatsAppService,
+    private pushNotification: PushNotificationService,
   ) {}
 
   async send(orgId: string, dto: SendMessageDto) {
@@ -210,6 +212,32 @@ export class MessagingService {
           where: { id: queueItem.id },
           data: { status: 'failed', failureReason: sendResult.reason },
         });
+      }
+    }
+
+    // Real delivery for push — no provider account/API key needed at all
+    // (Expo's push service is free), unlike the other channels. A
+    // customer may have zero, one, or several registered devices; if
+    // none, this simply has nothing to send to and the queue item stays
+    // as a harmless no-op rather than an error.
+    if (channel === 'push') {
+      const tokens = await this.prisma.guestPushToken.findMany({
+        where: { customerId },
+        select: { expoPushToken: true },
+      });
+      if (tokens.length > 0) {
+        const sendResult = await this.pushNotification.sendPush(
+          tokens.map((t) => t.expoPushToken),
+          resolvedTemplate.name,
+          renderedBody,
+          { templateId: resolvedTemplate.id },
+        );
+        if (!sendResult.sent) {
+          await this.prisma.messageQueueItem.update({
+            where: { id: queueItem.id },
+            data: { status: 'failed', failureReason: sendResult.reason },
+          });
+        }
       }
     }
 
