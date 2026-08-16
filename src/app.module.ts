@@ -17,6 +17,7 @@ import { OccupancyModule } from './occupancy/occupancy.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PassModule } from './pass/pass.module';
 import { GuestAuthModule } from './guest-auth/guest-auth.module';
+import { ImportModule } from './import/import.module';
 
 @Module({
   imports: [
@@ -38,6 +39,7 @@ import { GuestAuthModule } from './guest-auth/guest-auth.module';
     AnalyticsModule,
     PassModule,
     GuestAuthModule,
+    ImportModule,
   ],
 })
 export class AppModule {}

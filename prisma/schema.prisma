@@ -116,6 +116,12 @@ model Customer {
   dateOfBirth DateTime? @map("date_of_birth") @db.Date
   language    String    @default("nl")
 
+  // Herkomst-identificatie voor migraties (bijv. Piggy-import) — maakt
+  // toekomstige heraanlevering van dezelfde bron veilig herkenbaar,
+  // zonder een apart identificatie-model te introduceren.
+  externalId     String? @map("external_id")
+  externalSource String? @map("external_source")
+
   loyaltyStatus LoyaltyStatus @default(active) @map("loyalty_status")
 
   // Forward-looking: full tier system is designed in a later module.
@@ -209,6 +215,7 @@ model Customer {
   @@index([organizationId, email])
   @@index([organizationId, phone])
   @@index([organizationId, loyaltyStatus])
+  @@index([organizationId, externalSource, externalId])
   @@map("customers")
 }
 
@@ -1119,6 +1126,7 @@ enum WalletLedgerEntryType {
   expiration
   transfer
   correction
+  migration_import
 }
 
 enum WalletLedgerEntryStatus {
@@ -2300,4 +2308,103 @@ model ProactiveInsight {
 
   @@index([organizationId, dismissedAt])
   @@map("proactive_insights")
+}
+
+// ============================================================================
+// Data Import (Piggy-migratie e.d.) — hergebruikt Customer/Wallet/ledger,
+// geen los klant- of saldomodel. Bestandsinhoud wordt tijdelijk als JSON
+// bewaard op de job zelf (geen objectopslag beschikbaar in deze omgeving),
+// en na afronding leeggemaakt (zie ImportService — bewuste, gedocumenteerde
+// keuze i.p.v. een aparte bestandsopslagdienst).
+// ============================================================================
+
+enum ImportJobStatus {
+  parsed
+  previewed
+  processing
+  completed
+  failed
+  rolled_back
+}
+
+enum ImportRowAction {
+  new_customer
+  matched_customer
+  review_required
+  invalid
+  skip
+  duplicate
+}
+
+model ImportJob {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String?  @map("location_id") @db.Uuid
+  source         String   @default("piggy")
+  filename       String
+  fileHash       String   @map("file_hash")
+
+  status         ImportJobStatus @default(parsed)
+
+  totalRows      Int      @default(0) @map("total_rows")
+  processedRows  Int      @default(0) @map("processed_rows")
+  successRows    Int      @default(0) @map("success_rows")
+  errorRows      Int      @default(0) @map("error_rows")
+  reviewRows     Int      @default(0) @map("review_rows")
+  duplicateRows  Int      @default(0) @map("duplicate_rows")
+
+  columnMapping  Json?    @map("column_mapping")
+  // "ratio" (bijv. 100 punten = €1) of "one_to_one" (1 punt = 1 punt)
+  conversionType String?  @map("conversion_type")
+  conversionRate Decimal? @map("conversion_rate") @db.Decimal(10, 4)
+  // "add" (veilige standaard) of "replace" (met correctie-ledgerentry)
+  balanceMode    String   @default("add") @map("balance_mode")
+
+  totalSourceBalance    Decimal? @map("total_source_balance") @db.Decimal(14, 2)
+  totalConvertedCredit  Decimal? @map("total_converted_credit") @db.Decimal(14, 2)
+
+  // Tijdelijke opslag van de geparste rijen — geleegd na afronding of na
+  // de retentieperiode (zie ImportService.purgeExpiredRawData).
+  rawRows Json? @map("raw_rows")
+
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
+  startedAt       DateTime? @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  rolledBackAt    DateTime? @map("rolled_back_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  records ImportRecord[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, fileHash])
+  @@map("import_jobs")
+}
+
+model ImportRecord {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  importJobId String @map("import_job_id") @db.Uuid
+
+  rowNumber Int    @map("row_number")
+  rowHash   String @map("row_hash")
+  rawData   Json   @map("raw_data")
+
+  action            ImportRowAction
+  matchedCustomerId String? @map("matched_customer_id") @db.Uuid
+  sourceBalance     Decimal? @map("source_balance") @db.Decimal(14, 2)
+  convertedCredit   Decimal? @map("converted_credit") @db.Decimal(14, 2)
+  errorMessage      String? @map("error_message")
+
+  ledgerEntryId         String? @map("ledger_entry_id") @db.Uuid
+  reversalLedgerEntryId String? @map("reversal_ledger_entry_id") @db.Uuid
+  customerCreatedByImport Boolean @default(false) @map("customer_created_by_import")
+
+  committedAt DateTime? @map("committed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  importJob ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@unique([importJobId, rowHash])
+  @@index([importJobId, action])
+  @@map("import_records")
 }

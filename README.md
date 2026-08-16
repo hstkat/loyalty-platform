@@ -974,6 +974,57 @@ sjablonen zijn om tegen te testen.
 2. WhatsApp Business Platform activeren, telefoonnummer verifiëren
 3. Minstens één berichtsjabloon aanmaken en laten goedkeuren (kan uren tot dagen duren)
 
+## 26. Klanten-/tegoedimport (Piggy-migratie)
+
+Op verzoek toegevoegd: een importmodule voor het migreren van bestaande
+klanten en hun puntensaldo vanuit een ander systeem (bijv. Piggy), via
+een .csv- of .xlsx-bestand. Bouwt volledig voort op de bestaande
+Customer/Wallet/ledger-architectuur — **geen** los klant- of saldomodel.
+
+**Belangrijke, bewuste aanpassing aan de specificatie — serverloze
+omgeving:** dit platform draait op Vercel serverless functies (max. 30
+seconden per aanroep, geen achtergrond-wachtrij-infrastructuur zoals een
+Bull/Redis-queue). Een import van duizenden rijen kan dus niet in één
+lange HTTP-aanroep worden verwerkt. In plaats daarvan verwerkt het
+`/commit`-endpoint telkens een kleine batch (standaard 100 rijen), en
+roept de browser dit endpoint automatisch herhaald aan totdat alles
+verwerkt is — dat lost zowel het tijdslimiet-probleem als de gevraagde
+voortgangsindicatie in één keer op, zonder een aparte wachtrijserver.
+Bestandsgrootte is hierdoor ook begrensd (max. 5 MB, max. 10.000 rijen
+per bestand) — grotere bronbestanden moeten worden opgesplitst.
+
+**Datamodel:** `ImportJob` (één per geüpload bestand, met kolom-mapping,
+conversie-instellingen, voortgangstellingen) en `ImportRecord` (één per
+rij, met de bepaalde actie en — na boeking — de gekoppelde
+`WalletLedgerEntry`). `Customer` heeft twee nieuwe velden
+(`externalId`/`externalSource`) voor herkenning bij een latere
+heraanlevering — geen apart identificatiemodel.
+
+**Boeking:** elke gemigreerde balans wordt vastgelegd als een echte
+`WalletLedgerEntry` met `entryType: migration_import` (nieuwe waarde in
+het bestaande enum), inclusief metadata (bronklant-ID, oorspronkelijke
+punten, conversieratio, bestandsnaam) — nooit een rechtstreekse
+aanpassing van het wallet-saldo. Bij "vervang saldo" wordt eerst een
+`correction`-boeking gemaakt die het bestaande saldo naar nul terugzet,
+zodat de volledige geschiedenis intact blijft.
+
+**Matching:** uitsluitend op exact e-mailadres, genormaliseerd
+telefoonnummer, of eerder-opgeslagen externe klant-ID — nooit op naam of
+geboortedatum. Tegenstrijdige matches (e-mail wijst naar klant A,
+telefoon naar klant B) gaan altijd naar "controle nodig", nooit
+automatisch gekozen.
+
+**Bestandsverwerking:** gebruikt `exceljs` (niet het populairdere
+`xlsx`-pakket) — de npm-registry-versie van `xlsx` heeft twee bekende,
+ongepatchte kwetsbaarheden (prototype pollution, ReDoS) die specifiek
+relevant zijn bij het verwerken van geüploade, niet-vertrouwde bestanden;
+`exceljs` heeft dat probleem niet.
+
+**Bekende vereenvoudigingen t.o.v. de volledige specificatie:**
+- Geen malware-scan op geüploade bestanden (alleen bestandstype/-grootte-validatie) — een aparte antivirus-scandienst is niet aangesloten.
+- Ruwe bestandsdata wordt tijdelijk in de database bewaard (geen aparte objectopslag beschikbaar) en automatisch geleegd zodra een import voltooid is.
+- Rollback verwijdert door de import aangemaakte klanten alleen als ze werkelijk geen enkele andere activiteit hebben (transacties, reserveringen, overige ledgermutaties) — anders blijft het profiel bestaan en wordt alleen de saldomutatie teruggedraaid.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |
