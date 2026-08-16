@@ -11,13 +11,11 @@ export class CreateCustomerDto {
   @IsString()
   lastName?: string;
 
-  @IsOptional()
   @IsEmail()
-  email?: string;
+  email!: string;
 
-  @IsOptional()
   @IsString()
-  phone?: string;
+  phone!: string;
 
   @IsOptional()
   @IsDateString()
