@@ -675,16 +675,21 @@
   let selectedCatalogItemId = null;
   let activeRedeemTab = 'blocks';
 
+  let pointsPerEuroToday = null;
+
   async function loadRedeemConfig() {
     try {
       const { orgId } = getConfig();
-      const [blockResult, items] = await Promise.all([
+      const [blockResult, items, rate] = await Promise.all([
         apiGet('/organizations/' + orgId + '/redemption-block-size'),
         apiGet('/organizations/' + orgId + '/reward-catalog?activeOnly=true&currentlyAvailableOnly=true'),
+        apiGet('/organizations/' + orgId + '/redemption-rate/today').catch(() => null),
       ]);
       blockSize = blockResult.blockSize;
       catalogItems = items;
+      pointsPerEuroToday = rate ? rate.pointsPerEuro : null;
       els.blockSizeLabel.textContent = blockSize || '—';
+      refreshBlockDisplay();
     } catch {
       els.blockSizeLabel.textContent = '—';
     }
@@ -693,11 +698,20 @@
   function refreshBlockDisplay() {
     els.blockCount.textContent = blockCount;
     els.blockSizeLabel.textContent = blockSize || '—';
-    els.redeemQuoteDiv.textContent = '';
     els.redeemConfirmBtn.disabled = !blockSize;
     els.blockMinus.disabled = blockCount <= 1;
+
     if (!blockSize) {
       els.redeemQuoteDiv.innerHTML = '<span class="warn">Geen blokgrootte ingesteld — zie het Cadeaus-scherm.</span>';
+      return;
+    }
+
+    const totalPoints = blockCount * blockSize;
+    if (pointsPerEuroToday) {
+      const euroValue = (totalPoints / pointsPerEuroToday).toFixed(2).replace('.', ',');
+      els.redeemQuoteDiv.innerHTML = `<span class="pts">€${euroValue}</span> korting op deze rekening (koers vandaag: ${pointsPerEuroToday} pt/€)`;
+    } else {
+      els.redeemQuoteDiv.textContent = '';
     }
   }
 

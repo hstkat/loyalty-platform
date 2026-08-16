@@ -52,18 +52,23 @@ export class RewardCatalogService {
       name: string;
       description?: string;
       pointsCost: number;
+      euroValue: number;
       locationId?: string;
       availableDays?: string[];
       validFrom?: string;
       validUntil?: string;
     },
   ) {
+    if (dto.euroValue === undefined || dto.euroValue === null || dto.euroValue < 0) {
+      throw new BadRequestException('euroValue is verplicht (de werkelijke kostprijs/waarde van dit cadeau, voor de boekhouding)');
+    }
     return this.prisma.rewardCatalogItem.create({
       data: {
         organizationId: orgId,
         name: dto.name,
         description: dto.description,
         pointsCost: dto.pointsCost,
+        euroValue: dto.euroValue,
         locationId: dto.locationId,
         availableDays: dto.availableDays as never,
         validFrom: dto.validFrom ? new Date(dto.validFrom) : undefined,
@@ -79,6 +84,7 @@ export class RewardCatalogService {
       name: string;
       description: string;
       pointsCost: number;
+      euroValue: number;
       isActive: boolean;
       availableDays: string[] | null;
       validFrom: string | null;
@@ -173,6 +179,7 @@ export class RewardCatalogService {
     });
     const confirmation = await this.wallet.confirmRedemption(orgId, customerId, reservation.reservationId, {
       reason: `Cadeau: ${item.name}`,
+      metadata: { rewardCatalogItemId: item.id, euroValue: Number(item.euroValue) },
     });
     return { ...confirmation, catalogItem: item };
   }

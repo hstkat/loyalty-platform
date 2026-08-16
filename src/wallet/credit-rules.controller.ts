@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { ExchangeRateService } from './exchange-rate.service';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
@@ -24,10 +24,19 @@ export class CreditRulesController {
     return this.prisma.creditRule.create({ data: { organizationId: orgId, ...dto } as never });
   }
 
+  // Bewerkt een BESTAANDE credit-rule (bijv. de blokgrootte aanpassen)
+  // in plaats van er een nieuwe aan te maken — voorkomt de dubbelzinnige
+  // situatie van meerdere actieve rijen die we eerder tegenkwamen.
+  @Patch('credit-rules/:id')
+  @RequirePermissions('credit_rules.write')
+  updateCreditRule(@Param('orgId') orgId: string, @Param('id') id: string, @Body() dto: Record<string, unknown>) {
+    return this.prisma.creditRule.update({ where: { id }, data: dto as never });
+  }
+
   @Get('redemption-rate-rules')
   @RequirePermissions('credit_rules.read')
   listRateRules(@Param('orgId') orgId: string) {
-    return this.prisma.redemptionRateRule.findMany({ where: { organizationId: orgId } });
+    return this.prisma.redemptionRateRule.findMany({ where: { organizationId: orgId }, orderBy: { createdAt: 'asc' } });
   }
 
   // Voorbeeld body voor het oude puntensysteem, exact gereproduceerd:
@@ -37,6 +46,19 @@ export class CreditRulesController {
   @RequirePermissions('credit_rules.write')
   createRateRule(@Param('orgId') orgId: string, @Body() dto: Record<string, unknown>) {
     return this.prisma.redemptionRateRule.create({ data: { organizationId: orgId, ...dto } as never });
+  }
+
+  @Patch('redemption-rate-rules/:id')
+  @RequirePermissions('credit_rules.write')
+  updateRateRule(@Param('orgId') orgId: string, @Param('id') id: string, @Body() dto: Record<string, unknown>) {
+    return this.prisma.redemptionRateRule.update({ where: { id }, data: dto as never });
+  }
+
+  @Delete('redemption-rate-rules/:id')
+  @RequirePermissions('credit_rules.write')
+  async deleteRateRule(@Param('orgId') orgId: string, @Param('id') id: string) {
+    await this.prisma.redemptionRateRule.delete({ where: { id } });
+    return { deleted: true };
   }
 
   // Aggregate, customer-independent "what's today's rate" — used by the

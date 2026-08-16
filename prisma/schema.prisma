@@ -1271,6 +1271,7 @@ model RewardCatalogItem {
   name           String
   description    String?
   pointsCost     Int      @map("points_cost")
+  euroValue      Decimal  @map("euro_value") @db.Decimal(10, 2) // werkelijke kostprijs/waarde — voor boekhouding, los van het puntenaantal
   availableDays  Json?    @map("available_days") // e.g. ["monday","tuesday"] — null = elke dag
   validFrom      DateTime? @map("valid_from") @db.Date
   validUntil     DateTime? @map("valid_until") @db.Date

@@ -23,6 +23,7 @@ export class RewardCatalogController {
       name: string;
       description?: string;
       pointsCost: number;
+      euroValue: number;
       locationId?: string;
       availableDays?: string[];
       validFrom?: string;
@@ -42,6 +43,7 @@ export class RewardCatalogController {
       name: string;
       description: string;
       pointsCost: number;
+      euroValue: number;
       isActive: boolean;
       availableDays: string[] | null;
       validFrom: string | null;

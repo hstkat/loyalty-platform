@@ -138,7 +138,7 @@ export class AnalyticsService {
     const dayStart = new Date(`${date}T00:00:00.000Z`);
     const dayEnd = new Date(`${date}T23:59:59.999Z`);
 
-    const [transactions, issued, redeemed, expired, rateRule] = await Promise.all([
+    const [transactions, issued, redeemedEntries, expired, rateRule] = await Promise.all([
       this.prisma.transaction.findMany({
         where: { organizationId: orgId, status: 'completed', occurredAt: { gte: dayStart, lte: dayEnd } },
         select: { totalAmount: true, customerId: true },
@@ -151,9 +151,13 @@ export class AnalyticsService {
         },
         _sum: { amount: true },
       }),
-      this.prisma.walletLedgerEntry.aggregate({
+      // Fetched individually (not just aggregated) so we can separate
+      // generic points redemptions from catalog-item (cadeau) redemptions
+      // — the latter carry a real euro cost that the accounting needs,
+      // distinct from the points-economy exchange rate.
+      this.prisma.walletLedgerEntry.findMany({
         where: { organizationId: orgId, entryType: 'redeem', occurredAt: { gte: dayStart, lte: dayEnd } },
-        _sum: { amount: true },
+        select: { amount: true, metadata: true },
       }),
       this.prisma.walletLedgerEntry.aggregate({
         where: { organizationId: orgId, entryType: 'expiration', occurredAt: { gte: dayStart, lte: dayEnd } },
@@ -164,7 +168,19 @@ export class AnalyticsService {
 
     const grossRevenue = transactions.reduce((sum, t) => sum + Number(t.totalAmount), 0);
     const pointsIssued = Number(issued._sum.amount ?? 0);
-    const pointsRedeemed = Math.abs(Number(redeemed._sum.amount ?? 0));
+
+    let pointsRedeemed = 0;
+    let catalogGiftsCount = 0;
+    let catalogGiftsValue = 0;
+    for (const entry of redeemedEntries) {
+      const amount = Math.abs(Number(entry.amount));
+      pointsRedeemed += amount;
+      const meta = entry.metadata as { rewardCatalogItemId?: string; euroValue?: number } | null;
+      if (meta?.rewardCatalogItemId) {
+        catalogGiftsCount += 1;
+        catalogGiftsValue += Number(meta.euroValue ?? 0);
+      }
+    }
     const pointsExpired = Math.abs(Number(expired._sum.amount ?? 0));
 
     // Redeemed points' euro-equivalent uses the SAME day's rate they were
@@ -182,6 +198,8 @@ export class AnalyticsService {
       pointsIssued: round2(pointsIssued),
       pointsRedeemed: round2(pointsRedeemed),
       redeemedEuroValue,
+      catalogGiftsCount,
+      catalogGiftsValue: round2(catalogGiftsValue),
       pointsExpired: round2(pointsExpired),
       pointsPerEuroThatDay: pointsPerEuro,
     };

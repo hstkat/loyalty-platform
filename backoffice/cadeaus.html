@@ -130,6 +130,20 @@
   .btn-primary { background: var(--coral); color: var(--white); border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
   .btn-secondary { background: none; border: 1px solid var(--line); color: var(--muted); padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; }
 
+  .rate-rule-row {
+    display: flex; justify-content: space-between; align-items: center; background: var(--white);
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; font-size: 13px;
+  }
+  .rate-rule-row .name { font-family: 'Fraunces', serif; color: var(--navy); font-size: 15px; }
+  .rate-rule-row .days { font-size: 11px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .rate-rule-row .right { display: flex; align-items: center; gap: 12px; }
+  .rate-rule-row .rate { font-family: 'Fraunces', serif; color: var(--wood); }
+  .rate-rule-row .example { font-size: 11px; color: var(--muted); }
+  .rate-rule-row button {
+    background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  }
+
   footer { max-width: 900px; margin: 0 auto; padding: 24px 32px 40px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
@@ -175,6 +189,37 @@
     </div>
   </div>
 
+  <div class="block-panel">
+    <h2>Wisselkoers per dag</h2>
+    <p class="sub">Hoeveel punten een euro tegoed kost, per dag van de week — bijv. doordeweeks 25 punten per euro (250 pt = €10), in het weekend 50 punten per euro (250 pt = €5). Zonder regels geldt overal 1 punt = €1.</p>
+
+    <div id="rate-rule-list"></div>
+
+    <div class="availability-block" style="margin-top: 16px;">
+      <div class="availability-title">Nieuwe wisselkoersregel</div>
+      <div class="form-row">
+        <div class="form-field">
+          <label for="rate-name">Naam</label>
+          <input type="text" id="rate-name" placeholder="Bijv. Weekdagen">
+        </div>
+        <div class="form-field">
+          <label for="rate-points-per-euro">Punten per euro</label>
+          <input type="number" id="rate-points-per-euro" min="0.01" step="0.01" placeholder="25">
+        </div>
+      </div>
+      <div class="day-picker" id="rate-day-picker" style="margin-top: 10px;">
+        <label><input type="checkbox" value="monday"> Ma</label>
+        <label><input type="checkbox" value="tuesday"> Di</label>
+        <label><input type="checkbox" value="wednesday"> Wo</label>
+        <label><input type="checkbox" value="thursday"> Do</label>
+        <label><input type="checkbox" value="friday"> Vr</label>
+        <label><input type="checkbox" value="saturday"> Za</label>
+        <label><input type="checkbox" value="sunday"> Zo</label>
+      </div>
+      <button type="button" class="btn-primary" id="rate-rule-save" style="margin-top: 14px;">Wisselkoersregel opslaan</button>
+    </div>
+  </div>
+
   <div class="toolbar">
     <h2>Cadeaucatalogus</h2>
     <button class="new-btn" id="new-item-btn">+ Nieuw cadeau</button>
@@ -182,7 +227,7 @@
 
   <div class="panel" id="new-panel">
     <form id="item-form">
-      <div class="form-row">
+      <div class="form-row" style="grid-template-columns: 1.4fr 1fr 1fr;">
         <div class="form-field">
           <label for="f-name">Naam</label>
           <input type="text" id="f-name" required placeholder="Bijv. Gebakje bij de koffie">
@@ -191,11 +236,16 @@
           <label for="f-cost">Punten</label>
           <input type="number" id="f-cost" min="1" step="1" required placeholder="100">
         </div>
+        <div class="form-field">
+          <label for="f-value">Waarde (€)</label>
+          <input type="number" id="f-value" min="0" step="0.01" required placeholder="2,50">
+        </div>
         <div class="form-field full">
           <label for="f-desc">Omschrijving (optioneel)</label>
           <input type="text" id="f-desc" placeholder="Korte toelichting voor het personeel">
         </div>
       </div>
+      <p class="availability-hint">De waarde in euro's is de werkelijke kostprijs van dit cadeau — nodig voor de boekhouding en het dagafsluiting-rapport, los van het aantal punten dat de gast betaalt.</p>
 
       <div class="availability-block">
         <div class="availability-title">Beschikbaarheid (optioneel)</div>
@@ -282,19 +332,60 @@
     configSave: document.getElementById('config-save'),
     apiBaseInput: document.getElementById('api-base'),
     orgIdInput: document.getElementById('org-id'),
+    rateRuleList: document.getElementById('rate-rule-list'),
+    rateName: document.getElementById('rate-name'),
+    ratePointsPerEuro: document.getElementById('rate-points-per-euro'),
+    rateRuleSave: document.getElementById('rate-rule-save'),
   };
+
+  const DAY_LABELS_SHORT = { monday: 'ma', tuesday: 'di', wednesday: 'wo', thursday: 'do', friday: 'vr', saturday: 'za', sunday: 'zo' };
+
+  function renderRateRules(rules) {
+    if (rules.length === 0) {
+      els.rateRuleList.innerHTML = '<div class="empty-note">Geen wisselkoersregels — overal geldt 1 punt = €1.</div>';
+      return;
+    }
+    els.rateRuleList.innerHTML = rules.map((rule) => {
+      const days = (rule.appliesOnDays || []).map((d) => DAY_LABELS_SHORT[d] || d).join('/') || 'elke dag';
+      const exampleEuro = (250 / Number(rule.pointsPerEuro)).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
+      return `<div class="rate-rule-row">
+        <div>
+          <div class="name">${rule.name}</div>
+          <div class="days">${days}</div>
+        </div>
+        <div class="right">
+          <div style="text-align:right;">
+            <div class="rate">${rule.pointsPerEuro} pt/€</div>
+            <div class="example">250 pt = €${exampleEuro}</div>
+          </div>
+          <button type="button" data-id="${rule.id}" class="rate-delete-btn">Verwijderen</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    els.rateRuleList.querySelectorAll('.rate-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Deze wisselkoersregel verwijderen?')) return;
+        const { orgId } = getConfig();
+        await apiSend('DELETE', '/organizations/' + orgId + '/redemption-rate-rules/' + btn.dataset.id);
+        loadAll();
+      });
+    });
+  }
 
   async function loadAll() {
     els.statusLine.textContent = 'Laden…';
     els.statusLine.classList.remove('error');
     try {
       const { orgId } = getConfig();
-      const [blockSizeResult, items] = await Promise.all([
+      const [blockSizeResult, items, rateRules] = await Promise.all([
         apiGet('/organizations/' + orgId + '/redemption-block-size'),
         apiGet('/organizations/' + orgId + '/reward-catalog'),
+        apiGet('/organizations/' + orgId + '/redemption-rate-rules'),
       ]);
       els.blockSizeInput.value = blockSizeResult.blockSize || '';
       renderItems(items);
+      renderRateRules(rateRules);
       els.statusLine.textContent = items.length + ' cadeau(s) in de catalogus';
     } catch (err) {
       els.statusLine.textContent = 'Kon gegevens niet laden: ' + err.message;
@@ -333,7 +424,10 @@
           ${formatAvailability(item) || ''}
         </div>
         <div class="right">
-          <span class="cost">${item.pointsCost} pt</span>
+          <div style="text-align:right;">
+            <div class="cost">${item.pointsCost} pt</div>
+            <div style="font-size:11px;color:var(--muted);">€${Number(item.euroValue).toFixed(2)} waarde</div>
+          </div>
           <button type="button" data-id="${item.id}" data-active="${item.isActive}" class="toggle-btn">${item.isActive ? 'Deactiveren' : 'Activeren'}</button>
           <button type="button" data-id="${item.id}" class="delete-btn">Verwijderen</button>
         </div>
@@ -389,6 +483,7 @@
       await apiSend('POST', '/organizations/' + orgId + '/reward-catalog', {
         name: document.getElementById('f-name').value,
         pointsCost: parseInt(document.getElementById('f-cost').value, 10),
+        euroValue: parseFloat(document.getElementById('f-value').value),
         description: document.getElementById('f-desc').value || undefined,
         availableDays: selectedDays.length > 0 ? selectedDays : undefined,
         validFrom,
@@ -416,6 +511,36 @@
     localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
     els.configPanel.classList.remove('open');
     loadAll();
+  });
+
+  els.rateRuleSave.addEventListener('click', async () => {
+    const name = els.rateName.value.trim();
+    const pointsPerEuro = parseFloat(els.ratePointsPerEuro.value);
+    const selectedDays = Array.from(document.querySelectorAll('#rate-day-picker input:checked')).map((cb) => cb.value);
+
+    if (!name || !pointsPerEuro || pointsPerEuro <= 0) {
+      alert('Vul een naam en een geldig aantal punten per euro in.');
+      return;
+    }
+    if (selectedDays.length === 0) {
+      alert('Kies minstens één dag waarop deze regel geldt.');
+      return;
+    }
+
+    try {
+      const { orgId } = getConfig();
+      await apiSend('POST', '/organizations/' + orgId + '/redemption-rate-rules', {
+        name,
+        pointsPerEuro,
+        appliesOnDays: selectedDays,
+      });
+      els.rateName.value = '';
+      els.ratePointsPerEuro.value = '';
+      document.querySelectorAll('#rate-day-picker input:checked').forEach((cb) => { cb.checked = false; });
+      loadAll();
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    }
   });
 
   loadAll();
