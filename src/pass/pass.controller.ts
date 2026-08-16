@@ -57,32 +57,32 @@ export class PassController {
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --dark: #0e1c2a; --amber: #1b3a5c; --sand: #f0f4f7; --text-light: #7a8ea0;
-    --teal-light: #6496b5; --coral: #e8604a; --wood: #c47a45; --line: rgba(240,244,247,0.1);
+    --cream: #f6f3ec; --navy-dark: #0e1c2a; --white: #ffffff; --muted: rgba(240,244,247,0.6);
+    --teal-light: #6496b5; --coral: #e8604a; --coral-light: #f08c78; --line: rgba(240,244,247,0.12);
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; min-height: 100vh; background: var(--dark); color: var(--sand);
+    margin: 0; min-height: 100vh; background: var(--cream); color: var(--white);
     font-family: 'Inter', sans-serif; display: flex; align-items: center; justify-content: center;
     padding: 24px;
   }
   .card {
-    width: 100%; max-width: 380px; background: var(--amber); border: 1px solid var(--line);
+    width: 100%; max-width: 380px; background: var(--navy-dark);
     border-radius: 24px; padding: 32px 28px; text-align: center;
   }
-  .brand { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-light); }
+  .brand { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); }
   .name { font-family: 'Fraunces', serif; font-size: 26px; margin: 6px 0 22px; }
-  .balance-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-light); }
-  .balance { font-family: 'Fraunces', serif; font-size: 46px; color: var(--coral); margin: 4px 0 24px; }
+  .balance-label { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .balance { font-family: 'Fraunces', serif; font-size: 46px; color: var(--coral-light); margin: 4px 0 24px; }
   .qr-wrap { background: white; border-radius: 16px; padding: 14px; display: inline-block; }
   .qr-wrap img { display: block; width: 200px; height: 200px; }
   .hint {
-    margin-top: 22px; font-size: 12px; color: var(--text-light); line-height: 1.7;
+    margin-top: 22px; font-size: 12px; color: var(--muted); line-height: 1.7;
     border-top: 1px solid var(--line); padding-top: 18px;
   }
   .hint strong { color: var(--teal-light); }
   .refresh-btn {
-    margin-top: 18px; background: none; border: 1px solid var(--line); color: var(--text-light);
+    margin-top: 18px; background: none; border: 1px solid var(--line); color: var(--muted);
     padding: 9px 18px; border-radius: 20px; font-size: 12px; cursor: pointer;
   }
 </style>

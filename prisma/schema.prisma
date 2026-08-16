@@ -197,6 +197,10 @@ model Customer {
   // Module 9 — Reservations & Occupancy Booster
   reservations Reservation[]
 
+  // Guest App Authentication
+  guestLoginCodes GuestLoginCode[]
+  guestSessions   GuestSession[]
+
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
   // prevents duplicate people lives on CustomerIdentity).
@@ -1278,6 +1282,42 @@ model RewardCatalogItem {
 
   @@index([organizationId, isActive])
   @@map("reward_catalog_items")
+}
+
+// ============================================================================
+// Guest App Authentication — passwordless, e-mail-code-gebaseerd
+// (nodig zodra klanten zelf een publieke app/pagina gebruiken; de
+// backoffice zelf blijft op interne staff-headers werken)
+// ============================================================================
+
+model GuestLoginCode {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  codeHash   String   @map("code_hash") // nooit de ruwe code opslaan
+  expiresAt  DateTime @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("guest_login_codes")
+}
+
+model GuestSession {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash") // nooit het ruwe token opslaan
+  deviceInfo String?  @map("device_info")
+  expiresAt  DateTime @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("guest_sessions")
 }
 
 // ============================================================================

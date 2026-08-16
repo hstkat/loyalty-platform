@@ -16,6 +16,7 @@ import { JourneysModule } from './journeys/journeys.module';
 import { OccupancyModule } from './occupancy/occupancy.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { PassModule } from './pass/pass.module';
+import { GuestAuthModule } from './guest-auth/guest-auth.module';
 
 @Module({
   imports: [
@@ -36,6 +37,7 @@ import { PassModule } from './pass/pass.module';
     OccupancyModule,
     AnalyticsModule,
     PassModule,
+    GuestAuthModule,
   ],
 })
 export class AppModule {}

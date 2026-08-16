@@ -9,99 +9,94 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --dark: #0e1c2a; --amber: #1b3a5c; --amber-light: #2e5f8a; --sand: #f0f4f7;
-    --text-light: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
-    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45; --mid: #3a4a5c;
-    --line: rgba(240, 244, 247, 0.08);
+    --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a;
+    --body-text: #3a4a5c; --muted: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
+    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45;
+    --line: rgba(27, 58, 92, 0.12); --shadow: 0 2px 14px rgba(27, 58, 92, 0.07);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--dark); color: var(--sand); font-family: 'Inter', sans-serif; min-height: 100vh; }
+  body { margin: 0; background: var(--cream); color: var(--body-text); font-family: 'Inter', sans-serif; min-height: 100vh; }
 
-  .tideline { position: relative; height: 3px; overflow: hidden; background: var(--line); }
-  .tideline::before {
-    content: ''; position: absolute; inset: 0; width: 200%;
-    background: linear-gradient(90deg, transparent, var(--coral), var(--teal-light), transparent);
-    animation: tide 8s linear infinite;
-  }
-  @keyframes tide { from { transform: translateX(-50%); } to { transform: translateX(0%); } }
-  @media (prefers-reduced-motion: reduce) { .tideline::before { animation: none; } }
+  .accent-line { height: 3px; background: linear-gradient(90deg, var(--teal), var(--coral)); }
 
-  header {
-    max-width: 900px; margin: 0 auto; padding: 32px 32px 20px;
+  header { background: var(--navy-dark); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .header-inner {
+    max-width: 900px; margin: 0 auto; padding: 24px 32px;
     display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;
   }
-  .brand-eyebrow { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-light); margin: 0 0 6px; }
-  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 28px; margin: 0; letter-spacing: -0.01em; }
+  .brand-eyebrow { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(240,244,247,0.55); margin: 0 0 6px; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 26px; margin: 0; letter-spacing: -0.01em; color: var(--white); }
   nav a {
-    color: var(--text-light); text-decoration: none; font-size: 13px; margin-left: 18px;
-    border-bottom: 1px solid transparent; padding-bottom: 2px;
+    color: rgba(240,244,247,0.6); text-decoration: none; font-size: 12px; margin-left: 18px;
+    letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid transparent; padding-bottom: 3px;
+    transition: color 0.15s, border-color 0.15s;
   }
-  nav a:hover, nav a:focus-visible { color: var(--sand); border-color: var(--coral); }
-  nav a.active { color: var(--coral); }
+  nav a:hover, nav a:focus-visible { color: var(--white); border-color: var(--coral); }
+  nav a.active { color: var(--coral-light); }
   .config-toggle {
-    background: none; border: 1px solid var(--line); color: var(--text-light); font-family: 'Inter', sans-serif;
-    font-size: 13px; padding: 8px 14px; border-radius: 20px; cursor: pointer;
+    background: none; border: 1px solid rgba(240,244,247,0.25); color: rgba(240,244,247,0.7); font-family: 'Inter', sans-serif;
+    font-size: 12px; padding: 8px 14px; border-radius: 20px; cursor: pointer;
   }
-  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--sand); }
+  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--white); }
 
   #config-panel { max-width: 900px; margin: 0 auto; padding: 0 32px 20px; display: none; gap: 12px; flex-wrap: wrap; }
   #config-panel.open { display: flex; }
-  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-light); gap: 4px; flex: 1; min-width: 220px; }
+  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; flex: 1; min-width: 220px; }
   #config-panel input {
-    background: var(--amber); border: 1px solid var(--line); color: var(--sand);
+    background: var(--white); border: 1px solid var(--line); color: var(--body-text);
     padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px;
   }
   #config-panel button {
-    align-self: flex-end; background: var(--coral); color: var(--dark); border: none;
+    align-self: flex-end; background: var(--coral); color: var(--white); border: none;
     padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
   }
 
-  main { max-width: 900px; margin: 0 auto; padding: 8px 32px 80px; }
-  .status-line { font-size: 13px; color: var(--text-light); margin-bottom: 20px; min-height: 18px; }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 32px 80px; }
+  .status-line { font-size: 13px; color: var(--muted); margin-bottom: 20px; min-height: 18px; }
   .status-line.error { color: var(--coral); }
 
   .block-panel {
-    background: var(--amber); border: 1px solid var(--line); border-radius: 16px; padding: 24px 28px; margin-bottom: 24px;
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 18px; padding: 26px 30px; margin-bottom: 24px;
   }
-  .block-panel h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0 0 6px; }
-  .block-panel .sub { font-size: 13px; color: var(--text-light); margin-bottom: 16px; }
+  .block-panel h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0 0 6px; color: var(--navy); }
+  .block-panel .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
   .block-row { display: flex; gap: 10px; align-items: center; }
   .block-row input {
-    width: 140px; background: var(--dark); border: 1px solid var(--line); color: var(--sand);
+    width: 140px; background: var(--cream); border: 1px solid var(--line); color: var(--navy);
     padding: 11px 14px; border-radius: 8px; font-family: 'Fraunces', serif; font-size: 18px;
   }
-  .block-row span { font-size: 13px; color: var(--text-light); }
+  .block-row span { font-size: 13px; color: var(--muted); }
   .block-row button {
-    background: var(--coral); color: var(--dark); border: none; padding: 11px 20px;
+    background: var(--coral); color: var(--white); border: none; padding: 11px 20px;
     border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
   }
 
   .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-  .toolbar h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0; }
+  .toolbar h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0; color: var(--navy); }
   .new-btn {
-    background: var(--coral); color: var(--dark); border: none; padding: 10px 18px;
+    background: var(--coral); color: var(--white); border: none; padding: 10px 18px;
     border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
   }
 
   .item-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
   .item-row {
-    background: var(--amber); border: 1px solid var(--line); border-radius: 10px;
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 12px;
     padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
   }
   .item-row.inactive { opacity: 0.5; }
-  .item-row .name { font-family: 'Fraunces', serif; font-size: 15px; }
-  .item-row .desc { font-size: 12px; color: var(--text-light); margin-top: 2px; }
+  .item-row .name { font-family: 'Fraunces', serif; font-size: 15px; color: var(--navy); }
+  .item-row .desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .item-row .right { display: flex; align-items: center; gap: 12px; }
   .item-row .cost { font-family: 'Fraunces', serif; color: var(--wood); font-size: 16px; }
   .item-row button {
-    background: none; border: 1px solid var(--line); color: var(--text-light);
+    background: none; border: 1px solid var(--line); color: var(--muted);
     padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
   }
-  .item-row button:hover { border-color: var(--coral); color: var(--sand); }
-  .empty-note { color: var(--text-light); font-size: 13px; padding: 20px; text-align: center; }
+  .item-row button:hover { border-color: var(--coral); color: var(--navy); }
+  .empty-note { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
 
   .panel {
-    background: var(--amber); border: 1px solid var(--line); border-radius: 16px; padding: 24px 28px;
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 18px; padding: 26px 30px;
     display: none; margin-bottom: 24px;
   }
   .panel.open { display: block; }
@@ -109,21 +104,21 @@
   @media (max-width: 560px) { .form-row { grid-template-columns: 1fr; } }
   .form-field { display: flex; flex-direction: column; gap: 6px; }
   .form-field.full { grid-column: 1 / -1; }
-  .form-field label { font-size: 12px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
   .form-field input {
-    background: var(--dark); border: 1px solid var(--line); color: var(--sand);
+    background: var(--cream); border: 1px solid var(--line); color: var(--body-text);
     padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
   }
   .form-actions { display: flex; gap: 10px; margin-top: 14px; }
 
   .availability-block {
-    margin-top: 18px; padding: 16px; background: var(--dark); border: 1px solid var(--line); border-radius: 10px;
+    margin-top: 18px; padding: 16px; background: var(--cream); border: 1px solid var(--line); border-radius: 10px;
   }
-  .availability-title { font-family: 'Fraunces', serif; font-size: 14px; margin-bottom: 6px; }
-  .availability-hint { font-size: 11px; color: var(--text-light); line-height: 1.6; margin: 0 0 12px; }
+  .availability-title { font-family: 'Fraunces', serif; font-size: 14px; margin-bottom: 6px; color: var(--navy); }
+  .availability-hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
   .day-picker { display: flex; gap: 6px; flex-wrap: wrap; }
   .day-picker label {
-    display: flex; align-items: center; gap: 5px; background: var(--amber); border: 1px solid var(--line);
+    display: flex; align-items: center; gap: 5px; background: var(--white); border: 1px solid var(--line);
     border-radius: 20px; padding: 6px 12px; font-size: 12px; cursor: pointer;
   }
   .day-picker label:has(input:checked) { border-color: var(--wood); color: var(--wood); }
@@ -131,33 +126,34 @@
     font-size: 11px; color: var(--wood); background: rgba(196,122,69,0.12); padding: 2px 8px;
     border-radius: 12px; margin-top: 4px; display: inline-block;
   }
-  .btn-primary { background: var(--coral); color: var(--dark); border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
-  .btn-secondary { background: none; border: 1px solid var(--line); color: var(--text-light); padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+  .btn-primary { background: var(--coral); color: var(--white); border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn-secondary { background: none; border: 1px solid var(--line); color: var(--muted); padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; }
 
-  footer { max-width: 900px; margin: 0 auto; padding: 0 32px 40px; font-size: 12px; color: var(--text-light); }
+  footer { max-width: 900px; margin: 0 auto; padding: 24px 32px 40px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
 <body>
 
-<div class="tideline"></div>
-
 <header>
-  <div>
-    <p class="brand-eyebrow">Het Strand & Zomers</p>
-    <h1>Cadeaus &amp; inwisselen</h1>
-  </div>
-  <div>
-    <nav>
-      <a href="dashboard.html">Overzicht</a>
-      <a href="customers.html">Klanten</a>
-      <a href="campaigns.html">Campagnes</a>
-      <a href="transacties.html">Kassa</a>
-      <a href="#" class="active" aria-current="page">Cadeaus</a>
-      <a href="inschrijven.html">Inschrijven</a>
-    </nav>
-    <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+  <div class="header-inner">
+    <div>
+      <p class="brand-eyebrow">Het Strand & Zomers</p>
+      <h1>Cadeaus &amp; inwisselen</h1>
+    </div>
+    <div>
+      <nav>
+        <a href="dashboard.html">Overzicht</a>
+        <a href="customers.html">Klanten</a>
+        <a href="campaigns.html">Campagnes</a>
+        <a href="transacties.html">Kassa</a>
+        <a href="#" class="active" aria-current="page">Cadeaus</a>
+        <a href="inschrijven.html">Inschrijven</a>
+      </nav>
+      <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+    </div>
   </div>
 </header>
+<div class="accent-line"></div>
 
 <div id="config-panel">
   <label>API-basis-URL<input type="text" id="api-base" placeholder="https://loyalty-platform-live.vercel.app"></label>

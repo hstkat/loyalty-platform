@@ -9,111 +9,107 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --dark: #0e1c2a; --amber: #1b3a5c; --amber-light: #2e5f8a; --sand: #f0f4f7;
-    --text-light: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
-    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45; --mid: #3a4a5c;
-    --line: rgba(240, 244, 247, 0.08);
+    --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a;
+    --body-text: #3a4a5c; --muted: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
+    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45;
+    --line: rgba(27, 58, 92, 0.12); --shadow: 0 2px 14px rgba(27, 58, 92, 0.07);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--dark); color: var(--sand); font-family: 'Inter', sans-serif; min-height: 100vh; }
+  body { margin: 0; background: var(--cream); color: var(--body-text); font-family: 'Inter', sans-serif; min-height: 100vh; }
 
-  .tideline { position: relative; height: 3px; overflow: hidden; background: var(--line); }
-  .tideline::before {
-    content: ''; position: absolute; inset: 0; width: 200%;
-    background: linear-gradient(90deg, transparent, var(--coral), var(--teal-light), transparent);
-    animation: tide 8s linear infinite;
-  }
-  @keyframes tide { from { transform: translateX(-50%); } to { transform: translateX(0%); } }
-  @media (prefers-reduced-motion: reduce) { .tideline::before { animation: none; } }
+  .accent-line { height: 3px; background: linear-gradient(90deg, var(--teal), var(--coral)); }
 
-  header {
-    max-width: 700px; margin: 0 auto; padding: 32px 32px 20px;
+  header { background: var(--navy-dark); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .header-inner {
+    max-width: 700px; margin: 0 auto; padding: 24px 32px;
     display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;
   }
-  .brand-eyebrow { font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-light); margin: 0 0 6px; }
-  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 28px; margin: 0; letter-spacing: -0.01em; }
+  .brand-eyebrow { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(240,244,247,0.55); margin: 0 0 6px; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 26px; margin: 0; letter-spacing: -0.01em; color: var(--white); }
   nav a {
-    color: var(--text-light); text-decoration: none; font-size: 13px; margin-left: 18px;
-    border-bottom: 1px solid transparent; padding-bottom: 2px;
+    color: rgba(240,244,247,0.6); text-decoration: none; font-size: 12px; margin-left: 18px;
+    letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid transparent; padding-bottom: 3px;
+    transition: color 0.15s, border-color 0.15s;
   }
-  nav a:hover, nav a:focus-visible { color: var(--sand); border-color: var(--coral); }
-  nav a.active { color: var(--coral); }
+  nav a:hover, nav a:focus-visible { color: var(--white); border-color: var(--coral); }
+  nav a.active { color: var(--coral-light); }
   .config-toggle {
-    background: none; border: 1px solid var(--line); color: var(--text-light); font-family: 'Inter', sans-serif;
-    font-size: 13px; padding: 8px 14px; border-radius: 20px; cursor: pointer;
+    background: none; border: 1px solid rgba(240,244,247,0.25); color: rgba(240,244,247,0.7); font-family: 'Inter', sans-serif;
+    font-size: 12px; padding: 8px 14px; border-radius: 20px; cursor: pointer;
   }
-  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--sand); }
+  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--white); }
 
   #config-panel { max-width: 700px; margin: 0 auto; padding: 0 32px 20px; display: none; gap: 12px; flex-wrap: wrap; }
   #config-panel.open { display: flex; }
-  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--text-light); gap: 4px; flex: 1; min-width: 220px; }
+  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; flex: 1; min-width: 220px; }
   #config-panel input {
-    background: var(--amber); border: 1px solid var(--line); color: var(--sand);
+    background: var(--white); border: 1px solid var(--line); color: var(--body-text);
     padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px;
   }
   #config-panel button {
-    align-self: flex-end; background: var(--coral); color: var(--dark); border: none;
+    align-self: flex-end; background: var(--coral); color: var(--white); border: none;
     padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
   }
 
-  main { max-width: 700px; margin: 0 auto; padding: 8px 32px 80px; }
+  main { max-width: 700px; margin: 0 auto; padding: 32px 32px 80px; }
 
-  .panel { background: var(--amber); border: 1px solid var(--line); border-radius: 16px; padding: 32px; }
+  .panel { background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 18px; padding: 34px; }
 
   .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
   @media (max-width: 500px) { .form-row { grid-template-columns: 1fr; } }
   .form-field { display: flex; flex-direction: column; gap: 6px; }
   .form-field.full { grid-column: 1 / -1; }
-  .form-field label { font-size: 12px; color: var(--text-light); text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
   .form-field input {
-    background: var(--dark); border: 1px solid var(--line); color: var(--sand);
+    background: var(--cream); border: 1px solid var(--line); color: var(--body-text);
     padding: 12px 14px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
   }
-  .form-field input:focus-visible { outline: 2px solid var(--coral); outline-offset: 1px; }
+  .form-field input:focus-visible { outline: 2px solid var(--teal); outline-offset: 1px; }
 
   .consent-row { display: flex; align-items: center; gap: 10px; margin: 18px 0; font-size: 14px; }
   .consent-row input { width: 18px; height: 18px; }
 
   .submit-btn {
-    width: 100%; background: var(--coral); color: var(--dark); border: none; padding: 14px;
+    width: 100%; background: var(--coral); color: var(--white); border: none; padding: 14px;
     border-radius: 8px; font-weight: 600; font-size: 15px; cursor: pointer;
   }
   .submit-btn:disabled { opacity: 0.5; cursor: default; }
 
-  .error-note { color: var(--coral-light); font-size: 13px; margin-top: 12px; display: none; }
+  .error-note { color: var(--coral); font-size: 13px; margin-top: 12px; display: none; }
   .error-note.show { display: block; }
 
-  /* -- Pas-scherm (na aanmaken) ---------------------------------------- */
+  /* -- Pas-scherm (na aanmaken): één bewust donker moment, als een
+     echte fysieke pas, tussen de verder lichte schermen door. -------- */
   .pass-card {
-    display: none; text-align: center; background: var(--dark); border: 1px solid var(--wood);
-    border-radius: 16px; padding: 36px 28px; margin-top: 8px;
+    display: none; text-align: center; background: var(--navy-dark);
+    border-radius: 18px; padding: 36px 28px; margin-top: 8px;
   }
   .pass-card.show { display: block; }
-  .pass-card .brand { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-light); margin-bottom: 4px; }
-  .pass-card .pass-name { font-family: 'Fraunces', serif; font-size: 24px; margin: 0 0 20px; }
+  .pass-card .brand { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(240,244,247,0.5); margin-bottom: 4px; }
+  .pass-card .pass-name { font-family: 'Fraunces', serif; font-size: 24px; margin: 0 0 20px; color: var(--white); }
   .pass-card img { border-radius: 12px; background: white; padding: 12px; }
-  .pass-card .pass-hint { font-size: 12px; color: var(--text-light); margin-top: 18px; line-height: 1.6; }
+  .pass-card .pass-hint { font-size: 12px; color: rgba(240,244,247,0.6); margin-top: 18px; line-height: 1.6; }
   .pass-actions { display: flex; gap: 10px; margin-top: 22px; justify-content: center; flex-wrap: wrap; }
   .pass-actions button {
-    background: none; border: 1px solid var(--wood); color: var(--wood); padding: 10px 20px;
+    background: none; border: 1px solid var(--coral); color: var(--coral-light); padding: 10px 20px;
     border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
   }
-  .pass-actions button.primary { background: var(--wood); color: var(--dark); }
+  .pass-actions button.primary { background: var(--coral); color: var(--white); border-color: var(--coral); }
   .new-signup-btn {
-    display: block; margin: 24px auto 0; background: none; border: none; color: var(--text-light);
+    display: block; margin: 24px auto 0; background: none; border: none; color: rgba(240,244,247,0.6);
     font-size: 13px; text-decoration: underline; cursor: pointer;
   }
 
   .digital-pass-section {
-    margin-top: 28px; padding-top: 24px; border-top: 1px dashed var(--line);
+    margin-top: 28px; padding-top: 24px; border-top: 1px dashed rgba(240,244,247,0.15);
   }
-  .digital-pass-title { font-family: 'Fraunces', serif; font-size: 15px; margin-bottom: 8px; }
-  .digital-pass-hint { font-size: 12px; color: var(--text-light); line-height: 1.6; margin: 0 0 16px; }
+  .digital-pass-title { font-family: 'Fraunces', serif; font-size: 15px; margin-bottom: 8px; color: var(--white); }
+  .digital-pass-hint { font-size: 12px; color: rgba(240,244,247,0.6); line-height: 1.6; margin: 0 0 16px; }
   .digital-qr-wrap { background: white; border-radius: 12px; padding: 10px; display: inline-block; }
   .digital-qr-wrap img { display: block; }
   .digital-pass-link-row { display: flex; gap: 8px; margin-top: 16px; }
   .digital-pass-link-row input {
-    flex: 1; background: var(--dark); border: 1px solid var(--line); color: var(--text-light);
+    flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(240,244,247,0.15); color: rgba(240,244,247,0.7);
     padding: 9px 12px; border-radius: 6px; font-size: 11px; font-family: monospace;
   }
   .digital-pass-link-row button {
@@ -121,37 +117,38 @@
     padding: 0 14px; border-radius: 6px; font-size: 12px; cursor: pointer; white-space: nowrap;
   }
 
-  footer { max-width: 700px; margin: 0 auto; padding: 0 32px 40px; font-size: 12px; color: var(--text-light); }
+  footer { max-width: 700px; margin: 0 auto; padding: 24px 32px 40px; font-size: 12px; color: var(--muted); }
 
   @media print {
     body * { visibility: hidden; }
     .pass-card, .pass-card * { visibility: visible; }
-    .pass-card { position: fixed; top: 40px; left: 50%; transform: translateX(-50%); border: none; }
+    .pass-card { position: fixed; top: 40px; left: 50%; transform: translateX(-50%); }
     .pass-actions, .new-signup-btn { display: none !important; }
   }
 </style>
 </head>
 <body>
 
-<div class="tideline"></div>
-
 <header>
-  <div>
-    <p class="brand-eyebrow">Het Strand & Zomers</p>
-    <h1>Nieuwe gast inschrijven</h1>
-  </div>
-  <div>
-    <nav>
-      <a href="dashboard.html">Overzicht</a>
-      <a href="customers.html">Klanten</a>
-      <a href="campaigns.html">Campagnes</a>
-      <a href="transacties.html">Kassa</a>
-      <a href="cadeaus.html">Cadeaus</a>
-      <a href="#" class="active" aria-current="page">Inschrijven</a>
-    </nav>
-    <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+  <div class="header-inner">
+    <div>
+      <p class="brand-eyebrow">Het Strand & Zomers</p>
+      <h1>Nieuwe gast inschrijven</h1>
+    </div>
+    <div>
+      <nav>
+        <a href="dashboard.html">Overzicht</a>
+        <a href="customers.html">Klanten</a>
+        <a href="campaigns.html">Campagnes</a>
+        <a href="transacties.html">Kassa</a>
+        <a href="cadeaus.html">Cadeaus</a>
+        <a href="#" class="active" aria-current="page">Inschrijven</a>
+      </nav>
+      <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+    </div>
   </div>
 </header>
+<div class="accent-line"></div>
 
 <div id="config-panel">
   <label>API-basis-URL<input type="text" id="api-base" placeholder="https://loyalty-platform-live.vercel.app"></label>
