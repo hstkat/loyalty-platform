@@ -1,6 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import * as Papa from 'papaparse';
-import { Workbook } from 'exceljs';
+import { Workbook, Cell, Row } from 'exceljs';
 import { createHash } from 'crypto';
 
 export interface ParsedFile {
@@ -56,7 +56,7 @@ function parseCsv(buffer: Buffer): { rows: Record<string, string>[]; columns: st
   const result = Papa.parse<Record<string, string>>(text, {
     header: true,
     skipEmptyLines: true,
-    transformHeader: (h) => h.trim(),
+    transformHeader: (h: string) => h.trim(),
   });
 
   if (result.errors.length > 0 && result.data.length === 0) {
@@ -70,7 +70,12 @@ function parseCsv(buffer: Buffer): { rows: Record<string, string>[]; columns: st
 async function parseXlsx(buffer: Buffer): Promise<{ rows: Record<string, string>[]; columns: string[] }> {
   const workbook = new Workbook();
   try {
-    await workbook.xlsx.load(buffer);
+    // Cast nodig door een bekend typeconflict tussen @types/node-versies
+    // en exceljs' eigen Buffer-typedefinitie (Vercel's schone install
+    // gebruikt een net iets andere @types/node-resolutie dan sommige
+    // lokale omgevingen) — functioneel identiek, alleen de TypeScript-
+    // typen botsen onterecht.
+    await workbook.xlsx.load(buffer as never);
   } catch (err) {
     throw new BadRequestException('Kon het Excel-bestand niet lezen — is het echt een .xlsx-bestand?');
   }
@@ -80,12 +85,12 @@ async function parseXlsx(buffer: Buffer): Promise<{ rows: Record<string, string>
 
   const headerRow = sheet.getRow(1);
   const columns: string[] = [];
-  headerRow.eachCell({ includeEmpty: false }, (cell) => {
+  headerRow.eachCell({ includeEmpty: false }, (cell: Cell) => {
     columns.push(String(cell.value ?? '').trim());
   });
 
   const rows: Record<string, string>[] = [];
-  sheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+  sheet.eachRow({ includeEmpty: false }, (row: Row, rowNumber: number) => {
     if (rowNumber === 1) return; // header
     const obj: Record<string, string> = {};
     let hasAnyValue = false;
