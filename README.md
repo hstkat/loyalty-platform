@@ -942,6 +942,38 @@ journey-flow zelf blokkeert of breekt daar nooit op.
 voorkomen (Analytics → Campaigns → Messaging → Analytics), aangezien
 zowel Messaging als Analytics deze service nu gebruiken.
 
+## 25. Echte WhatsApp-verzending (Module 6)
+
+Op verzoek toegevoegd: `WhatsAppService` (`src/common/whatsapp.service.ts`)
+verstuurt echte berichten via Meta's WhatsApp Cloud API, met dezelfde
+architectuur als de Mailgun-koppeling.
+
+**Belangrijk verschil met e-mail — dit is een echte beperking van
+WhatsApp zelf, niet van dit platform:** Meta staat alleen door het
+bedrijf-geïnitieerde berichten toe via een **vooraf goedgekeurd
+sjabloon** (buiten een actief 24-uurs klantcontact-venster om — en
+marketingberichten zoals "dubbele punten" vallen daar altijd onder).
+Vrije tekst versturen zoals bij e-mail is voor WhatsApp dus niet
+mogelijk.
+
+**Hoe dit hier is opgelost, met een bewuste vereenvoudiging:**
+`templateGroupKey` van het interne berichtsjabloon wordt ook gebruikt als
+de naam van het bij Meta goedgekeurde sjabloon (houd deze twee gelijk
+wanneer je een sjabloon specifiek voor WhatsApp aanmaakt), met een vaste
+parametervolgorde (voornaam, dan tegoedsaldo). Een volledig flexibele
+koppeling tussen willekeurige sjabloonvariabelen en Meta-sjabloonvelden
+is een grotere uitbreiding, pas zinvol zodra er echte, goedgekeurde
+sjablonen zijn om tegen te testen.
+
+**Benodigde omgevingsvariabelen bij Vercel:**
+- `WHATSAPP_ACCESS_TOKEN` — permanent access-token uit Meta Business Manager
+- `WHATSAPP_PHONE_NUMBER_ID` — ID van je geverifieerde WhatsApp-afzendernummer
+
+**Wat je zelf nog moet regelen bij Meta, vóórdat dit werkt:**
+1. Een Meta Business-account aanmaken/koppelen
+2. WhatsApp Business Platform activeren, telefoonnummer verifiëren
+3. Minstens één berichtsjabloon aanmaken en laten goedkeuren (kan uren tot dagen duren)
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

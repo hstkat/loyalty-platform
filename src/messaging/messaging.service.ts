@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { renderTemplate } from './template-renderer';
 import { SendMessageDto } from './dto/messaging.dto';
 import { MailgunService } from '../common/mailgun.service';
+import { WhatsAppService } from '../common/whatsapp.service';
 
 const DEFAULT_FREQUENCY_CAP = { maxMessages: 2, periodDays: 7 }; // marketing default, section 7
 
@@ -22,6 +23,7 @@ export class MessagingService {
   constructor(
     private prisma: PrismaService,
     private mailgun: MailgunService,
+    private whatsapp: WhatsAppService,
   ) {}
 
   async send(orgId: string, dto: SendMessageDto) {
@@ -105,6 +107,9 @@ export class MessagingService {
     if (channel === 'sms' && !customer.phone) {
       return this.recordSkipped(sendRequestId, orgId, customerId, channel, resolvedTemplate.id, 'skipped_no_channel', 'no phone on file');
     }
+    if (channel === 'whatsapp' && !customer.phone) {
+      return this.recordSkipped(sendRequestId, orgId, customerId, channel, resolvedTemplate.id, 'skipped_no_channel', 'no phone on file');
+    }
 
     // -- Section 7: frequency cap (marketing only) -----------------------
     if (resolvedTemplate.category === 'marketing') {
@@ -178,6 +183,28 @@ export class MessagingService {
         renderedSubject || resolvedTemplate.name,
         renderedBody,
       );
+      if (!sendResult.sent) {
+        await this.prisma.messageQueueItem.update({
+          where: { id: queueItem.id },
+          data: { status: 'failed', failureReason: sendResult.reason },
+        });
+      }
+    }
+
+    // Real delivery for WhatsApp — CONSTRAINT (see WhatsAppService):
+    // Meta requires a pre-approved template for business-initiated
+    // messages. This build pass uses `templateGroupKey` AS the Meta
+    // template name (keep them identical when creating a template
+    // intended for WhatsApp), with a fixed, common parameter order
+    // (first name, then credit balance) — not a fully flexible mapping.
+    // A more elaborate per-template parameter configuration would be
+    // a reasonable next step once real templates are approved and the
+    // team knows what parameter shapes they actually need.
+    if (channel === 'whatsapp' && customer.phone && this.whatsapp.isConfigured()) {
+      const sendResult = await this.whatsapp.sendTemplateMessage(customer.phone, resolvedTemplate.templateGroupKey, customer.language || 'nl', [
+        variables.first_name,
+        variables.credit_balance,
+      ]);
       if (!sendResult.sent) {
         await this.prisma.messageQueueItem.update({
           where: { id: queueItem.id },
