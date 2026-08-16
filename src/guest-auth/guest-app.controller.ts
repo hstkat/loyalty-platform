@@ -109,4 +109,25 @@ export class GuestAppController {
       return true;
     });
   }
+
+  // Publiek (geen sessietoken nodig) — puur informatief, geen persoonlijke
+  // data: hoeveel korting een gast krijgt voor een inwisselblok, per dag.
+  // De inlogpagina zelf toont dit ook al aan potentiële gasten, dus dit
+  // hoeft niet achter authenticatie te zitten.
+  @Get('redemption-rates')
+  async getRedemptionRates(@Param('orgId') orgId: string) {
+    const [rules, creditRule] = await Promise.all([
+      this.prisma.redemptionRateRule.findMany({ where: { organizationId: orgId, isActive: true } }),
+      this.prisma.creditRule.findFirst({ where: { organizationId: orgId, isActive: true } }),
+    ]);
+    const blockSize = creditRule?.redemptionBlockSize ?? null;
+
+    return rules.map((rule) => ({
+      name: rule.name,
+      appliesOnDays: rule.appliesOnDays,
+      pointsPerEuro: Number(rule.pointsPerEuro),
+      blockSize,
+      blockEuroValue: blockSize ? Math.round((blockSize / Number(rule.pointsPerEuro)) * 100) / 100 : null,
+    }));
+  }
 }

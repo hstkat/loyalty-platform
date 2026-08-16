@@ -130,6 +130,13 @@
   .btn-primary { background: var(--coral); color: var(--white); border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
   .btn-secondary { background: none; border: 1px solid var(--line); color: var(--muted); padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; }
 
+  .rate-summary-banner {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
+  }
+  .rate-summary-chip {
+    background: rgba(196,122,69,0.1); border: 1px solid var(--wood); border-radius: 20px;
+    padding: 8px 16px; font-size: 13px; color: var(--wood); font-weight: 600;
+  }
   .rate-rule-row {
     display: flex; justify-content: space-between; align-items: center; background: var(--white);
     border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; font-size: 13px;
@@ -193,6 +200,7 @@
     <h2>Wisselkoers per dag</h2>
     <p class="sub">Hoeveel punten een euro tegoed kost, per dag van de week — bijv. doordeweeks 25 punten per euro (250 pt = €10), in het weekend 50 punten per euro (250 pt = €5). Zonder regels geldt overal 1 punt = €1.</p>
 
+    <div id="rate-summary-banner"></div>
     <div id="rate-rule-list"></div>
 
     <div class="availability-block" style="margin-top: 16px;">
@@ -340,14 +348,34 @@
 
   const DAY_LABELS_SHORT = { monday: 'ma', tuesday: 'di', wednesday: 'wo', thursday: 'do', friday: 'vr', saturday: 'za', sunday: 'zo' };
 
+  function renderRateSummaryBanner(rules) {
+    const el = document.getElementById('rate-summary-banner');
+    if (!el) return;
+    if (rules.length === 0) {
+      el.innerHTML = '';
+      return;
+    }
+    const activeBlockSize = parseInt(els.blockSizeInput.value, 10) || 250;
+    el.innerHTML = rules.map((rule) => {
+      const dayList = (rule.appliesOnDays || []).map((d) => DAY_LABELS_SHORT[d] || d);
+      const days = dayList.length === 0 ? 'elke dag'
+        : dayList.length === 1 ? dayList[0]
+        : `${dayList[0]}–${dayList[dayList.length - 1]}`;
+      const euro = (activeBlockSize / Number(rule.pointsPerEuro)).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
+      return `<span class="rate-summary-chip">${days}: ${activeBlockSize} pt = €${euro}</span>`;
+    }).join('');
+  }
+
   function renderRateRules(rules) {
+    renderRateSummaryBanner(rules);
     if (rules.length === 0) {
       els.rateRuleList.innerHTML = '<div class="empty-note">Geen wisselkoersregels — overal geldt 1 punt = €1.</div>';
       return;
     }
+    const activeBlockSize = parseInt(els.blockSizeInput.value, 10) || 250;
     els.rateRuleList.innerHTML = rules.map((rule) => {
       const days = (rule.appliesOnDays || []).map((d) => DAY_LABELS_SHORT[d] || d).join('/') || 'elke dag';
-      const exampleEuro = (250 / Number(rule.pointsPerEuro)).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
+      const exampleEuro = (activeBlockSize / Number(rule.pointsPerEuro)).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
       return `<div class="rate-rule-row">
         <div>
           <div class="name">${rule.name}</div>
@@ -356,7 +384,7 @@
         <div class="right">
           <div style="text-align:right;">
             <div class="rate">${rule.pointsPerEuro} pt/€</div>
-            <div class="example">250 pt = €${exampleEuro}</div>
+            <div class="example">${activeBlockSize} pt = €${exampleEuro}</div>
           </div>
           <button type="button" data-id="${rule.id}" class="rate-delete-btn">Verwijderen</button>
         </div>
