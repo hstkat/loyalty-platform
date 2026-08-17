@@ -109,12 +109,51 @@ export class LoyaltyCardsService {
   // -- Admin: overzicht + detail ---------------------------------------------
 
   async listCards(orgId: string, filters: { status?: string; customerId?: string; search?: string }) {
+    // Zoeken op kaartnummer ÉN op de gekoppelde klant (naam/e-mail/
+    // telefoon) — anders moet je exact het kaartnummer weten om een
+    // kaart terug te vinden, wat in de praktijk niet werkbaar is.
+    let customerMatchIds: string[] = [];
+    if (filters.search) {
+      const searchWords = filters.search.trim().split(/\s+/).filter(Boolean);
+      const matchedCustomers = await this.prisma.customer.findMany({
+        where: {
+          organizationId: orgId,
+          OR: [
+            { firstName: { contains: filters.search, mode: 'insensitive' } },
+            { lastName: { contains: filters.search, mode: 'insensitive' } },
+            { email: { contains: filters.search, mode: 'insensitive' } },
+            { phone: { contains: filters.search } },
+            ...(searchWords.length >= 2
+              ? [
+                  {
+                    AND: [
+                      { firstName: { contains: searchWords[0], mode: 'insensitive' as const } },
+                      { lastName: { contains: searchWords.slice(1).join(' '), mode: 'insensitive' as const } },
+                    ],
+                  },
+                ]
+              : []),
+          ],
+        },
+        select: { id: true },
+        take: 100,
+      });
+      customerMatchIds = matchedCustomers.map((c) => c.id);
+    }
+
     return this.prisma.loyaltyCard.findMany({
       where: {
         organizationId: orgId,
         status: filters.status as never,
         customerId: filters.customerId,
-        cardNumber: filters.search ? { contains: filters.search, mode: 'insensitive' } : undefined,
+        ...(filters.search
+          ? {
+              OR: [
+                { cardNumber: { contains: filters.search, mode: 'insensitive' } },
+                ...(customerMatchIds.length > 0 ? [{ customerId: { in: customerMatchIds } }] : []),
+              ],
+            }
+          : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: 200,

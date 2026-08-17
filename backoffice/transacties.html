@@ -363,7 +363,7 @@
 
   async function apiGet(path) {
     const { apiBase, orgId } = getConfig();
-    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write' } });
+    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write,loyalty_card.read' } });
     if (!res.ok) throw new Error('API-fout: ' + res.status);
     return res.json();
   }
@@ -372,7 +372,7 @@
     const { apiBase, orgId } = getConfig();
     const res = await fetch(apiBase + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write' },
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write,loyalty_card.read' },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -439,10 +439,50 @@
         return;
       }
     } catch {
-      // Not JSON — fall through and try the raw value as a customer ID
-      // directly, in case a differently-formatted code was scanned.
+      // Not JSON — could be a customerId (legacy/manual), or a physical
+      // loyalty-card token/URL. Try to tell them apart below.
     }
-    selectCustomerById(raw);
+
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (uuidPattern.test(raw)) {
+      selectCustomerById(raw);
+      return;
+    }
+
+    // Fysieke loyaltykaart: een barcodescanner geeft de volledige,
+    // op de kaart gecodeerde URL door als platte tekst (hij "opent"
+    // niets, hij typt gewoon) — dus zowel een kale token als een hele
+    // "https://…/c/{token}"-URL moeten hier herkend worden.
+    const token = raw.includes('/c/') ? raw.split('/c/').pop().split(/[?#]/)[0] : raw;
+    selectLoyaltyCardByToken(token);
+  }
+
+  async function selectLoyaltyCardByToken(token) {
+    els.statusLine.textContent = 'Kaart controleren…';
+    els.statusLine.classList.remove('error');
+    try {
+      const { orgId } = getConfig();
+      const result = await apiGet('/organizations/' + orgId + '/loyalty-cards/pos/lookup/' + encodeURIComponent(token));
+      if (!result.valid || !result.customerId) {
+        els.statusLine.textContent = result.message || 'Deze kaart is niet geldig.';
+        els.statusLine.classList.add('error');
+        return;
+      }
+      // Rechtstreeks uit het lookup-antwoord vullen i.p.v. via de lokaal
+      // ingeladen klantenlijst — die kan een zojuist geclaimde kaart nog
+      // niet bevatten (voorkomt "onbekend pasje" bij een verse koppeling).
+      els.customerHidden.value = result.customerId;
+      els.selectedCustomerName.textContent = result.customerName || '(naam onbekend)';
+      els.selectedCustomer.classList.add('show');
+      els.customerSearch.value = '';
+      els.autocompleteList.classList.remove('open');
+      els.amountInput.focus();
+      els.statusLine.textContent = 'Loyaltykaart herkend — vul het bedrag in.';
+      els.statusLine.classList.remove('error');
+    } catch (err) {
+      els.statusLine.textContent = 'Onbekend pasje — deze kaart is niet gevonden.';
+      els.statusLine.classList.add('error');
+    }
   }
 
   // -- Camera-based scanning: uses the browser's native BarcodeDetector
