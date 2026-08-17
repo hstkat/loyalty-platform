@@ -199,11 +199,12 @@ export class PublicGiftCardController {
       where: { publicTokenHash: tokenHash },
       select: { status: true, currentBalance: true, originalValue: true, personalMessage: true, recipientName: true },
     });
-    res.status(200).send(this.renderPage(giftCard));
+    res.status(200).send(this.renderPage(giftCard, token));
   }
 
   private renderPage(
     card: { status: string; currentBalance: unknown; originalValue: unknown; personalMessage: string | null; recipientName: string | null } | null,
+    token: string,
   ): string {
     const styles = `
       :root { --cream: #f6f3ec; --navy-dark: #0e1c2a; --white: #ffffff; --muted: rgba(240,244,247,0.6); --coral: #e8604a; --coral-light: #f08c78; --line: rgba(240,244,247,0.12); }
@@ -215,6 +216,8 @@ export class PublicGiftCardController {
       .balance { font-family: Georgia, serif; font-size: 48px; color: var(--coral-light); margin: 20px 0 6px; }
       .balance-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
       .message { font-style: italic; color: rgba(240,244,247,0.85); margin: 20px 0; padding: 16px; background: rgba(255,255,255,0.06); border-radius: 12px; font-size: 14px; }
+      .qr-wrap { background: var(--white); border-radius: 16px; padding: 16px; display: inline-block; margin: 20px 0; }
+      .qr-wrap img { display: block; width: 200px; height: 200px; }
       p { font-size: 14px; color: rgba(240,244,247,0.8); line-height: 1.6; margin: 0 0 8px; }
     `;
 
@@ -228,6 +231,9 @@ export class PublicGiftCardController {
       return this.htmlShell(styles, `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Niet meer geldig</h1><p>Deze cadeaukaart is niet langer bruikbaar. Neem contact op met de zaak bij vragen.</p>`);
     }
 
+    // Codeert het ruwe token zelf (niet de hele weergavepagina-URL) —
+    // dat is precies wat de kassa's cadeaukaart-opzoekveld verwacht.
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(token)}`;
     const greeting = card.recipientName ? `Voor ${card.recipientName}` : 'Cadeaukaart';
     return this.htmlShell(
       styles,
@@ -236,6 +242,7 @@ export class PublicGiftCardController {
        ${card.personalMessage ? `<div class="message">"${card.personalMessage}"</div>` : ''}
        <div class="balance-label">Beschikbaar saldo</div>
        <div class="balance">€${Number(card.currentBalance).toFixed(2)}</div>
+       <div class="qr-wrap"><img src="${qrUrl}" alt="Cadeaukaart-QR"></div>
        <p>Toon deze pagina of de QR-code bij de kassa om te gebruiken.</p>`,
     );
   }
