@@ -218,6 +218,12 @@ export class PublicGiftCardController {
       .message { font-style: italic; color: rgba(240,244,247,0.85); margin: 20px 0; padding: 16px; background: rgba(255,255,255,0.06); border-radius: 12px; font-size: 14px; }
       .qr-wrap { background: var(--white); border-radius: 16px; padding: 16px; display: inline-block; margin: 20px 0; }
       .qr-wrap img { display: block; width: 200px; height: 200px; }
+      .token-text {
+        font-family: 'Courier New', monospace; font-size: 16px; letter-spacing: 0.04em;
+        color: var(--white); background: rgba(255,255,255,0.08); border-radius: 8px;
+        padding: 10px 14px; margin: 4px 0 16px; word-break: break-all;
+      }
+      .token-hint { font-size: 11px; color: var(--muted); margin: 0 0 4px; }
       p { font-size: 14px; color: rgba(240,244,247,0.8); line-height: 1.6; margin: 0 0 8px; }
     `;
 
@@ -243,6 +249,8 @@ export class PublicGiftCardController {
        <div class="balance-label">Beschikbaar saldo</div>
        <div class="balance">€${Number(card.currentBalance).toFixed(2)}</div>
        <div class="qr-wrap"><img src="${qrUrl}" alt="Cadeaukaart-QR"></div>
+       <div class="token-hint">Werkt scannen niet? Geef deze code door aan de kassa:</div>
+       <div class="token-text">${token}</div>
        <p>Toon deze pagina of de QR-code bij de kassa om te gebruiken.</p>`,
     );
   }
