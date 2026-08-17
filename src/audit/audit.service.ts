@@ -39,4 +39,18 @@ export class AuditService {
       },
     });
   }
+
+  /** Voor het admin-instellingenscherm — het audit-log is tot nu toe overal
+   * geschreven maar nergens leesbaar; dit maakt het inzichtelijk. */
+  async list(organizationId: string, filters: { entityType?: string; search?: string }) {
+    return this.prisma.auditLog.findMany({
+      where: {
+        organizationId,
+        entityType: filters.entityType,
+        ...(filters.search ? { reason: { contains: filters.search, mode: 'insensitive' } } : {}),
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 200,
+    });
+  }
 }

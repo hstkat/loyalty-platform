@@ -1095,6 +1095,31 @@ een OR-lijst als altijd-waar. Getest tegen een echte database vóór
 oplevering; hersteld door de voorwaarde conditioneel helemaal weg te
 laten in plaats van op `undefined` te zetten.
 
+## 29. Admin-instellingenscherm
+
+Op verzoek — een nieuw scherm (`instellingen.html`) dat alles bij elkaar
+brengt wat al wél aan de backend bestond, maar nergens bedienbaar was:
+
+- **Puntenregels** (`CreditRule`, al sinds Module 3 in het datamodel
+  aanwezig maar zonder UI): geldigheidsduur van tegoed vóór het vervalt,
+  minimale bestedingsdrempel om te sparen, minimaal saldo om in te
+  wisselen, maximumpercentage van een aankoop met tegoed, "pas bruikbaar
+  vanaf volgend bezoek", tegoed overdragen toestaan
+- **Klantenbeheer**: zoeken (hergebruikt het bestaande `/customers`-zoek-
+  endpoint) en daadwerkelijk **verwijderen** of **anonimiseren**
+  (AVG-verzoek) — beide endpoints bestonden al (`DELETE :id` en
+  `POST :id/anonymize`), maar waren nergens bereikbaar vanuit de
+  backoffice
+- **Audit-log-viewer**: nieuw, klein leesendpoint (`AdminController`) op
+  het al bestaande `AuditLog`-model — dat werd de hele sessie al overal
+  gevuld (elke kaartclaim, elke import, elke klantwijziging), maar was
+  tot nu toe volledig onzichtbaar voor een beheerder
+- **Organisatie-overzicht**: naam, ID, aantal klanten, aantal actieve
+  loyaltykaarten — handig als snel referentiepunt
+
+Geen enkel nieuw datamodel nodig — dit was uitsluitend het zichtbaar en
+bedienbaar maken van bestaande backend-capaciteit.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

@@ -19,6 +19,7 @@ import { PassModule } from './pass/pass.module';
 import { GuestAuthModule } from './guest-auth/guest-auth.module';
 import { ImportModule } from './import/import.module';
 import { LoyaltyCardsModule } from './loyalty-cards/loyalty-cards.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { LoyaltyCardsModule } from './loyalty-cards/loyalty-cards.module';
     GuestAuthModule,
     ImportModule,
     LoyaltyCardsModule,
+    AdminModule,
   ],
 })
 export class AppModule {}
