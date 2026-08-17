@@ -209,6 +209,7 @@
         <a href="import.html">Import</a>
         <a href="loyalty-cards.html">Kaarten</a>
         <a href="instellingen.html">Instellingen</a>
+        <a href="gift-cards.html">Gift Cards</a>
       </nav>
       <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
     </div>
@@ -303,6 +304,16 @@
       <div class="redeem-result" id="redeem-result"></div>
     </div>
 
+    <!-- Cadeaukaart als betaalmiddel — losse boekhouding van het loyaltytegoed hierboven, maar samen te gebruiken op dezelfde rekening -->
+    <div class="redeem-panel" id="giftcard-panel" style="display:none;">
+      <div class="redeem-title">Cadeaukaart gebruiken op deze rekening</div>
+      <input type="text" id="gc-token-input" placeholder="Scan of typ de cadeaukaart-token…" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;">
+      <div id="gc-lookup-result" style="font-size:13px; color:var(--muted); margin-bottom:10px;"></div>
+      <input type="number" id="gc-amount-input" placeholder="Te besteden bedrag (€)" min="0.01" step="0.01" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;" disabled>
+      <button type="button" class="redeem-confirm-btn" id="gc-confirm-btn" disabled>Cadeaukaart-betaling bevestigen</button>
+      <div class="redeem-result" id="gc-result"></div>
+    </div>
+
     <div class="error-card" id="error-card"></div>
   </div>
 </main>
@@ -364,7 +375,7 @@
 
   async function apiGet(path) {
     const { apiBase, orgId } = getConfig();
-    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write,loyalty_card.read' } });
+    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write,loyalty_card.read,gift_card.read,gift_card.redeem' } });
     if (!res.ok) throw new Error('API-fout: ' + res.status);
     return res.json();
   }
@@ -373,7 +384,7 @@
     const { apiBase, orgId } = getConfig();
     const res = await fetch(apiBase + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write,loyalty_card.read' },
+      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': 'customer.read,transaction.write,wallet.read,wallet.redeem,credit_rules.read,credit_rules.write,loyalty_card.read,gift_card.read,gift_card.redeem' },
       body: JSON.stringify(body),
     });
     if (!res.ok) {
@@ -677,6 +688,11 @@
         els.redeemPanel.classList.remove('show');
       }
 
+      // Cadeaukaart-betaling staat los van loyaltytegoed en werkt ook
+      // zonder gekoppelde klant (een cadeaukaart is anoniem bruikbaar).
+      resetGiftCardPanel();
+      document.getElementById('giftcard-panel').style.display = 'block';
+
       els.form.reset();
       els.customerHidden.value = '';
       els.selectedCustomer.classList.remove('show');
@@ -837,6 +853,88 @@
 
   loadRedeemConfig();
   loadCustomers();
+
+  // -- Cadeaukaart als betaalmiddel — losse token-opzoek + inwissel-flow ----
+
+  const gcEls = {
+    tokenInput: document.getElementById('gc-token-input'),
+    lookupResult: document.getElementById('gc-lookup-result'),
+    amountInput: document.getElementById('gc-amount-input'),
+    confirmBtn: document.getElementById('gc-confirm-btn'),
+    resultDiv: document.getElementById('gc-result'),
+  };
+  let gcLookedUpToken = null;
+  let gcBalance = 0;
+
+  function resetGiftCardPanel() {
+    gcEls.tokenInput.value = '';
+    gcEls.lookupResult.textContent = '';
+    gcEls.amountInput.value = '';
+    gcEls.amountInput.disabled = true;
+    gcEls.confirmBtn.disabled = true;
+    gcEls.resultDiv.textContent = '';
+    gcLookedUpToken = null;
+    gcBalance = 0;
+  }
+
+  let gcLookupTimeout = null;
+  gcEls.tokenInput.addEventListener('input', () => {
+    clearTimeout(gcLookupTimeout);
+    const token = gcEls.tokenInput.value.trim();
+    gcEls.amountInput.disabled = true;
+    gcEls.confirmBtn.disabled = true;
+    if (!token) { gcEls.lookupResult.textContent = ''; return; }
+    gcLookupTimeout = setTimeout(async () => {
+      gcEls.lookupResult.textContent = 'Kaart controleren…';
+      try {
+        const { orgId } = getConfig();
+        const card = await apiGet('/organizations/' + orgId + '/gift-cards/lookup/' + encodeURIComponent(token));
+        if (card.status !== 'active' && card.status !== 'partially_redeemed') {
+          gcEls.lookupResult.innerHTML = '<span class="warn">Deze kaart heeft status "' + card.status + '" en kan niet gebruikt worden.</span>';
+          return;
+        }
+        gcLookedUpToken = token;
+        gcBalance = card.currentBalance;
+        gcEls.lookupResult.textContent = 'Kaart ' + card.giftCardNumber + ' — beschikbaar saldo: €' + Number(card.currentBalance).toFixed(2);
+        gcEls.amountInput.disabled = false;
+        gcEls.amountInput.max = card.currentBalance;
+        gcEls.amountInput.focus();
+      } catch {
+        gcEls.lookupResult.innerHTML = '<span class="warn">Kaart niet gevonden.</span>';
+      }
+    }, 300);
+  });
+
+  gcEls.amountInput.addEventListener('input', () => {
+    const amount = parseFloat(gcEls.amountInput.value);
+    gcEls.confirmBtn.disabled = !gcLookedUpToken || !amount || amount <= 0 || amount > gcBalance;
+  });
+
+  gcEls.confirmBtn.addEventListener('click', async () => {
+    if (!gcLookedUpToken) return;
+    const amount = parseFloat(gcEls.amountInput.value);
+    gcEls.confirmBtn.disabled = true;
+    gcEls.confirmBtn.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      const result = await apiPost('/organizations/' + orgId + '/gift-cards/redeem', {
+        token: gcLookedUpToken,
+        amount,
+        transactionId: lastTransactionId,
+        reason: 'Betaling aan kassa',
+      });
+      gcEls.resultDiv.textContent = `€${amount.toFixed(2)} afgeboekt — resterend saldo: €${result.remainingBalance.toFixed(2)}.`;
+      gcEls.amountInput.value = '';
+      gcEls.amountInput.disabled = true;
+      gcBalance = result.remainingBalance;
+      gcEls.lookupResult.textContent = 'Kaart ' + result.giftCardNumber + ' — beschikbaar saldo: €' + result.remainingBalance.toFixed(2);
+    } catch (err) {
+      gcEls.resultDiv.innerHTML = '<span class="warn">Betaling mislukt: ' + err.message + '</span>';
+      gcEls.confirmBtn.disabled = false;
+    } finally {
+      gcEls.confirmBtn.textContent = 'Cadeaukaart-betaling bevestigen';
+    }
+  });
 </script>
 
 </body>

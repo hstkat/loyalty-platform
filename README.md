@@ -1120,6 +1120,85 @@ brengt wat al wél aan de backend bestond, maar nergens bedienbaar was:
 Geen enkel nieuw datamodel nodig — dit was uitsluitend het zichtbaar en
 bedienbaar maken van bestaande backend-capaciteit.
 
+## 30. Cadeaukaarten (Gift Cards) — met echte Mollie-betalingen
+
+Op verzoek toegevoegd: een volledig eigen cadeaukaartmodule, bewust en
+volledig gescheiden van het loyaltytegoed:
+
+```
+Customer -> Wallet -> WalletLedgerEntry        (loyaltytegoed)
+GiftCard -> GiftCardLedgerEntry                (cadeaukaart-saldo, eigen boekhouding)
+```
+
+**Belangrijkste architectuurkeuze — hoe dubbele beloning wordt
+voorkomen:** het *verkopen* van een cadeaukaart loopt bewust nooit via
+het bestaande `/transactions`-endpoint (dat de reward engine aanroept).
+Daardoor is er geen speciale uitzondering nodig diep in de reward-
+engine-code om "geen loyaltytegoed bij aankoop van een cadeaukaart" af
+te dwingen — het raakt die code simpelweg nooit. Het latere *gebruik*
+van een cadeaukaart als betaalmiddel loopt wél via een normale
+transactie (net als contant/pin), en verdient dus heel gewoon
+loyaltytegoed over het volledige aankoopbedrag.
+
+**Ledger-architectuur:** exact hetzelfde bewezen patroon als bij het
+loyaltytegoed en de fysieke loyaltykaarten — elke saldowijziging is een
+aparte `GiftCardLedgerEntry`, nooit een directe aanpassing van
+`currentBalance`. Getest tegen een echte database: verkoop, gedeeltelijk
+inwisselen, volledig inwisselen, refund/reversal, en vervanging (saldo
+verplaatst nooit gekopieerd) — steeds met bevestiging dat het saldo
+exact de som van de ledger blijft.
+
+**QR-tokenbeveiliging:** zelfde principe als de fysieke loyaltykaarten
+— alleen een SHA-256-hash opgeslagen, nooit de ruwe token.
+
+### Echte online betalingen via Mollie (iDEAL e.d.)
+
+Op expliciet verzoek een **echte** betaalprovider-koppeling, niet
+gesimuleerd. Nieuw: `MollieService` (`src/common/mollie.service.ts`).
+
+**Omgevingsvariabelen (bij Vercel instellen, nooit committen):**
+- `MOLLIE_API_KEY` — een `test_` of `live_` sleutel uit het Mollie-dashboard
+- `PUBLIC_APP_URL` — de publieke basis-URL van deze deploy (voor de redirect/webhook-URL's die Mollie moet aanroepen); valt terug op `https://loyalty-platform-live.vercel.app` als niet ingesteld
+
+**Kritieke beveiligingsregel (rechtstreeks uit Mollie's eigen
+documentatie):** de webhook die Mollie aanroept bevat **uitsluitend een
+`id`**, nooit een betrouwbare status — iedereen zou in theorie een
+willekeurige `id` naar diezelfde URL kunnen sturen. De **enige** veilige
+manier om te weten of een betaling echt gelukt is: de status vers
+opvragen bij Mollie zelf, met onze eigen API-sleutel, elke keer opnieuw
+— nooit vertrouwen op de webhook-inhoud zelf. Dit is precies hoe
+`GiftCardsService.confirmMolliePayment` werkt, en is ook de reden dat
+een cadeaukaart tijdens het betaalproces op status `draft` blijft staan
+(geen saldo, geen ledger-entry) totdat die verse statusopvraag
+`'paid'` teruggeeft.
+
+**Ruwe token nooit in onze database, ook niet tijdelijk:** voor het
+versturen van de digitale kaart per e-mail is het ruwe token nodig,
+maar dat wordt nooit opgeslagen. Oplossing: het ruwe token gaat mee in
+Mollie's eigen `metadata`-veld bij het aanmaken van de betaling, en komt
+pas terug op het moment dat de betaling bevestigd wordt — het bestaat
+dus alleen kortstondig in het geheugen op het moment van versturen, nooit
+persistent in onze eigen database.
+
+**Endpoints:**
+- `GET /gift-cards/buy/:orgId` — publieke koop-pagina (bedrag kiezen, ontvanger, boodschap)
+- `POST /gift-cards/buy/:orgId` — start de Mollie-betaling, geeft `checkoutUrl` terug
+- `POST /gift-cards/mollie-webhook` — door Mollie aangeroepen, publiek, geen permissies (kan niet, Mollie kent onze permissiestructuur niet)
+- `GET /gift-cards/thank-you/:giftCardId` — bedankpagina na terugkeer vanuit Mollie
+
+**Belangrijke, eerlijke beperking:** `api.mollie.com` staat niet op de
+toegestane netwerklijst van de bouwsandbox waarin dit gebouwd is — de
+daadwerkelijke live API-aanroepen zijn dus **niet** vanuit die sandbox
+getest (net als bij de WhatsApp/Meta-koppeling eerder). De code is met
+de hand grondig gecontroleerd tegen Mollie's officiële documentatie
+(bevestigd via web search tijdens het bouwen), maar de eerste échte test
+met een Mollie-testsleutel moet nog gebeuren.
+
+**Overige bewuste vereenvoudigingen:**
+- Geplande verzending van een digitale kaart (`scheduledSendAt`, bijv. op iemands verjaardag) wordt wel opgeslagen, maar er is geen achtergrond-scheduler die dat veld daadwerkelijk afvuurt op de juiste dag — zou, net als de dagafsluiting-e-mail, een eigen cron-endpoint nodig hebben.
+- "Koop een cadeaukaart, krijg loyaltytegoed cadeau"-promoties (expliciet als "later" aangemerkt in de opdracht) zijn niet gebouwd — de architectuur (aparte boekhoudingen die bewust nooit automatisch met elkaar communiceren) maakt dit later wel veilig toevoegbaar zonder dubbele boekingen.
+- Geen dedicated fraude-detectie/rate-limiting (zelfde, eerder al toegelichte beperking als bij de fysieke loyaltykaarten — geen Redis-achtige infrastructuur in deze omgeving).
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

@@ -211,6 +211,10 @@ model Customer {
   // Fysieke loyaltykaarten
   loyaltyCards LoyaltyCard[]
 
+  // Cadeaukaarten — apart van loyaltytegoed
+  giftCardsPurchased GiftCard[] @relation("GiftCardPurchaser")
+  giftCardsReceived  GiftCard[] @relation("GiftCardRecipient")
+
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
   // prevents duplicate people lives on CustomerIdentity).
@@ -724,6 +728,7 @@ model Transaction {
   posEvents     PosEvent[]
   rewardCalculations RewardCalculation[]
   walletLedgerEntries WalletLedgerEntry[]
+  giftCardLedgerEntries GiftCardLedgerEntry[]
 
   @@unique([posConnectionId, externalTransactionId])
   @@index([organizationId])
@@ -2509,4 +2514,140 @@ model LoyaltyCardPendingEntry {
 
   @@index([cardId])
   @@map("loyalty_card_pending_entries")
+}
+
+// ============================================================================
+// Cadeaukaarten (Gift Cards) — bewust volledig gescheiden van het
+// loyaltytegoed:
+//
+//   Customer -> Wallet -> WalletLedgerEntry        (loyaltytegoed)
+//   GiftCard -> GiftCardLedgerEntry                (cadeaukaart-saldo)
+//
+// Een cadeaukaart heeft GEEN eigen Wallet en een Wallet heeft geen
+// cadeaukaart-saldo — dat voorkomt dat de twee financieel door elkaar
+// lopen, ook al kunnen ze bij dezelfde rekening samen gebruikt worden.
+//
+// Belangrijke ontwerpkeuze: de VERKOOP van een cadeaukaart loopt bewust
+// NIET via het bestaande /transactions-endpoint (dat de beloningsengine
+// aanroept) — een cadeaukaart-verkoop raakt de reward engine daardoor
+// nooit, wat "geen loyaltytegoed bij aankoop van een cadeaukaart"
+// architecturaal afdwingt zonder een uitzondering in die engine zelf
+// nodig te hebben. Het latere GEBRUIK van een cadeaukaart als
+// betaalmiddel loopt wél via een normale transactie (net als contant/
+// pin), en verdient dus gewoon normaal loyaltytegoed.
+// ============================================================================
+
+enum GiftCardStatus {
+  draft
+  active
+  partially_redeemed
+  redeemed
+  blocked
+  expired
+  cancelled
+}
+
+enum GiftCardLedgerEntryType {
+  issue
+  sale
+  redeem
+  top_up
+  refund
+  reversal
+  adjustment
+  expiration
+}
+
+enum GiftCardBatchStatus {
+  generating
+  ready
+  exported
+}
+
+model GiftCardBatch {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String              @map("organization_id") @db.Uuid
+  locationId      String?             @map("location_id") @db.Uuid
+  name            String
+  quantity        Int
+  status          GiftCardBatchStatus @default(generating)
+  createdByUserId String?             @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at")
+  exportedAt      DateTime?           @map("exported_at")
+
+  cards GiftCard[]
+
+  @@index([organizationId, createdAt])
+  @@map("gift_card_batches")
+}
+
+model GiftCard {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  locationId     String? @map("location_id") @db.Uuid
+  batchId        String? @map("batch_id") @db.Uuid
+
+  giftCardNumber  String @unique @map("gift_card_number") // bijv. "GC-000001" — administratief, nooit de beveiliging
+  publicTokenHash String @unique @map("public_token_hash") // zelfde principe als LoyaltyCard: nooit het ruwe token bewaren
+
+  status         GiftCardStatus @default(draft)
+  originalValue  Decimal        @map("original_value") @db.Decimal(10, 2)
+  currentBalance Decimal        @default(0) @map("current_balance") @db.Decimal(10, 2)
+  currency       String         @default("EUR")
+
+  purchaserCustomerId String? @map("purchaser_customer_id") @db.Uuid
+  recipientCustomerId String? @map("recipient_customer_id") @db.Uuid
+  recipientName       String? @map("recipient_name")
+  recipientEmail      String? @map("recipient_email")
+  // Online verkoop via Mollie (iDEAL e.d.) — de kaart blijft bewust op
+  // status 'draft' totdat de webhook een bevestigde betaling meldt; zie
+  // MollieService voor de reden waarom nooit op de webhook-inhoud zelf
+  // wordt vertrouwd, alleen op een verse statusopvraag bij Mollie.
+  molliePaymentId     String? @unique @map("mollie_payment_id")
+  personalMessage     String? @map("personal_message")
+  scheduledSendAt     DateTime? @map("scheduled_send_at") // geplande verzending (bijv. verjaardag) — zie GiftCardsService voor het bewuste, gedocumenteerde verzendmechanisme
+
+  isOrganizationWide Boolean @default(true) @map("is_organization_wide") // false = alleen geldig bij `locationId`
+
+  issuedAt          DateTime  @default(now()) @map("issued_at")
+  activatedAt       DateTime? @map("activated_at")
+  expiresAt         DateTime? @map("expires_at")
+  blockedAt         DateTime? @map("blocked_at")
+  blockedReason     String?   @map("blocked_reason")
+  replacedByGiftCardId String? @unique @map("replaced_by_gift_card_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  batch             GiftCardBatch? @relation(fields: [batchId], references: [id])
+  purchaser         Customer?      @relation("GiftCardPurchaser", fields: [purchaserCustomerId], references: [id])
+  recipient         Customer?      @relation("GiftCardRecipient", fields: [recipientCustomerId], references: [id])
+  replacedByGiftCard GiftCard?     @relation("GiftCardReplacement", fields: [replacedByGiftCardId], references: [id])
+  replacesGiftCard   GiftCard?     @relation("GiftCardReplacement")
+  ledgerEntries      GiftCardLedgerEntry[]
+
+  @@index([organizationId, status])
+  @@index([purchaserCustomerId])
+  @@index([recipientCustomerId])
+  @@map("gift_cards")
+}
+
+model GiftCardLedgerEntry {
+  id            String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  giftCardId    String                  @map("gift_card_id") @db.Uuid
+  organizationId String                 @map("organization_id") @db.Uuid
+  locationId    String?                 @map("location_id") @db.Uuid
+  entryType     GiftCardLedgerEntryType @map("entry_type")
+  amount        Decimal                 @db.Decimal(10, 2) // positief = saldo erbij, negatief = saldo eraf
+  transactionId String?                 @map("transaction_id") @db.Uuid // gekoppelde POS-transactie, indien van toepassing
+  performedByUserId String?             @map("performed_by_user_id") @db.Uuid
+  reason        String?
+  metadata      Json?
+  occurredAt    DateTime                @default(now()) @map("occurred_at")
+
+  giftCard    GiftCard     @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([giftCardId, occurredAt])
+  @@map("gift_card_ledger_entries")
 }
