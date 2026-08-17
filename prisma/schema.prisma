@@ -208,6 +208,9 @@ model Customer {
   guestSessions   GuestSession[]
   guestPushTokens GuestPushToken[]
 
+  // Fysieke loyaltykaarten
+  loyaltyCards LoyaltyCard[]
+
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
   // prevents duplicate people lives on CustomerIdentity).
@@ -1238,6 +1241,11 @@ model CreditRule {
   maximumRedeemPercentage     Decimal? @map("maximum_redeem_percentage") @db.Decimal(5, 2)
   minimumRedemptionBalance    Decimal? @map("minimum_redemption_balance") @db.Decimal(10, 2)
   redemptionBlockSize         Int?     @map("redemption_block_size")
+  // Sectie 14 (kaartbeveiliging): boven dit euro-bedrag geeft de
+  // kassa-identificatie-endpoint een waarschuwing mee dat extra
+  // verificatie nodig is — een enkele fotografeerbare QR-scan volstaat
+  // dan niet meer. null = geen drempel, altijd gewone scan voldoende.
+  cardRedemptionThreshold     Decimal? @map("card_redemption_threshold") @db.Decimal(10, 2)
   excludedProductCategories   Json?    @map("excluded_product_categories")
   excludedDays                Json?    @map("excluded_days")
   nonCombinableCampaignIds    Json?    @map("non_combinable_campaign_ids")
@@ -2407,4 +2415,98 @@ model ImportRecord {
   @@unique([importJobId, rowHash])
   @@index([importJobId, action])
   @@map("import_records")
+}
+
+// ============================================================================
+// Fysieke loyaltykaarten (QR-token → LoyaltyCard → Customer → Wallet)
+// Een kaart is bewust GEEN Customer en bezit zelf nooit het saldo — het
+// saldo blijft altijd bij de Wallet van de gekoppelde Customer. Dit maakt
+// vervangen/blokkeren/opnieuw koppelen altijd veilig, zonder saldo-risico.
+// ============================================================================
+
+enum LoyaltyCardBatchStatus {
+  generating
+  ready
+  exported
+}
+
+enum LoyaltyCardStatus {
+  unclaimed
+  active
+  blocked
+  lost
+  replaced
+  expired
+}
+
+model LoyaltyCardBatch {
+  id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                 @map("organization_id") @db.Uuid
+  locationId     String?                @map("location_id") @db.Uuid
+  name           String
+  quantity       Int
+  status         LoyaltyCardBatchStatus @default(generating)
+  createdByUserId String?               @map("created_by_user_id") @db.Uuid
+  createdAt      DateTime               @default(now()) @map("created_at")
+  exportedAt     DateTime?              @map("exported_at")
+
+  cards LoyaltyCard[]
+
+  @@index([organizationId, createdAt])
+  @@map("loyalty_card_batches")
+}
+
+model LoyaltyCard {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String?  @map("location_id") @db.Uuid
+  batchId        String?  @map("batch_id") @db.Uuid
+  customerId     String?  @map("customer_id") @db.Uuid
+
+  // Nooit de ruwe token opslaan — zelfde principe als bij inlogcodes en
+  // sessietokens elders in dit platform: bij een databaselek kan een
+  // aanvaller zo geen geldige kaarten "namaken" uit de dump.
+  publicTokenHash String @unique @map("public_token_hash")
+  cardNumber      String @unique @map("card_number") // bijv. "BC-000001" — puur administratief, NOOIT de beveiliging
+
+  status      LoyaltyCardStatus @default(unclaimed)
+  pendingBalance Decimal @default(0) @map("pending_balance") @db.Decimal(10, 2) // ongeregistreerd sparen vóór claim — zie LoyaltyCardPendingEntry
+
+  issuedAt         DateTime  @default(now()) @map("issued_at")
+  claimedAt        DateTime? @map("claimed_at")
+  blockedAt        DateTime? @map("blocked_at")
+  blockedReason    String?   @map("blocked_reason")
+  lastUsedAt       DateTime? @map("last_used_at")
+  replacedByCardId String?   @unique @map("replaced_by_card_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  batch       LoyaltyCardBatch? @relation(fields: [batchId], references: [id])
+  customer    Customer?         @relation(fields: [customerId], references: [id])
+  replacedBy  LoyaltyCard?      @relation("CardReplacement", fields: [replacedByCardId], references: [id])
+  replacesCard LoyaltyCard?     @relation("CardReplacement")
+  pendingEntries LoyaltyCardPendingEntry[]
+
+  @@index([organizationId, status])
+  @@index([customerId])
+  @@map("loyalty_cards")
+}
+
+// Ongeregistreerd sparen: een nog niet-geclaimde kaart kan al tegoed
+// opbouwen. Bewust GEEN eigen Wallet voor de kaart (dat zou een parallel
+// saldosysteem naast de bestaande Wallet-architectuur betekenen) — bij
+// claim wordt dit in één atomaire transactie omgezet in een echte
+// WalletLedgerEntry (entryType 'transfer') op de Wallet van de klant.
+model LoyaltyCardPendingEntry {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cardId    String   @map("card_id") @db.Uuid
+  amount    Decimal  @db.Decimal(10, 2)
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  card LoyaltyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@map("loyalty_card_pending_entries")
 }

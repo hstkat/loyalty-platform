@@ -7,5 +7,6 @@ import { MailgunService } from '../common/mailgun.service';
 @Module({
   controllers: [GuestAppController],
   providers: [GuestAuthService, GuestSessionGuard, MailgunService],
+  exports: [GuestAuthService],
 })
 export class GuestAuthModule {}

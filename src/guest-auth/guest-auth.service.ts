@@ -89,17 +89,27 @@ export class GuestAuthService {
 
     await this.prisma.guestLoginCode.update({ where: { id: loginCode.id }, data: { usedAt: new Date() } });
 
+    return this.issueSession(customer.id, deviceInfo);
+  }
+
+  /**
+   * Uitgetrokken uit verifyCode zodat andere flows (zoals het claimen
+   * van een fysieke loyaltykaart als nieuwe klant, waarbij de gast net
+   * verse contactgegevens heeft opgegeven) ook direct een sessie kunnen
+   * uitgeven, zonder de e-mailcode-stap te dupliceren.
+   */
+  async issueSession(customerId: string, deviceInfo?: string) {
     const token = randomBytes(32).toString('hex');
     await this.prisma.guestSession.create({
       data: {
-        customerId: customer.id,
+        customerId,
         tokenHash: this.hash(token),
         deviceInfo,
         expiresAt: new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000),
       },
     });
 
-    return { token, customerId: customer.id, expiresInDays: SESSION_TTL_DAYS };
+    return { token, customerId, expiresInDays: SESSION_TTL_DAYS };
   }
 
   /** Resolves a bearer token to a customer, or throws. Used by a guard on every guest-app endpoint. */

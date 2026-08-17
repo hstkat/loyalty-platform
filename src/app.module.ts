@@ -18,6 +18,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { PassModule } from './pass/pass.module';
 import { GuestAuthModule } from './guest-auth/guest-auth.module';
 import { ImportModule } from './import/import.module';
+import { LoyaltyCardsModule } from './loyalty-cards/loyalty-cards.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { ImportModule } from './import/import.module';
     PassModule,
     GuestAuthModule,
     ImportModule,
+    LoyaltyCardsModule,
   ],
 })
 export class AppModule {}

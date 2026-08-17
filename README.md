@@ -1025,6 +1025,46 @@ relevant zijn bij het verwerken van geüploade, niet-vertrouwde bestanden;
 - Ruwe bestandsdata wordt tijdelijk in de database bewaard (geen aparte objectopslag beschikbaar) en automatisch geleegd zodra een import voltooid is.
 - Rollback verwijdert door de import aangemaakte klanten alleen als ze werkelijk geen enkele andere activiteit hebben (transacties, reserveringen, overige ledgermutaties) — anders blijft het profiel bestaan en wordt alleen de saldomutatie teruggedraaid.
 
+## 27. Fysieke loyaltykaarten (QR-token → LoyaltyCard → Customer → Wallet)
+
+Op verzoek toegevoegd: ondersteuning voor vooraf gedrukte fysieke
+loyaltykaarten met een unieke QR-code, die géén persoonsgegevens bevat.
+Architectuurregel: een kaart bezit nooit het klantprofiel of saldo —
+alleen een verwijzing naar een Customer, wiens Wallet het echte saldo
+draagt. Zo kan een kaart altijd veilig vervangen/geblokkeerd/opnieuw
+gekoppeld worden zonder saldorisico.
+
+**Datamodel:** `LoyaltyCardBatch`, `LoyaltyCard`, `LoyaltyCardPendingEntry`
+(voor ongeregistreerd sparen vóórdat een kaart geclaimd is). Hergebruikt
+volledig het bestaande `AuditLog`-model (geen nieuw logmodel) en de
+bestaande `GuestAuthService`-e-mailcode-verificatie (geen nieuwe
+inlogflow) voor de "ik heb al een account"-stap bij het claimen.
+
+**Tokenbeveiliging:** de ruwe QR-token wordt NOOIT opgeslagen, alleen een
+SHA-256-hash — zelfde principe als bij inlogcodes/sessietokens elders in
+dit platform. **Praktisch, onomkeerbaar gevolg:** de ruwe tokens zijn
+uitsluitend zichtbaar in het antwoord van het batch-aanmaak-endpoint,
+op het moment van aanmaken zelf — dat moet dus meteen gedownload worden,
+ze kunnen daarna nooit meer worden teruggehaald (ook niet door een
+beheerder). Kaartnummers (bijv. "BC-000001") zijn wél oplopend, maar
+puur administratief — de beveiliging hangt daar nooit van af.
+
+**Ongeregistreerd sparen (sectie 9):** bewust géén los "tijdelijk
+wallet"-model — dat zou een parallel saldosysteem naast de bestaande
+Wallet-architectuur betekenen. In plaats daarvan: een lichte
+`pendingBalance` op de kaart zelf, die bij claim in één atomaire
+database-transactie wordt omgezet in een echte `WalletLedgerEntry`
+(`entryType: transfer`) op de Wallet van de nu-gekoppelde klant, en
+tegelijk op nul gezet — dit is expliciet getest tegen een echte database
+om dubbel-tellen uit te sluiten (zie testlog: €38,20 bestaand + €5,00
+pending = exact €43,20, nooit €48,20 of €5,00 verlies).
+
+**Bekende, bewuste vereenvoudigingen t.o.v. de volledige specificatie:**
+- Geen dedicated rate-limiter tegen enumeratie/scraping (geen Redis-achtige infrastructuur beschikbaar in deze serverloze omgeving) — bescherming komt uit de 96-bits-tokens zelf (praktisch niet te raden) en een generieke "niet gevonden"-respons die nooit onderscheid maakt tussen "bestaat niet" en "hoort bij een andere organisatie".
+- Redemption-beveiliging bij hoge bedragen (sectie 14) is een **configureerbare drempel + waarschuwingsvlag** (`cardRedemptionThreshold` op `CreditRule`) die het kassa-lookup-endpoint meegeeft — een volledige PIN/OTP-verificatie-UI op het moment van inwisselen zelf is (nog) niet gebouwd; dat is een logische vervolgstap zodra dit in de praktijk nodig blijkt.
+- QR-afbeeldingen (PNG/SVG) worden niet server-side voorgerenderd/gebundeld in een ZIP — de CSV-export bevat de kant-en-klare QR-URL's, die een drukker of de bestaande qrserver.com-aanpak (elders al gebruikt in dit platform) direct kan omzetten naar afbeeldingen.
+- Apple/Google Wallet-passen blijven een aparte, al bestaande `WalletPass`-structuur — bewust niet samengevoegd met dit fysieke-kaartmodel, zoals de opdracht zelf ook aangeeft.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |
