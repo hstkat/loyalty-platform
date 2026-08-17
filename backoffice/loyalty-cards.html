@@ -76,6 +76,43 @@
   .action-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
 
   .empty-note { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(14,28,42,0.6); z-index: 100;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--white); border-radius: 18px; padding: 28px 30px; max-width: 480px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .modal h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0 0 6px; color: var(--navy); }
+  .modal .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+  .modal .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .modal .form-field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .modal .form-field input { background: var(--cream); border: 1px solid var(--line); color: var(--body-text); padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+
+  .autocomplete-field { position: relative; }
+  .autocomplete-field input {
+    width: 100%; background: var(--cream); border: 1px solid var(--line); color: var(--body-text);
+    padding: 11px 14px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
+  }
+  .autocomplete-list {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10;
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 8px;
+    max-height: 260px; overflow-y: auto;
+  }
+  .autocomplete-list.open { display: block; }
+  .autocomplete-list .option { padding: 10px 14px; cursor: pointer; font-size: 14px; border-bottom: 1px solid var(--line); }
+  .autocomplete-list .option:last-child { border-bottom: none; }
+  .autocomplete-list .option:hover, .autocomplete-list .option.highlighted { background: var(--cream); }
+  .autocomplete-list .option .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .autocomplete-list .no-match { padding: 10px 14px; color: var(--muted); font-size: 13px; }
+
+  .selected-customer-box {
+    display: none; margin-top: 12px; background: var(--cream); border: 1px solid var(--teal-light);
+    border-radius: 8px; padding: 12px 14px; font-size: 13px;
+  }
+  .selected-customer-box.show { display: block; }
+  .selected-customer-box .name { font-family: 'Fraunces', serif; color: var(--navy); font-size: 15px; }
+  .selected-customer-box .meta { color: var(--muted); margin-top: 4px; line-height: 1.6; }
   footer { max-width: 1100px; margin: 0 auto; padding: 24px 32px 40px; font-size: 12px; color: var(--muted); }
 </style>
 </head>
@@ -146,6 +183,27 @@
     <h2 id="detail-title">Kaartdetail</h2>
     <div class="detail-grid" id="detail-grid"></div>
     <div class="action-row" id="action-row"></div>
+  </div>
+
+  <!-- Zoekvenster voor "koppelen aan bestaande klant" — vervangt een reeks losse prompt()'s -->
+  <div class="modal-overlay" id="link-modal-overlay">
+    <div class="modal">
+      <h2>Klant zoeken om te koppelen</h2>
+      <p class="sub">Zoek op naam, e-mailadres, telefoonnummer, of een ander kaartnummer.</p>
+      <div class="autocomplete-field">
+        <input type="text" id="link-search-input" placeholder="Typ om te zoeken…" autocomplete="off">
+        <div class="autocomplete-list" id="link-autocomplete-list"></div>
+      </div>
+      <div id="link-selected-customer" class="selected-customer-box"></div>
+      <div class="form-field" style="margin-top:14px;">
+        <label>Token van de fysieke kaart</label>
+        <input type="text" id="link-token-input" placeholder="Scan of typ de token van de kaart">
+      </div>
+      <div class="action-row" style="margin-top:18px;">
+        <button class="btn-primary" id="link-confirm-btn" disabled>Koppelen</button>
+        <button class="btn-secondary" id="link-cancel-btn">Annuleren</button>
+      </div>
+    </div>
   </div>
 </main>
 
@@ -375,25 +433,128 @@
     }
   }
 
-  async function doManualLink() {
-    const customerId = prompt('Klant-ID om deze kaart aan te koppelen:');
-    if (!customerId) return;
+  // -- Klant koppelen: zoek-en-selecteer i.p.v. losse prompt()'s -------------
+
+  let linkSelectedCustomer = null;
+  let linkSearchTimeout = null;
+  let linkHighlightedIndex = -1;
+  let linkSearchResults = [];
+
+  const linkEls = {
+    overlay: document.getElementById('link-modal-overlay'),
+    searchInput: document.getElementById('link-search-input'),
+    autocompleteList: document.getElementById('link-autocomplete-list'),
+    selectedBox: document.getElementById('link-selected-customer'),
+    tokenInput: document.getElementById('link-token-input'),
+    confirmBtn: document.getElementById('link-confirm-btn'),
+    cancelBtn: document.getElementById('link-cancel-btn'),
+  };
+
+  function doManualLink() {
+    linkSelectedCustomer = null;
+    linkSearchResults = [];
+    linkEls.searchInput.value = '';
+    linkEls.tokenInput.value = '';
+    linkEls.selectedBox.classList.remove('show');
+    linkEls.autocompleteList.classList.remove('open');
+    linkEls.confirmBtn.disabled = true;
+    linkEls.overlay.classList.add('open');
+    linkEls.searchInput.focus();
+  }
+
+  function formatDob(dateOfBirth) {
+    if (!dateOfBirth) return null;
+    return new Date(dateOfBirth).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  linkEls.searchInput.addEventListener('input', () => {
+    clearTimeout(linkSearchTimeout);
+    const q = linkEls.searchInput.value.trim();
+    if (q.length < 2) {
+      linkEls.autocompleteList.classList.remove('open');
+      return;
+    }
+    linkSearchTimeout = setTimeout(async () => {
+      try {
+        const { orgId } = getConfig();
+        const result = await apiGet('/organizations/' + orgId + '/customers?search=' + encodeURIComponent(q) + '&pageSize=10');
+        linkSearchResults = result.items || result || [];
+        renderLinkAutocomplete();
+      } catch {
+        linkEls.autocompleteList.innerHTML = '<div class="no-match">Zoeken mislukt</div>';
+        linkEls.autocompleteList.classList.add('open');
+      }
+    }, 250);
+  });
+
+  function renderLinkAutocomplete() {
+    linkHighlightedIndex = -1;
+    if (linkSearchResults.length === 0) {
+      linkEls.autocompleteList.innerHTML = '<div class="no-match">Geen klanten gevonden</div>';
+      linkEls.autocompleteList.classList.add('open');
+      return;
+    }
+    // Toon genoeg gegevens om klanten met dezelfde naam te onderscheiden:
+    // volledige naam, e-mail, telefoon, en (indien bekend) geboortedatum.
+    linkEls.autocompleteList.innerHTML = linkSearchResults.map((c, idx) => {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '(naam onbekend)';
+      const dob = formatDob(c.dateOfBirth);
+      const metaParts = [c.email, c.phone, dob ? 'geb. ' + dob : null].filter(Boolean);
+      return `<div class="option" data-idx="${idx}">
+        <div>${name}</div>
+        <div class="meta">${metaParts.join(' · ') || 'Geen verdere gegevens'}</div>
+      </div>`;
+    }).join('');
+    linkEls.autocompleteList.classList.add('open');
+
+    linkEls.autocompleteList.querySelectorAll('.option').forEach((opt) => {
+      opt.addEventListener('click', () => selectLinkCustomer(linkSearchResults[parseInt(opt.dataset.idx, 10)]));
+    });
+  }
+
+  function selectLinkCustomer(customer) {
+    linkSelectedCustomer = customer;
+    const name = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || '(naam onbekend)';
+    const dob = formatDob(customer.dateOfBirth);
+    linkEls.selectedBox.innerHTML = `
+      <div class="name">${name}</div>
+      <div class="meta">${customer.email || 'geen e-mail'} · ${customer.phone || 'geen telefoon'}${dob ? ' · geb. ' + dob : ''}</div>
+    `;
+    linkEls.selectedBox.classList.add('show');
+    linkEls.autocompleteList.classList.remove('open');
+    linkEls.searchInput.value = name;
+    updateLinkConfirmState();
+  }
+
+  function updateLinkConfirmState() {
+    linkEls.confirmBtn.disabled = !linkSelectedCustomer || !linkEls.tokenInput.value.trim();
+  }
+  linkEls.tokenInput.addEventListener('input', updateLinkConfirmState);
+
+  linkEls.confirmBtn.addEventListener('click', async () => {
+    if (!linkSelectedCustomer) return;
+    linkEls.confirmBtn.disabled = true;
+    linkEls.confirmBtn.textContent = 'Bezig…';
     try {
       const { orgId } = getConfig();
-      const card = await apiGet('/organizations/' + orgId + '/loyalty-cards/' + currentCardId);
-      // We hebben de ruwe token niet meer (alleen gehasht opgeslagen) —
-      // handmatig koppelen via het admin-endpoint vereist daarom dat de
-      // beheerder de kaart opnieuw scant/intypt.
-      const token = prompt('Scan of typ de token die op de fysieke kaart staat:');
-      if (!token) return;
-      await apiPost('/organizations/' + orgId + '/loyalty-cards/link', { token: token.trim(), customerId: customerId.trim() });
+      await apiPost('/organizations/' + orgId + '/loyalty-cards/link', {
+        token: linkEls.tokenInput.value.trim(),
+        customerId: linkSelectedCustomer.id,
+      });
+      linkEls.overlay.classList.remove('open');
       alert('Kaart gekoppeld.');
       loadCardDetail(currentCardId);
       loadCards();
     } catch (err) {
       alert('Koppelen mislukt: ' + err.message);
+      linkEls.confirmBtn.disabled = false;
+    } finally {
+      linkEls.confirmBtn.textContent = 'Koppelen';
     }
-  }
+  });
+
+  linkEls.cancelBtn.addEventListener('click', () => linkEls.overlay.classList.remove('open'));
+  linkEls.overlay.addEventListener('click', (e) => { if (e.target === linkEls.overlay) linkEls.overlay.classList.remove('open'); });
 
   els.configToggle.addEventListener('click', () => {
     const open = els.configPanel.classList.toggle('open');

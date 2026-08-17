@@ -1065,6 +1065,36 @@ pending = exact €43,20, nooit €48,20 of €5,00 verlies).
 - QR-afbeeldingen (PNG/SVG) worden niet server-side voorgerenderd/gebundeld in een ZIP — de CSV-export bevat de kant-en-klare QR-URL's, die een drukker of de bestaande qrserver.com-aanpak (elders al gebruikt in dit platform) direct kan omzetten naar afbeeldingen.
 - Apple/Google Wallet-passen blijven een aparte, al bestaande `WalletPass`-structuur — bewust niet samengevoegd met dit fysieke-kaartmodel, zoals de opdracht zelf ook aangeeft.
 
+## 28. Geboortedatum consequent doorgevoerd + verbeterde klantzoekfunctie
+
+Op verzoek — analyse vooraf bevestigde dat `Customer.dateOfBirth` en de
+Piggy-import-mapping al bestonden sinds de oorspronkelijke opzet; dit was
+dus vooral een kwestie van het veld overal daadwerkelijk **zichtbaar en
+bruikbaar** maken, niet van een nieuw datamodel.
+
+**Toegevoegd:**
+- Geboortedatum zichtbaar in het klantprofiel (`customers.html`)
+- Invoerveld bij inschrijven (`inschrijven.html`) én bij het claimen van een fysieke kaart als nieuwe klant (publieke claim-pagina) — beide optioneel
+- Nieuw segmentatie-/campagneveld `daysUntilBirthday` in `AudienceFilterService` (0 = vandaag jarig, telt af naar de eerstvolgende verjaardag, altijd toekomstgericht) — getest tegen echte datums inclusief jaargrens-scenario's, voor gebruik in verjaardagscampagnes/-journeys
+- Klantzoekfunctie uitgebreid: volledige-naam-matching (bijv. "Henny Schaap" matcht ook als geen los veld de hele zoekterm bevat) én kaartnummer-matching (zoeken op "BC-000123" vindt de gekoppelde klant) — hergebruikt het bestaande `/customers`-zoek-endpoint, geen nieuw, dubbel endpoint
+- Nieuw zoek-en-selecteer-venster in `loyalty-cards.html` (het "koppelen aan bestaande klant"-scherm), ter vervanging van een reeks losse `prompt()`-vensters — toont volledige naam, e-mail, telefoon én geboortedatum per resultaat, zodat klanten met dezelfde naam te onderscheiden zijn
+
+**Privacy (bewust zo ontworpen, niet later toegevoegd):** geboortedatum
+wordt **nooit** getoond op de publieke, ongeauthenticeerde kaart-
+statuspagina, en **nooit** meegegeven in het snelle kassa/POS-
+identificatie-antwoord (`posLookup`) — alleen in de al-permissie-
+gated backoffice-schermen (klantprofiel, klant-zoekvenster). Wordt
+nergens gebruikt om identiteit te verifiëren, alleen als informatief/
+segmentatieveld.
+
+**Tijdens het bouwen zelf gevonden en gecorrigeerd:** de eerste versie
+van de kaartnummer-zoekuitbreiding zou bij een lege zoekterm-treffer
+(`{ id: undefined }` binnen een OR-voorwaarde) per ongeluk **alle**
+klanten hebben laten matchen — Prisma behandelt een lege voorwaarde in
+een OR-lijst als altijd-waar. Getest tegen een echte database vóór
+oplevering; hersteld door de voorwaarde conditioneel helemaal weg te
+laten in plaats van op `undefined` te zetten.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

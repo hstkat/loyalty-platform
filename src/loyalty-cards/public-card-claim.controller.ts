@@ -88,6 +88,8 @@ export class PublicCardClaimController {
         <input id="new-lastname" placeholder="Achternaam (optioneel)">
         <input id="new-email" type="email" placeholder="E-mailadres">
         <input id="new-phone" type="tel" placeholder="Telefoonnummer">
+        <label style="display:block;font-size:11px;color:var(--muted);text-align:left;margin-bottom:6px;">Geboortedatum (optioneel)</label>
+        <input id="new-dob" type="date">
         <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);margin-bottom:16px;">
           <input type="checkbox" id="new-consent" checked style="width:auto;margin:0;"> Ik wil aanbiedingen en nieuws ontvangen
         </label>
@@ -138,6 +140,7 @@ export class PublicCardClaimController {
                 lastName: document.getElementById('new-lastname').value || undefined,
                 email: document.getElementById('new-email').value,
                 phone: document.getElementById('new-phone').value,
+                dateOfBirth: document.getElementById('new-dob').value || undefined,
                 marketingConsent: document.getElementById('new-consent').checked,
               }),
             });

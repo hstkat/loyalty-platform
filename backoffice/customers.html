@@ -87,6 +87,8 @@
   .detail-balance .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
 
   .stat-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 28px; }
+  .stat-strip.five-col { grid-template-columns: repeat(5, 1fr); }
+  @media (max-width: 700px) { .stat-strip.five-col { grid-template-columns: repeat(2, 1fr); } }
   @media (max-width: 600px) { .stat-strip { grid-template-columns: repeat(2, 1fr); } }
   .stat-strip .tile { background: var(--cream); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
   .stat-strip .tile .label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
@@ -304,11 +306,12 @@
           </div>
         </div>
 
-        <div class="stat-strip">
+        <div class="stat-strip five-col">
           <div class="tile"><div class="label">Bezoeken</div><div class="value">${customer.visitCount ?? 0}</div></div>
           <div class="tile"><div class="label">Totale besteding</div><div class="value">€${Number(customer.lifetimeSpend ?? 0).toLocaleString('nl-NL', { minimumFractionDigits: 2 })}</div></div>
           <div class="tile"><div class="label">Laatste bezoek</div><div class="value">${formatDate(customer.lastVisitAt)}</div></div>
           <div class="tile"><div class="label">Totaal gespaard</div><div class="value">${points(wallet ? wallet.lifetimeEarned : customer.lifetimeEarned)}</div></div>
+          <div class="tile"><div class="label">Geboortedatum</div><div class="value">${customer.dateOfBirth ? formatDate(customer.dateOfBirth) : '—'}</div></div>
         </div>
 
         <h3 class="section-title">Recente mutaties</h3>

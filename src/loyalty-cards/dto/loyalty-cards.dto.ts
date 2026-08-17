@@ -9,6 +9,7 @@ export interface ClaimNewCustomerDto {
   lastName?: string;
   email: string;
   phone: string;
+  dateOfBirth?: string;
   marketingConsent?: boolean;
 }
 

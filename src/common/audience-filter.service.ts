@@ -38,11 +38,27 @@ interface CustomerView {
   favoriteVisitDay: string | null;
   isAtRisk: boolean;
   churnRiskScore: number | null;
+  // Dagen tot de eerstvolgende verjaardag (0 = vandaag, 365/366 als geen
+  // geboortedatum bekend is — bewust een hoge waarde i.p.v. null, zodat
+  // "kleiner dan N"-filters op een ontbrekende datum nooit per ongeluk
+  // matchen). Voor verjaardagscampagnes/-journeys.
+  daysUntilBirthday: number | null;
 }
 
 @Injectable()
 export class AudienceFilterService {
   constructor(private prisma: PrismaService) {}
+
+  private computeDaysUntilBirthday(dateOfBirth: Date | null, now: Date): number | null {
+    if (!dateOfBirth) return null;
+    const thisYear = now.getFullYear();
+    let next = new Date(Date.UTC(thisYear, dateOfBirth.getUTCMonth(), dateOfBirth.getUTCDate()));
+    const todayUtc = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()));
+    if (next.getTime() < todayUtc.getTime()) {
+      next = new Date(Date.UTC(thisYear + 1, dateOfBirth.getUTCMonth(), dateOfBirth.getUTCDate()));
+    }
+    return Math.round((next.getTime() - todayUtc.getTime()) / 86400000);
+  }
 
   async evaluate(organizationId: string, filter: FilterGroup) {
     const customers = await this.prisma.customer.findMany({
@@ -56,6 +72,7 @@ export class AudienceFilterService {
     });
 
     const now = Date.now();
+    const nowDate = new Date();
     const views: CustomerView[] = customers.map((c) => ({
       id: c.id,
       lifetimeSpend: Number(c.lifetimeSpend),
@@ -67,6 +84,7 @@ export class AudienceFilterService {
       favoriteVisitDay: c.favoriteVisitDay,
       isAtRisk: c.churnRiskScore?.isAtRisk ?? false,
       churnRiskScore: c.churnRiskScore?.churnRiskScore ?? null,
+      daysUntilBirthday: this.computeDaysUntilBirthday(c.dateOfBirth, nowDate),
     }));
 
     const matched = views.filter((v) => this.matchesGroup(v, filter));

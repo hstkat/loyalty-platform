@@ -158,6 +158,7 @@ export class LoyaltyCardsService {
         lastName: dto.lastName,
         email: dto.email,
         phone: dto.phone,
+        dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
         sourceChannel: 'qr',
       } as never,
     });

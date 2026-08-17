@@ -108,6 +108,35 @@ export class CustomersService {
     const page = query.page && query.page > 0 ? query.page : 1;
     const pageSize = query.pageSize && query.pageSize > 0 ? Math.min(query.pageSize, 100) : 25;
 
+    // Kaartnummer-matching: als de zoekterm (deels) overeenkomt met een
+    // loyaltykaart-nummer, tellen we de gekoppelde klant ook mee. Dit
+    // maakt "zoek een klant om een kaart aan te koppelen" (backoffice)
+    // mogelijk zonder een los, tweede zoek-endpoint te introduceren.
+    let cardMatchCustomerIds: string[] = [];
+    if (query.search) {
+      const cardMatches = await this.prisma.loyaltyCard.findMany({
+        where: { organizationId: orgId, cardNumber: { contains: query.search, mode: 'insensitive' }, customerId: { not: null } },
+        select: { customerId: true },
+        take: 25,
+      });
+      cardMatchCustomerIds = cardMatches.map((c) => c.customerId).filter((id): id is string => !!id);
+    }
+
+    // Volledige-naam-matching: "Henny Schaap" matcht firstName="Henny" +
+    // lastName="Schaap" ook als geen los veld de volledige zoekterm bevat.
+    const searchWords = query.search ? query.search.trim().split(/\s+/).filter(Boolean) : [];
+    const fullNameCondition: Prisma.CustomerWhereInput[] =
+      searchWords.length >= 2
+        ? [
+            {
+              AND: [
+                { firstName: { contains: searchWords[0], mode: 'insensitive' } },
+                { lastName: { contains: searchWords.slice(1).join(' '), mode: 'insensitive' } },
+              ],
+            },
+          ]
+        : [];
+
     const where: Prisma.CustomerWhereInput = {
       organizationId: orgId,
       deletedAt: null,
@@ -121,6 +150,8 @@ export class CustomersService {
               { lastName: { contains: query.search, mode: 'insensitive' } },
               { email: { contains: query.search, mode: 'insensitive' } },
               { phone: { contains: query.search } },
+              ...(cardMatchCustomerIds.length > 0 ? [{ id: { in: cardMatchCustomerIds } }] : []),
+              ...fullNameCondition,
             ],
           }
         : {}),

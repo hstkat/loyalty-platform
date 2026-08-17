@@ -179,6 +179,10 @@
           <label for="f-phone">Telefoon</label>
           <input type="tel" id="f-phone" required placeholder="06 12345678">
         </div>
+        <div class="form-field full">
+          <label for="f-dob">Geboortedatum (optioneel)</label>
+          <input type="date" id="f-dob">
+        </div>
       </div>
 
       <label class="consent-row">
@@ -275,6 +279,7 @@
         lastName: document.getElementById('f-last').value || undefined,
         email: document.getElementById('f-email').value,
         phone: document.getElementById('f-phone').value,
+        dateOfBirth: document.getElementById('f-dob').value || undefined,
         sourceChannel: 'qr',
       });
 
