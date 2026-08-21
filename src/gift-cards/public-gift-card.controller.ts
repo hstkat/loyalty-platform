@@ -3,6 +3,7 @@ import type { Response } from 'express';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { GiftCardsService } from './gift-cards.service';
+import { MollieService } from '../common/mollie.service';
 
 /**
  * Publiek, niet-geauthenticeerd — net als bij de fysieke loyaltykaarten
@@ -15,6 +16,7 @@ export class GiftCardCheckoutController {
   constructor(
     private prisma: PrismaService,
     private giftCards: GiftCardsService,
+    private mollie: MollieService,
   ) {}
 
   /**
@@ -36,7 +38,7 @@ export class GiftCardCheckoutController {
   async thankYouPage(@Param('giftCardId') giftCardId: string, @Res() res: Response) {
     const giftCard = await this.prisma.giftCard.findUnique({
       where: { id: giftCardId },
-      select: { status: true, giftCardNumber: true, currentBalance: true },
+      select: { status: true, giftCardNumber: true, currentBalance: true, recipientEmail: true, molliePaymentId: true },
     });
 
     const styles = `
@@ -47,18 +49,36 @@ export class GiftCardCheckoutController {
       .brand { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
       h1 { font-family: Georgia, serif; font-size: 24px; font-weight: 500; margin: 0 0 16px; }
       p { font-size: 14px; color: rgba(240,244,247,0.8); line-height: 1.6; }
+      a { color: var(--coral-light); }
+      .btn { display: inline-block; margin-top: 12px; background: var(--coral); color: var(--white); text-decoration: none; padding: 12px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; }
     `;
 
     // De webhook kan iets later aankomen dan de terugkeer van de klant
     // vanuit Mollie zelf — toon daarom een neutrale, geruststellende
     // boodschap, nooit een harde "mislukt" als de status nog 'draft' is.
+    // En: nooit een e-mail beloven als er geen ontvanger-adres is
+    // opgegeven. In dat geval is dít de ENIGE plek waar de klant ooit
+    // bij zijn eigen token kan komen — we halen het daarom (alleen hier,
+    // alleen nu) opnieuw op uit Mollie's metadata, waar het al veilig
+    // stond, in plaats van het zelf op te slaan.
     let body: string;
     if (!giftCard) {
       body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Niet gevonden</h1><p>Deze bestelling kon niet worden gevonden.</p>`;
     } else if (giftCard.status === 'active') {
-      body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail.</p>`;
+      if (giftCard.recipientEmail) {
+        body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${giftCard.recipientEmail}.</p>`;
+      } else {
+        const rawToken = giftCard.molliePaymentId ? await this.recoverRawToken(giftCard.molliePaymentId) : null;
+        const linkBlock = rawToken
+          ? `<a class="btn" href="/g/${rawToken}">Bekijk mijn cadeaukaart</a><p style="margin-top:14px;font-size:12px;">Bewaar deze link — dit is je enige toegang tot de kaart.</p>`
+          : `<p>Er ging iets mis bij het ophalen van je kaartlink. Neem contact op met de zaak, onder vermelding van kaartnummer ${giftCard.giftCardNumber}.</p>`;
+        body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}.</p>${linkBlock}`;
+      }
     } else {
-      body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — je ontvangt de cadeaukaart zo snel mogelijk per e-mail.</p>`;
+      const deliveryNote = giftCard.recipientEmail
+        ? 'je ontvangt de cadeaukaart zo snel mogelijk per e-mail.'
+        : 'ververs deze pagina over een moment — je krijgt dan een link naar je kaart.';
+      body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — ${deliveryNote}</p>`;
     }
 
     res.status(200).send(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Bedankt</title><style>${styles}</style></head><body><div class="card">${body}</div></body></html>`);
@@ -83,6 +103,12 @@ export class GiftCardCheckoutController {
   ) {
     const publicAppUrl = process.env.PUBLIC_APP_URL || 'https://loyalty-platform-live.vercel.app';
     return this.giftCards.startOnlinePurchase(orgId, body, publicAppUrl);
+  }
+
+  private async recoverRawToken(molliePaymentId: string): Promise<string | null> {
+    const payment = await this.mollie.getPayment(molliePaymentId);
+    const rawToken = (payment?.metadata as { rawToken?: string } | null)?.rawToken;
+    return rawToken ?? null;
   }
 
   private renderBuyPage(orgId: string): string {
