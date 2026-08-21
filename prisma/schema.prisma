@@ -50,6 +50,9 @@ model Location {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
   name           String
+  // Onderscheidt de merken (Het Strand / Zomers) die dezelfde centrale
+  // klantomgeving delen — bepaalt branding op de klantportal-pagina.
+  slug           String?  @unique
   timezone       String   @default("Europe/Amsterdam")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
@@ -214,6 +217,9 @@ model Customer {
   // Cadeaukaarten — apart van loyaltytegoed
   giftCardsPurchased GiftCard[] @relation("GiftCardPurchaser")
   giftCardsReceived  GiftCard[] @relation("GiftCardRecipient")
+
+  // Klantportal-QR (Mijn Tegoed)
+  qrTokens CustomerQrToken[]
 
   // Unique identity per organization — enforced at the identity table level
   // (email/phone can be null here; the real uniqueness constraint that
@@ -2650,4 +2656,47 @@ model GiftCardLedgerEntry {
 
   @@index([giftCardId, occurredAt])
   @@map("gift_card_ledger_entries")
+}
+
+// ============================================================================
+// Klantportal-QR (Mijn Tegoed) — bewust een APART, kortlevend
+// tokensysteem, los van de fysieke-loyaltykaart-tokens. Een fysieke
+// kaart bestaat fysiek in de wereld, dus het token hoeft nooit opnieuw
+// getoond te worden na aanmaken. Een portal-QR moet elke keer dat een
+// gast inlogt opnieuw zichtbaar zijn — dat vraagt om een ander patroon:
+// kort geldig, makkelijk te vernieuwen, en met beperkte bevoegdheid
+// (identificatie only — geen volledige accountsessie, dus een
+// gefotografeerde QR geeft nooit toegang tot het hele account).
+// ============================================================================
+
+model CustomerQrToken {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_qr_tokens")
+}
+
+// Aparte tabel (i.p.v. GuestLoginCode hergebruiken) voor codes aan een
+// e-mailadres dat nog geen Customer heeft — GuestLoginCode vereist een
+// bestaande customerId en wordt door de al bewezen inlogflow gebruikt;
+// dit voorkomt elk risico daarop terwijl de nieuwe-klant-registratie
+// wordt toegevoegd.
+model GuestRegistrationCode {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  email          String
+  codeHash       String    @map("code_hash")
+  expiresAt      DateTime  @map("expires_at")
+  usedAt         DateTime? @map("used_at")
+  attempts       Int       @default(0)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([organizationId, email])
+  @@map("guest_registration_codes")
 }

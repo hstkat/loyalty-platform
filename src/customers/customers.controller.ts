@@ -222,4 +222,12 @@ export class CustomersController {
   getLocationBreakdown(@Param('orgId') orgId: string, @Param('id') id: string) {
     return this.customers.getLocationBreakdown(orgId, id);
   }
+
+  // -- Portal-QR opzoeken (personeel/kassa) --------------------------------
+
+  @Get('qr-lookup/:token')
+  @RequirePermissions('customer.read')
+  lookupByQrToken(@Param('orgId') orgId: string, @Param('token') token: string) {
+    return this.customers.lookupByQrToken(orgId, token);
+  }
 }

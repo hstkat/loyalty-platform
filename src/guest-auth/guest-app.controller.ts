@@ -1,8 +1,10 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { IsEmail, IsOptional, IsString, Length } from 'class-validator';
+import { createHash, randomBytes } from 'crypto';
 import { GuestAuthService } from './guest-auth.service';
 import { GuestSessionGuard } from './guest-session.guard';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletPassService } from '../wallet/wallet-pass.service';
 
 class RequestCodeDto {
   @IsEmail()
@@ -16,6 +18,36 @@ class VerifyCodeDto {
   @IsString()
   @Length(6, 6)
   code!: string;
+
+  @IsOptional()
+  @IsString()
+  deviceInfo?: string;
+}
+
+class RegisterCustomerDto {
+  @IsString()
+  firstName!: string;
+
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
+  @IsEmail()
+  email!: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  dateOfBirth?: string;
+
+  @IsOptional()
+  marketingConsent?: boolean;
+
+  @IsString()
+  verifiedRegistrationId!: string;
 
   @IsOptional()
   @IsString()
@@ -43,6 +75,7 @@ export class GuestAppController {
   constructor(
     private guestAuth: GuestAuthService,
     private prisma: PrismaService,
+    private walletPass: WalletPassService,
   ) {}
 
   @Post('auth/request-code')
@@ -53,6 +86,16 @@ export class GuestAppController {
   @Post('auth/verify-code')
   verifyCode(@Param('orgId') orgId: string, @Body() dto: VerifyCodeDto) {
     return this.guestAuth.verifyCode(orgId, dto.email, dto.code, dto.deviceInfo);
+  }
+
+  @Post('auth/complete-registration')
+  completeRegistration(@Param('orgId') orgId: string, @Body() dto: RegisterCustomerDto) {
+    return this.guestAuth.completeRegistration(
+      orgId,
+      dto.verifiedRegistrationId,
+      { firstName: dto.firstName, lastName: dto.lastName, email: dto.email, phone: dto.phone, dateOfBirth: dto.dateOfBirth, marketingConsent: dto.marketingConsent },
+      dto.deviceInfo,
+    );
   }
 
   @Post('auth/logout')
@@ -69,13 +112,33 @@ export class GuestAppController {
       where: { id: req.guestCustomer.id },
       include: { wallet: true, tier: true },
     });
+
+    // Eerstvolgend vervallend tegoed — voor "Tegoed verloopt: 12 oktober"
+    // op zowel de Wallet-kaart als het portaal. Puntensaldo en
+    // vervaldata komen altijd uit de bestaande ledger, nooit een apart
+    // veld — dit is puur een leesquery erbovenop.
+    const soonestExpiring = customer!.wallet
+      ? await this.prisma.walletLedgerEntry.findFirst({
+          where: { walletId: customer!.wallet.id, status: 'available', expiresAt: { not: null, gte: new Date() }, remainingAmount: { gt: 0 } },
+          orderBy: { expiresAt: 'asc' },
+          select: { expiresAt: true, remainingAmount: true },
+        })
+      : null;
+
     return {
       id: customer!.id,
       firstName: customer!.firstName,
       lastName: customer!.lastName,
       tier: customer!.tier?.name ?? null,
-      balance: customer!.wallet ? Math.round(Number(customer!.wallet.availableBalance)) : 0,
-      lifetimeEarned: customer!.wallet ? Math.round(Number(customer!.wallet.lifetimeEarned)) : 0,
+      // Bewust NIET afgerond naar hele euro's (was een bestaande bug —
+      // €18,40 werd getoond als "18") — twee decimalen, exact zoals de
+      // ledger het vastlegt.
+      balance: customer!.wallet ? Number(customer!.wallet.availableBalance) : 0,
+      pendingBalance: customer!.wallet ? Number(customer!.wallet.pendingBalance) : 0,
+      lifetimeEarned: customer!.wallet ? Number(customer!.wallet.lifetimeEarned) : 0,
+      expiringSoon: soonestExpiring
+        ? { amount: Number(soonestExpiring.remainingAmount), expiresAt: soonestExpiring.expiresAt }
+        : null,
     };
   }
 
@@ -92,12 +155,104 @@ export class GuestAppController {
     });
   }
 
+  // -- Cadeaukaarten van deze klant — bewust een apart endpoint, apart
+  // saldo, nooit samengevoegd met het loyaltytegoed hierboven. --------
+
+  @Get('me/wallet-pass/google')
+  @UseGuards(GuestSessionGuard)
+  async getGoogleWalletLink(@Param('orgId') orgId: string, @Req() req: { guestCustomer: { id: string } }) {
+    return this.walletPass.getOrCreateGoogleWalletLink(orgId, req.guestCustomer.id);
+  }
+
+  @Get('me/gift-cards')
+  @UseGuards(GuestSessionGuard)
+  async getMyGiftCards(@Req() req: { guestCustomer: { id: string } }) {
+    const cards = await this.prisma.giftCard.findMany({
+      where: {
+        recipientCustomerId: req.guestCustomer.id,
+        status: { in: ['active', 'partially_redeemed'] },
+      },
+      orderBy: { issuedAt: 'desc' },
+      select: { id: true, giftCardNumber: true, currentBalance: true, originalValue: true, issuedAt: true, expiresAt: true },
+    });
+    return cards.map((c) => ({
+      id: c.id,
+      // Gemaskeerd kaartnummer — "GC-000123" -> "GC-••••23", zelfde
+      // gedachte als een gemaskeerd betaalkaartnummer.
+      maskedNumber: c.giftCardNumber.replace(/^(GC-)(\d+)$/, (_m, prefix: string, digits: string) => prefix + '••••' + digits.slice(-2)),
+      currentBalance: Number(c.currentBalance),
+      originalValue: Number(c.originalValue),
+      issuedAt: c.issuedAt,
+      expiresAt: c.expiresAt,
+    }));
+  }
+
+  // -- Eén samengevoegde tijdlijn voor de UI — puur een leesweergave die
+  // bestaande, gescheiden ledgers naast elkaar toont. De bedragen zelf
+  // blijven te allen tijde herleidbaar naar hun eigen bron; er wordt
+  // nergens een gecombineerd saldo berekend of opgeslagen. -----------
+
+  @Get('me/activity')
+  @UseGuards(GuestSessionGuard)
+  async getMyActivity(@Req() req: { guestCustomer: { id: string } }) {
+    const wallet = await this.prisma.wallet.findUnique({ where: { customerId: req.guestCustomer.id } });
+
+    const [walletEntries, giftCardEntries] = await Promise.all([
+      wallet
+        ? this.prisma.walletLedgerEntry.findMany({
+            where: { walletId: wallet.id },
+            orderBy: { occurredAt: 'desc' },
+            take: 20,
+            select: { entryType: true, amount: true, occurredAt: true, reason: true },
+          })
+        : Promise.resolve([]),
+      this.prisma.giftCardLedgerEntry.findMany({
+        where: { giftCard: { recipientCustomerId: req.guestCustomer.id } },
+        orderBy: { occurredAt: 'desc' },
+        take: 20,
+        select: { entryType: true, amount: true, occurredAt: true, reason: true, giftCard: { select: { giftCardNumber: true } } },
+      }),
+    ]);
+
+    const combined = [
+      ...walletEntries.map((e) => ({ source: 'loyalty' as const, type: e.entryType, amount: Number(e.amount), occurredAt: e.occurredAt, reason: e.reason })),
+      ...giftCardEntries.map((e) => ({
+        source: 'gift_card' as const,
+        type: e.entryType,
+        amount: Number(e.amount),
+        occurredAt: e.occurredAt,
+        reason: e.reason,
+        giftCardNumber: e.giftCard.giftCardNumber,
+      })),
+    ];
+    combined.sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime());
+    return combined.slice(0, 30);
+  }
+
+  // -- Portal-QR: een kortlevend, apart token (nooit het bestaande
+  // fysieke-kaart-systeem hergebruikt — dat token kan na aanmaken nooit
+  // opnieuw getoond worden, een portal-QR moet dat juist elke sessie
+  // wel kunnen). Alleen identificatie, geen accountsessie: een
+  // gefotografeerde QR geeft dus nooit toegang tot dit account. --------
+
+  @Get('me/qr-token')
+  @UseGuards(GuestSessionGuard)
+  async getMyQrToken(@Req() req: { guestCustomer: { id: string } }) {
+    const token = randomBytes(16).toString('base64url');
+    const tokenHash = createHash('sha256').update(token).digest('hex');
+    await this.prisma.customerQrToken.create({
+      data: { customerId: req.guestCustomer.id, tokenHash, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
+    });
+    return { token, expiresInHours: 24 };
+  }
+
   @Get('rewards')
   @UseGuards(GuestSessionGuard)
   async getAvailableRewards(@Param('orgId') orgId: string) {
     const items = await this.prisma.rewardCatalogItem.findMany({
       where: { organizationId: orgId, isActive: true },
       orderBy: { pointsCost: 'asc' },
+      include: { location: { select: { name: true, slug: true } } },
     });
     // Reuses the same day/date availability rule as the kassa —
     // duplicated here in a minimal form since RewardCatalogService's

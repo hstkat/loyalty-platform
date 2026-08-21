@@ -1,6 +1,7 @@
 import { Controller, Get, Header, NotFoundException, Param, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
+import { WalletPassService } from '../wallet/wallet-pass.service';
 
 /**
  * A real Apple Wallet / Google Wallet pass (.pkpass / Google Wallet API)
@@ -20,7 +21,10 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 @Controller('pass')
 export class PassController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private walletPass: WalletPassService,
+  ) {}
 
   @Get(':orgId/:customerId')
   @Header('Content-Type', 'text/html; charset=utf-8')
@@ -40,10 +44,14 @@ export class PassController {
     const payload = JSON.stringify({ type: 'strand_tegoed_pass', customerId: customer.id });
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(payload)}`;
 
-    res.status(200).send(this.renderPass(name, balance, qrUrl));
+    // Best-effort — als Google Wallet niet is ingesteld, toont de pagina
+    // gewoon geen knop; de rest van de pas blijft onveranderd werken.
+    const googleWallet = await this.walletPass.getOrCreateGoogleWalletLink(orgId, customer.id).catch(() => ({ saveUrl: null as string | null }));
+
+    res.status(200).send(this.renderPass(name, balance, qrUrl, googleWallet.saveUrl));
   }
 
-  private renderPass(name: string, balance: number, qrUrl: string): string {
+  private renderPass(name: string, balance: number, qrUrl: string, googleWalletSaveUrl: string | null): string {
     return `<!DOCTYPE html>
 <html lang="nl">
 <head>
@@ -95,6 +103,7 @@ export class PassController {
     <div class="balance-label">Strand tegoed</div>
     <div class="balance">${balance} pt</div>
     <div class="qr-wrap"><img src="${qrUrl}" alt="Pas-QR"></div>
+    ${googleWalletSaveUrl ? `<div style="margin-top:16px;"><a href="${googleWalletSaveUrl}" style="display:inline-block;background:#4285F4;color:white;text-decoration:none;padding:10px 20px;border-radius:8px;font-size:13px;font-weight:600;">Voeg toe aan Google Wallet</a></div>` : ''}
     <div class="hint">
       Laat deze code scannen bij de kassa.<br>
       <strong>Tip:</strong> zet deze pagina op je beginscherm (deel-knop → "Zet op beginscherm") zodat hij als een app werkt.

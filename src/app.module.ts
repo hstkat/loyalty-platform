@@ -21,6 +21,7 @@ import { ImportModule } from './import/import.module';
 import { LoyaltyCardsModule } from './loyalty-cards/loyalty-cards.module';
 import { AdminModule } from './admin/admin.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
+import { CustomerPortalModule } from './customer-portal/customer-portal.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { GiftCardsModule } from './gift-cards/gift-cards.module';
     LoyaltyCardsModule,
     AdminModule,
     GiftCardsModule,
+    CustomerPortalModule,
   ],
 })
 export class AppModule {}

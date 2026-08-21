@@ -3,8 +3,10 @@ import { GuestAppController } from './guest-app.controller';
 import { GuestAuthService } from './guest-auth.service';
 import { GuestSessionGuard } from './guest-session.guard';
 import { MailgunService } from '../common/mailgun.service';
+import { WalletModule } from '../wallet/wallet.module';
 
 @Module({
+  imports: [WalletModule],
   controllers: [GuestAppController],
   providers: [GuestAuthService, GuestSessionGuard, MailgunService],
   exports: [GuestAuthService],

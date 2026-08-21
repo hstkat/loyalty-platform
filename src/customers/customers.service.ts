@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { RequestContext } from '../common/decorators/current-context.decorator';
@@ -731,5 +732,28 @@ export class CustomersService {
       where: { customerId },
       include: { location: true },
     });
+  }
+
+  // -- Portal-QR opzoeken (personeel/kassa) -----------------------------
+  // Zelfde beveiligingsgedachte als de fysieke-loyaltykaart-lookup:
+  // server-side opzoeken via een gehasht, kortlevend token — nooit
+  // vertrouwen op wat er in de QR zelf lijkt te staan.
+
+  async lookupByQrToken(orgId: string, rawToken: string) {
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+    const qrToken = await this.prisma.customerQrToken.findFirst({
+      where: { tokenHash, expiresAt: { gte: new Date() } },
+      include: { customer: { include: { wallet: true, tier: true } } },
+    });
+    if (!qrToken || qrToken.customer.organizationId !== orgId || qrToken.customer.deletedAt) {
+      throw new NotFoundException('Onbekende of verlopen QR-code');
+    }
+    const customer = qrToken.customer;
+    return {
+      customerId: customer.id,
+      customerName: [customer.firstName, customer.lastName].filter(Boolean).join(' '),
+      tier: customer.tier?.name ?? null,
+      availableBalance: customer.wallet ? Number(customer.wallet.availableBalance) : 0,
+    };
   }
 }

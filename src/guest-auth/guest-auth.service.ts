@@ -39,26 +39,27 @@ export class GuestAuthService {
       where: { organizationId: orgId, email, deletedAt: null },
     });
 
-    // Deliberately the SAME response whether or not the email exists —
-    // never reveal to an unauthenticated caller whether a given email
-    // address is a member (a common account-enumeration protection).
-    if (!customer) {
-      return { sent: true };
-    }
-
     const code = randomInt(0, 1_000_000).toString().padStart(6, '0');
-    await this.prisma.guestLoginCode.create({
-      data: {
-        customerId: customer.id,
-        codeHash: this.hash(code),
-        expiresAt: new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000),
-      },
-    });
+
+    // Deliberately the SAME response, and an identical-looking code
+    // email, whether or not the address is a member — never reveal to
+    // an unauthenticated caller whether a given email is a member
+    // (account-enumeration protection). The registration-vs-login
+    // branch only becomes visible AFTER a correct code is entered.
+    if (!customer) {
+      await this.prisma.guestRegistrationCode.create({
+        data: { organizationId: orgId, email, codeHash: this.hash(code), expiresAt: new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000) },
+      });
+    } else {
+      await this.prisma.guestLoginCode.create({
+        data: { customerId: customer.id, codeHash: this.hash(code), expiresAt: new Date(Date.now() + CODE_TTL_MINUTES * 60 * 1000) },
+      });
+    }
 
     if (this.mailgun.isConfigured()) {
       await this.mailgun.sendEmail(
         email,
-        'Je inlogcode voor Strand tegoed',
+        'Je inlogcode voor Mijn Tegoed',
         `Je inlogcode is: ${code}\n\nDeze code is ${CODE_TTL_MINUTES} minuten geldig. Heb je dit niet aangevraagd? Dan kun je dit bericht negeren.`,
       );
     }
@@ -70,26 +71,95 @@ export class GuestAuthService {
     const customer = await this.prisma.customer.findFirst({
       where: { organizationId: orgId, email, deletedAt: null },
     });
-    if (!customer) throw new UnauthorizedException('Ongeldige code');
 
-    const loginCode = await this.prisma.guestLoginCode.findFirst({
-      where: { customerId: customer.id, usedAt: null, expiresAt: { gte: new Date() } },
+    if (customer) {
+      const loginCode = await this.prisma.guestLoginCode.findFirst({
+        where: { customerId: customer.id, usedAt: null, expiresAt: { gte: new Date() } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!loginCode) throw new UnauthorizedException('Code verlopen of niet gevonden — vraag een nieuwe aan');
+      if (loginCode.attempts >= MAX_CODE_ATTEMPTS) throw new UnauthorizedException('Te veel pogingen — vraag een nieuwe code aan');
+      if (loginCode.codeHash !== this.hash(code)) {
+        await this.prisma.guestLoginCode.update({ where: { id: loginCode.id }, data: { attempts: { increment: 1 } } });
+        throw new UnauthorizedException('Ongeldige code');
+      }
+      await this.prisma.guestLoginCode.update({ where: { id: loginCode.id }, data: { usedAt: new Date() } });
+
+      const session = await this.issueSession(customer.id, deviceInfo);
+      return { ...session, requiresRegistration: false as const };
+    }
+
+    // Geen bestaande klant — probeer de registratiecode. Nooit een
+    // ander soort foutmelding tonen dan bij een bestaande klant (zelfde
+    // anti-enumeratie-principe als bij requestCode hierboven).
+    const regCode = await this.prisma.guestRegistrationCode.findFirst({
+      where: { organizationId: orgId, email, usedAt: null, expiresAt: { gte: new Date() } },
       orderBy: { createdAt: 'desc' },
     });
-    if (!loginCode) throw new UnauthorizedException('Code verlopen of niet gevonden — vraag een nieuwe aan');
-
-    if (loginCode.attempts >= MAX_CODE_ATTEMPTS) {
-      throw new UnauthorizedException('Te veel pogingen — vraag een nieuwe code aan');
-    }
-
-    if (loginCode.codeHash !== this.hash(code)) {
-      await this.prisma.guestLoginCode.update({ where: { id: loginCode.id }, data: { attempts: { increment: 1 } } });
+    if (!regCode) throw new UnauthorizedException('Code verlopen of niet gevonden — vraag een nieuwe aan');
+    if (regCode.attempts >= MAX_CODE_ATTEMPTS) throw new UnauthorizedException('Te veel pogingen — vraag een nieuwe code aan');
+    if (regCode.codeHash !== this.hash(code)) {
+      await this.prisma.guestRegistrationCode.update({ where: { id: regCode.id }, data: { attempts: { increment: 1 } } });
       throw new UnauthorizedException('Ongeldige code');
     }
+    await this.prisma.guestRegistrationCode.update({ where: { id: regCode.id }, data: { usedAt: new Date() } });
 
-    await this.prisma.guestLoginCode.update({ where: { id: loginCode.id }, data: { usedAt: new Date() } });
+    // Het e-mailadres is nu geverifieerd, maar er is nog geen profiel —
+    // de frontend toont het korte registratieformulier en rondt af via
+    // completeRegistration(), met dit ID als bewijs van de zojuist
+    // geslaagde verificatie.
+    return { requiresRegistration: true as const, verifiedRegistrationId: regCode.id };
+  }
 
-    return this.issueSession(customer.id, deviceInfo);
+  /**
+   * Rondt de registratie af ná een succesvolle e-mailverificatie
+   * hierboven. Controleert bewust ALSNOG op een bestaande klant (op
+   * e-mail én genormaliseerd telefoonnummer) — voorkomt dubbele
+   * profielen als iemand tussen verificatie en dit moment via een
+   * andere weg (POS, fysieke kaart, Piggy-import) al is aangemaakt.
+   */
+  async completeRegistration(
+    orgId: string,
+    verifiedRegistrationId: string,
+    profile: { firstName: string; lastName?: string; email: string; phone?: string; dateOfBirth?: string; marketingConsent?: boolean },
+    deviceInfo?: string,
+  ) {
+    const regCode = await this.prisma.guestRegistrationCode.findFirst({
+      where: { id: verifiedRegistrationId, organizationId: orgId, email: profile.email, usedAt: { not: null } },
+    });
+    if (!regCode) throw new UnauthorizedException('Verificatie verlopen — begin opnieuw met je e-mailadres');
+
+    const normalizedPhone = profile.phone ? profile.phone.replace(/[^\d]/g, '') : undefined;
+    let customer = await this.prisma.customer.findFirst({
+      where: {
+        organizationId: orgId,
+        deletedAt: null,
+        OR: [{ email: profile.email }, ...(normalizedPhone ? [{ phone: { contains: normalizedPhone } }] : [])],
+      },
+    });
+
+    if (!customer) {
+      customer = await this.prisma.customer.create({
+        data: {
+          organizationId: orgId,
+          firstName: profile.firstName,
+          lastName: profile.lastName,
+          email: profile.email,
+          phone: profile.phone,
+          dateOfBirth: profile.dateOfBirth ? new Date(profile.dateOfBirth) : undefined,
+          sourceChannel: 'website',
+        } as never,
+      });
+
+      if (profile.marketingConsent) {
+        await this.prisma.customerConsent
+          .create({ data: { customerId: customer.id, consentType: 'marketing', granted: true, source: 'signup_form', privacyPolicyVersion: '2026-01' } as never })
+          .catch(() => undefined);
+      }
+    }
+
+    const session = await this.issueSession(customer.id, deviceInfo);
+    return { ...session, requiresRegistration: false as const };
   }
 
   /**

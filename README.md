@@ -1199,6 +1199,102 @@ met een Mollie-testsleutel moet nog gebeuren.
 - "Koop een cadeaukaart, krijg loyaltytegoed cadeau"-promoties (expliciet als "later" aangemerkt in de opdracht) zijn niet gebouwd — de architectuur (aparte boekhoudingen die bewust nooit automatisch met elkaar communiceren) maakt dit later wel veilig toevoegbaar zonder dubbele boekingen.
 - Geen dedicated fraude-detectie/rate-limiting (zelfde, eerder al toegelichte beperking als bij de fysieke loyaltykaarten — geen Redis-achtige infrastructuur in deze omgeving).
 
+## 31. Klantportal "Mijn Tegoed" — één centrale omgeving, gebrand per website
+
+Op verzoek (na een eerdere, veel uitgebreidere Apple/Google Wallet-
+specificatie die bewust vereenvoudigd werd): een veilige mobiele
+webpagina waarmee een gast zonder app zijn Beach Credit, punten,
+cadeaukaarten, rewards en historie kan bekijken — toegankelijk vanaf de
+bestaande websites van zowel Het Strand als Zomers.
+
+**Architectuur — precies zoals gevraagd, één codebase:** `GET /portal`
+met een `?brand=het-strand` of `?brand=zomers` query-parameter bepaalt
+de merknaam en accentkleur; de onderliggende data (klant, saldo,
+cadeaukaarten, rewards, historie) komt voor beide altijd uit **dezelfde**
+centrale database en hetzelfde Customer-account. Geen tweede codebase,
+geen apart account per website.
+
+### Hoe koppel je dit aan de bestaande websites?
+
+Ik heb geen toegang tot de bestaande codebases van het-strand.nl en
+zomersbeachclub.nl (die staan niet in dit project) — dat moet je (of je
+webbouwer) zelf koppelen. De eenvoudigste, veiligste manier:
+
+**Optie A — een simpele link/knop** (aanbevolen, minste werk):
+Maak op beide sites een pagina op het gevraagde pad (`/mijn-tegoed`) die
+simpelweg doorverwijst naar:
+- Het Strand: `https://loyalty-platform-live.vercel.app/portal?brand=het-strand`
+- Zomers: `https://loyalty-platform-live.vercel.app/portal?brand=zomers`
+
+**Optie B — inladen in een iframe** op die bestaande pagina's, met
+dezelfde URL's als hierboven — dan blijft de eigen site-navigatie
+zichtbaar eromheen.
+
+**Optie C — reverse proxy** (voor een meer naadloze ervaring, technisch
+iets meer werk): laat `/mijn-tegoed` op beide sites zelf serverside naar
+bovenstaande URL's doorproxyen, zodat de bezoeker nooit een ander domein
+in de adresbalk ziet.
+
+### Inloggen zonder wachtwoord — nieuw, subtiel probleempje opgelost
+
+Het bestaande e-mailcode-systeem (`GuestAuthService`) geeft **bewust
+altijd hetzelfde antwoord**, of een e-mailadres nu wel of niet een
+account heeft — een normale, goede beveiligingsmaatregel tegen account-
+enumeratie. Dat betekende wel dat de frontend nooit vooraf kon weten of
+iemand nieuw is. Opgelost door de nieuwe-klant-vraag **na** de
+codeverificatie te stellen, niet ervoor: iedereen krijgt een code op
+hetzelfde soort verzoek, en pas na een juiste code blijkt of er een
+account bestaat (dan meteen inloggen) of niet (dan het korte
+registratieformulier). Dit raakt de al-bewezen bestaande inlogflow (o.a.
+gebruikt door de Expo-app) op geen enkele manier — een volledig aparte,
+nieuwe tabel (`GuestRegistrationCode`) regelt dit.
+
+**Telefoon/SMS-inloggen is niet gebouwd** — dit platform heeft nergens
+een SMS-providerkoppeling (zoals Twilio), in tegenstelling tot e-mail
+(Mailgun) en betalingen (Mollie). E-mail werkt volledig; SMS-OTP is een
+eerlijk benoemde, latere uitbreiding die een nieuwe providerkoppeling
+vereist — exact hetzelfde patroon als eerder bij Mailgun/Mollie.
+
+### QR-beveiliging — een nieuw, apart tokensysteem
+
+De portal-QR gebruikt bewust **niet** het bestaande fysieke-
+loyaltykaart-tokensysteem: dat token is maar één keer zichtbaar (bij
+aanmaken), wat prima is voor een fysieke kaart maar niet werkt voor een
+webportal-QR die bij elke keer inloggen opnieuw getoond moet worden.
+In plaats daarvan: `CustomerQrToken`, een kortlevend (24 uur), apart,
+willekeurig token — bevat geen naam/e-mail/saldo/database-ID, en geeft
+bij een gefotografeerde/gekopieerde QR **nooit** toegang tot het volledige
+account (alleen identificatie, geen sessie). Personeel kan 'm opzoeken via
+een nieuw endpoint (`GET /customers/qr-lookup/:token`).
+
+**Ook meteen een bestaande bug hersteld:** het klantsaldo werd
+afgerond naar hele euro's (`Math.round`) in de bestaande `/me`-endpoint
+— €18,40 werd getoond als "18". Nu twee decimalen, exact zoals de
+ledger het vastlegt.
+
+### Saldi blijven gescheiden
+
+Precies zoals gevraagd: geen nieuw gecombineerd saldoveld. Het dashboard
+haalt Beach Credit uit de bestaande `Wallet`, cadeaukaarten uit de
+bestaande `GiftCard`-ledger, en toont ze in dezelfde pagina zonder ze
+ooit samen te voegen tot één getal. De nieuwe `/me/activity`-tijdlijn is
+puur een leesweergave die beide naast elkaar toont, gesorteerd op datum
+— elk bedrag blijft herleidbaar naar zijn eigen bron.
+
+### Locatiegebonden rewards
+
+De bestaande `RewardCatalogItem.locationId` (al aanwezig, nooit
+gebruikt in de klant-app) bepaalt of een reward organisatiebreed of aan
+één locatie gebonden is — het dashboard toont dan een duidelijk label
+("Alleen geldig bij Zomers Beachclub").
+
+### Bewuste vereenvoudigingen, eerlijk benoemd
+
+- Geen PWA-infrastructuur (geen manifest.json/service-worker) — bewust, precies zoals gevraagd: "bouw geen zware PWA-structuur als dit niet nodig is."
+- Profielgegevens wijzigen (e-mail/telefoon met verificatie) is nu alleen-lezen in de portal; wijzigen kan voorlopig via de bestaande backoffice. Een latere uitbreiding.
+- "Persoonlijke aanbiedingen" (sectie 12 van de oorspronkelijke, uitgebreidere specificatie) is niet gebouwd in deze vereenvoudigde versie — de Rewards-catalogus wél.
+- Apple/Google Wallet-groundwork (`WalletPassService`, `GoogleWalletService`) staat er al uit een eerdere sessie, blijft ongebruikt-maar-aanwezig voor een latere uitbreiding — precies zoals de nieuwe, vereenvoudigde opdracht vroeg.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |
