@@ -18,6 +18,7 @@ import {
 } from './dto/gift-cards.dto';
 
 const MAX_BATCH_QUANTITY = 5000;
+const MIN_GIFT_CARD_VALUE = 10; // onder dit bedrag wegen de vaste transactiekosten (Mollie e.d.) niet meer op tegen de waarde
 
 /**
  * GiftCard -> GiftCardLedgerEntry — een volledig aparte boekhouding van
@@ -54,7 +55,7 @@ export class GiftCardsService {
   // -- Direct uitgeven (admin/kassa/online) — géén batch nodig -------------
 
   async issue(orgId: string, ctx: RequestContext, dto: IssueGiftCardDto) {
-    if (dto.originalValue <= 0) throw new BadRequestException('Bedrag moet groter dan €0 zijn');
+    if (dto.originalValue < MIN_GIFT_CARD_VALUE) throw new BadRequestException(`Minimaal bedrag is €${MIN_GIFT_CARD_VALUE} (i.v.m. transactiekosten)`);
 
     const existingCount = await this.prisma.giftCard.count({ where: { organizationId: orgId } });
     const token = this.generateToken();
@@ -157,7 +158,7 @@ export class GiftCardsService {
     dto: IssueGiftCardDto,
     publicAppUrl: string,
   ): Promise<{ checkoutUrl: string } | { checkoutUrl: null; reason: string }> {
-    if (dto.originalValue <= 0) throw new BadRequestException('Bedrag moet groter dan €0 zijn');
+    if (dto.originalValue < MIN_GIFT_CARD_VALUE) throw new BadRequestException(`Minimaal bedrag is €${MIN_GIFT_CARD_VALUE} (i.v.m. transactiekosten)`);
     if (!this.mollie.isConfigured()) {
       return { checkoutUrl: null, reason: 'Online betalen is nog niet ingesteld — neem contact op met de zaak.' };
     }
@@ -310,7 +311,7 @@ export class GiftCardsService {
   // -- Lege fysieke kaart activeren bij de kassa ---------------------------
 
   async activate(orgId: string, ctx: RequestContext, dto: ActivateGiftCardDto) {
-    if (dto.originalValue <= 0) throw new BadRequestException('Bedrag moet groter dan €0 zijn');
+    if (dto.originalValue < MIN_GIFT_CARD_VALUE) throw new BadRequestException(`Minimaal bedrag is €${MIN_GIFT_CARD_VALUE} (i.v.m. transactiekosten)`);
 
     const giftCard = await this.prisma.giftCard.findUnique({ where: { publicTokenHash: this.hashToken(dto.token) } });
     if (!giftCard) throw new NotFoundException('Cadeaukaart niet gevonden');

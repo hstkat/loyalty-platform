@@ -144,7 +144,7 @@
 
   <div class="panel">
     <h2>Cadeaukaart uitgeven</h2>
-    <p class="sub">Voor directe verkoop (bijv. digitaal, of aan de balie zonder vooraf gedrukte kaart). Voor vooraf gedrukte fysieke kaarten: gebruik batches hieronder.</p>
+    <p class="sub">Voor directe verkoop (bijv. digitaal, of aan de balie zonder vooraf gedrukte kaart). Voor vooraf gedrukte fysieke kaarten: gebruik batches hieronder. Minimaal €10 per kaart, i.v.m. transactiekosten.</p>
 
     <div class="amount-options" id="amount-chips">
       <div class="amount-chip" data-value="25">€25</div>
@@ -153,7 +153,7 @@
       <div class="amount-chip" data-value="custom">Anders…</div>
     </div>
     <div class="form-field" id="custom-amount-field" style="display:none; margin-bottom: 14px; max-width: 200px;">
-      <input type="number" id="custom-amount-input" placeholder="Bedrag in €" min="1" step="0.01">
+      <input type="number" id="custom-amount-input" placeholder="Bedrag in € (min. €10)" min="10" step="0.01">
     </div>
 
     <div class="form-row">
@@ -308,7 +308,7 @@
 
   els.issueBtn.addEventListener('click', async () => {
     const amount = selectedAmount || parseFloat(els.customAmountInput.value);
-    if (!amount || amount <= 0) { alert('Kies of vul een geldig bedrag in.'); return; }
+    if (!amount || amount < 10) { alert('Minimaal bedrag is €10 (i.v.m. transactiekosten).'); return; }
 
     els.issueBtn.disabled = true;
     els.issueBtn.textContent = 'Bezig…';

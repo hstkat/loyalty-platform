@@ -146,7 +146,7 @@ export class GiftCardCheckoutController {
       <div class="amount-chip" data-value="100">€100</div>
       <div class="amount-chip" data-value="custom">Anders…</div>
     </div>
-    <input type="number" id="custom-amount" placeholder="Bedrag in €" min="1" step="0.01" style="display:none;">
+    <input type="number" id="custom-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01" style="display:none;">
     <label>Naam ontvanger (optioneel)</label>
     <input type="text" id="recipient-name" placeholder="Voor jezelf? Leeg laten">
     <label>E-mailadres ontvanger (optioneel)</label>
@@ -177,7 +177,7 @@ export class GiftCardCheckoutController {
       const errorEl = document.getElementById('error');
       errorEl.textContent = '';
       const amount = selectedAmount || parseFloat(document.getElementById('custom-amount').value);
-      if (!amount || amount <= 0) { errorEl.textContent = 'Kies of vul een geldig bedrag in.'; return; }
+      if (!amount || amount < 10) { errorEl.textContent = 'Minimaal bedrag is €10 (i.v.m. transactiekosten).'; return; }
 
       const btn = document.getElementById('pay-btn');
       btn.disabled = true;
