@@ -1295,6 +1295,35 @@ gebruikt in de klant-app) bepaalt of een reward organisatiebreed of aan
 - "Persoonlijke aanbiedingen" (sectie 12 van de oorspronkelijke, uitgebreidere specificatie) is niet gebouwd in deze vereenvoudigde versie — de Rewards-catalogus wél.
 - Apple/Google Wallet-groundwork (`WalletPassService`, `GoogleWalletService`) staat er al uit een eerdere sessie, blijft ongebruikt-maar-aanwezig voor een latere uitbreiding — precies zoals de nieuwe, vereenvoudigde opdracht vroeg.
 
+## 32. Strategiekeuze: Expo-app op een laag pitje, klantportal + fysieke QR + e-mail als hoofdpijlers
+
+Op verzoek — bewuste, niet-technische beslissing: de mobiele Expo-app
+(`strand-tegoed-app`, apart project) blijft **onaangeroerd bestaan** en
+functioneert nog volledig (alle endpoints die hij gebruikt zijn
+gecontroleerd en ongewijzigd), maar wordt niet langer actief
+doorontwikkeld. De focus ligt voortaan op drie pijlers, die allemaal al
+dezelfde centrale Customer/Wallet-data delen:
+
+1. **Klantportal** (`/portal?brand=...`) — "de app zonder app"
+2. **Fysieke QR-kaarten** (`LoyaltyCard`) — kassa-herkenning
+3. **E-mail** (Mailgun) — inloggen én communicatie
+
+### Nieuw: "e-mail mijn QR om te printen"
+
+Vanuit de portal kan een klant zijn QR-code direct naar zichzelf laten
+e-mailen, om uit te printen of te bewaren. Bewust **niet** het
+kortlevende portal-QR-token (`CustomerQrToken`, 24 uur geldig — een
+geprinte kaart zou de volgende dag al niet meer werken), maar een
+volwaardige, nooit-verlopende fysieke loyaltykaart uit het al bestaande,
+beproefde `LoyaltyCard`-systeem — nu alleen direct uitgegeven aan een
+al-ingelogde klant in plaats van via de scan-en-claim-flow.
+
+**Technische kanttekening:** dit introduceerde een echte cirkelverwijzing
+tussen `GuestAuthModule` en `LoyaltyCardsModule` (de een gebruikt de
+ander al voor de kaart-claimflow, en nu andersom ook voor het direct
+uitgeven van een kaart) — opgelost met NestJS' eigen `forwardRef()`,
+de standaardoplossing hiervoor.
+
 ## Alle tien modules — overzicht
 
 | # | Module | Ontwerp | Schema/migratie | API |

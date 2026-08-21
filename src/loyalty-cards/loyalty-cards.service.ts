@@ -98,6 +98,45 @@ export class LoyaltyCardsService {
     };
   }
 
+  /**
+   * Geeft direct een nieuwe, al-actieve kaart uit aan een klant die al
+   * ingelogd is (bijv. via de portal, "e-mail mijn QR om te printen") —
+   * geen claimflow nodig, want de identiteit staat al vast door de
+   * sessie zelf. Bewust géén poging om een eerder token te "hervinden"
+   * (dat kan sowieso niet, we bewaren nooit het ruwe token) — elke klik
+   * op "verstuur opnieuw" maakt gewoon een nieuwe, geldige kaart aan.
+   * Dat is onschuldig: meerdere geldige kaarten per klant is al een
+   * bewust ondersteund scenario in dit systeem.
+   */
+  async issueDirectToCustomer(orgId: string, customerId: string) {
+    const existingCount = await this.prisma.loyaltyCard.count({ where: { organizationId: orgId } });
+    const token = this.generateToken();
+    const cardNumber = 'BC-' + String(existingCount + 1).padStart(6, '0');
+
+    const card = await this.prisma.loyaltyCard.create({
+      data: {
+        organizationId: orgId,
+        customerId,
+        publicTokenHash: this.hashToken(token),
+        cardNumber,
+        status: 'active',
+        claimedAt: new Date(),
+      },
+    });
+
+    await this.audit.record({
+      organizationId: orgId,
+      entityType: 'loyalty_card',
+      entityId: card.id,
+      action: 'create',
+      actor: { actorType: 'customer_self_service', actorId: customerId, ipAddress: null },
+      afterState: { cardNumber, customerId },
+      reason: 'Zelf aangevraagd via klantportal (e-mail om te printen)',
+    });
+
+    return { cardNumber, token, qrUrl: `https://loyalty-platform-live.vercel.app/c/${token}` };
+  }
+
   async listBatches(orgId: string) {
     return this.prisma.loyaltyCardBatch.findMany({
       where: { organizationId: orgId },

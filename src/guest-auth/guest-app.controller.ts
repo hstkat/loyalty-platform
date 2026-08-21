@@ -5,6 +5,8 @@ import { GuestAuthService } from './guest-auth.service';
 import { GuestSessionGuard } from './guest-session.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletPassService } from '../wallet/wallet-pass.service';
+import { LoyaltyCardsService } from '../loyalty-cards/loyalty-cards.service';
+import { MailgunService } from '../common/mailgun.service';
 
 class RequestCodeDto {
   @IsEmail()
@@ -76,6 +78,8 @@ export class GuestAppController {
     private guestAuth: GuestAuthService,
     private prisma: PrismaService,
     private walletPass: WalletPassService,
+    private loyaltyCards: LoyaltyCardsService,
+    private mailgun: MailgunService,
   ) {}
 
   @Post('auth/request-code')
@@ -244,6 +248,37 @@ export class GuestAppController {
       data: { customerId: req.guestCustomer.id, tokenHash, expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000) },
     });
     return { token, expiresInHours: 24 };
+  }
+
+  /**
+   * "E-mail mijn QR om te printen" — gebruikt bewust NIET het
+   * kortlevende portal-QR-token hierboven (dat verloopt na 24 uur, dus
+   * onbruikbaar voor iets wat op papier in een portemonnee belandt).
+   * In plaats daarvan wordt een echte, nooit-verlopende fysieke-
+   * loyaltykaart uitgegeven — hetzelfde, al bewezen systeem als de
+   * vooraf gedrukte kaarten, alleen nu direct aan de al-ingelogde klant.
+   */
+  @Post('me/email-qr-card')
+  @UseGuards(GuestSessionGuard)
+  async emailQrCard(@Param('orgId') orgId: string, @Req() req: { guestCustomer: { id: string; firstName: string | null; email: string | null } }) {
+    if (!req.guestCustomer.email) {
+      return { sent: false, reason: 'Geen e-mailadres bekend op dit account' };
+    }
+
+    const card = await this.loyaltyCards.issueDirectToCustomer(orgId, req.guestCustomer.id);
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(card.token)}`;
+    const greeting = req.guestCustomer.firstName ? `Beste ${req.guestCustomer.firstName},` : 'Beste,';
+
+    if (this.mailgun.isConfigured()) {
+      await this.mailgun.sendEmail(
+        req.guestCustomer.email,
+        'Je loyaltykaart om te printen',
+        `${greeting}\n\nHierbij je persoonlijke loyaltykaart (kaartnummer ${card.cardNumber}). Print deze e-mail uit of bewaar de QR-code op je telefoon — laat 'm scannen bij de kassa.`,
+        `<p>${greeting}</p><p>Hierbij je persoonlijke loyaltykaart.</p><p style="text-align:center;"><img src="${qrImageUrl}" alt="Loyaltykaart QR" width="240" height="240"></p><p style="text-align:center;color:#7a8ea0;font-size:13px;">Kaartnummer ${card.cardNumber}</p><p>Print deze e-mail uit of bewaar de QR-code op je telefoon — laat 'm scannen bij de kassa.</p>`,
+      );
+    }
+
+    return { sent: this.mailgun.isConfigured(), cardNumber: card.cardNumber };
   }
 
   @Get('rewards')
