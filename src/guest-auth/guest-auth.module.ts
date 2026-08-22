@@ -5,9 +5,10 @@ import { GuestSessionGuard } from './guest-session.guard';
 import { MailgunService } from '../common/mailgun.service';
 import { WalletModule } from '../wallet/wallet.module';
 import { LoyaltyCardsModule } from '../loyalty-cards/loyalty-cards.module';
+import { GiftCardsModule } from '../gift-cards/gift-cards.module';
 
 @Module({
-  imports: [WalletModule, forwardRef(() => LoyaltyCardsModule)],
+  imports: [WalletModule, forwardRef(() => LoyaltyCardsModule), GiftCardsModule],
   controllers: [GuestAppController],
   providers: [GuestAuthService, GuestSessionGuard, MailgunService],
   exports: [GuestAuthService],
