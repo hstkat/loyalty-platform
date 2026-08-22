@@ -207,10 +207,28 @@ export class CustomerPortalController {
   let pendingEmail = '';
   let pendingRegistrationId = null;
 
+  // -- Hoogte doorgeven aan de omringende pagina (bijv. een WordPress-
+  // iframe-embed) — zodat de HELE pagina normaal scrolt in plaats van
+  // een vastgezet, intern scrollend vakje. Vooral op mobiel belangrijk:
+  // een vaste 100vh-iframe botst daar al snel met de eigen menubalk van
+  // de omringende site. -----------------------------------------------
+
+  function reportHeight() {
+    const height = document.body.scrollHeight;
+    window.parent.postMessage({ type: 'mijn-tegoed-resize', height: height }, '*');
+  }
+  // Direct na laden, én na elke schermwissel (inhoud/hoogte verandert
+  // dan), én als vangnet elke halve seconde (voor content die zonder
+  // een duidelijk "klaar"-moment van hoogte verandert, zoals een
+  // langzaam ladende afbeelding).
+  window.addEventListener('load', reportHeight);
+  setInterval(reportHeight, 500);
+
   function showScreen(id) {
     document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
     document.getElementById(id).classList.add('active');
     document.getElementById('logout-btn').style.display = id === 'screen-dashboard' ? 'block' : 'none';
+    setTimeout(reportHeight, 50);
   }
 
   async function apiPost(path, body) {
