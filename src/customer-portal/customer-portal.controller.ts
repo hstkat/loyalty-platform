@@ -127,7 +127,7 @@ export class CustomerPortalController {
       <div class="login-card">
         <h1>Mijn Tegoed</h1>
         <p>Bekijk je Beach Credit, punten, cadeaukaarten en meer.</p>
-        <input type="email" id="email-input" placeholder="E-mailadres" autocomplete="email">
+        <input type="email" id="email-input" name="login-email" placeholder="E-mailadres" autocomplete="email">
         <button class="btn-primary" id="request-code-btn">Verstuur code</button>
         <div class="error-text" id="email-error"></div>
         <button class="btn-text" id="go-to-password-btn">Ik heb een wachtwoord — direct inloggen</button>
@@ -139,8 +139,8 @@ export class CustomerPortalController {
       <div class="login-card">
         <h1>Inloggen</h1>
         <p>Log in met je e-mailadres en wachtwoord.</p>
-        <input type="email" id="pw-email-input" placeholder="E-mailadres" autocomplete="email">
-        <input type="password" id="pw-password-input" placeholder="Wachtwoord" autocomplete="current-password">
+        <input type="email" id="pw-email-input" name="pwlogin-email" placeholder="E-mailadres" autocomplete="email">
+        <input type="password" id="pw-password-input" name="pwlogin-password" placeholder="Wachtwoord" autocomplete="current-password">
         <button class="btn-primary" id="password-login-btn">Inloggen</button>
         <div class="error-text" id="password-login-error"></div>
         <button class="btn-text" id="back-to-email-from-password-btn">Inloggen met code in plaats daarvan</button>
@@ -152,12 +152,12 @@ export class CustomerPortalController {
       <div class="login-card" style="text-align:left;">
         <h1 style="text-align:center;">Account aanmaken</h1>
         <p style="text-align:center;">We sturen eerst een verificatiecode naar je e-mailadres.</p>
-        <input type="text" id="su-firstname" placeholder="Voornaam" autocomplete="given-name">
-        <input type="text" id="su-lastname" placeholder="Achternaam (optioneel)" autocomplete="family-name">
-        <input type="email" id="su-email" placeholder="E-mailadres" autocomplete="email">
-        <input type="tel" id="su-phone" placeholder="Telefoonnummer" autocomplete="tel" required>
-        <input type="date" id="su-dob" placeholder="Geboortedatum (optioneel)" autocomplete="bday">
-        <input type="password" id="su-password" placeholder="Wachtwoord (min. 8 tekens)" autocomplete="new-password">
+        <input type="text" id="su-firstname" name="signup-firstname" placeholder="Voornaam" autocomplete="given-name">
+        <input type="text" id="su-lastname" name="signup-lastname" placeholder="Achternaam (optioneel)" autocomplete="family-name">
+        <input type="email" id="su-email" name="signup-email" placeholder="E-mailadres" autocomplete="email">
+        <input type="tel" id="su-phone" name="signup-phone" placeholder="Telefoonnummer" autocomplete="tel" required>
+        <input type="date" id="su-dob" name="signup-dob" placeholder="Geboortedatum (optioneel)" autocomplete="bday">
+        <input type="password" id="su-password" name="signup-password" placeholder="Wachtwoord (min. 8 tekens)" autocomplete="new-password">
         <label class="consent-row">
           <input type="checkbox" id="su-privacy" required>
           <span>Ik ga akkoord met de privacyvoorwaarden</span>
@@ -176,7 +176,7 @@ export class CustomerPortalController {
       <div class="login-card">
         <h1>Check je inbox</h1>
         <p>We stuurden een 6-cijferige code naar je e-mailadres.</p>
-        <input type="text" id="code-input" placeholder="000000" maxlength="6" inputmode="numeric">
+        <input type="text" id="code-input" name="login-code" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="one-time-code">
         <button class="btn-primary" id="verify-code-btn">Inloggen</button>
         <button class="btn-text" id="back-to-email-btn">Ander e-mailadres</button>
         <div class="error-text" id="code-error"></div>
@@ -187,11 +187,11 @@ export class CustomerPortalController {
       <div class="login-card" style="text-align:left;">
         <h1 style="text-align:center;">Welkom!</h1>
         <p style="text-align:center;">Je e-mailadres is geverifieerd — nog een paar gegevens.</p>
-        <input type="text" id="reg-firstname" placeholder="Voornaam">
-        <input type="text" id="reg-lastname" placeholder="Achternaam (optioneel)">
-        <input type="tel" id="reg-phone" placeholder="Telefoonnummer (optioneel)">
-        <input type="date" id="reg-dob" placeholder="Geboortedatum (optioneel)">
-        <input type="password" id="reg-password" placeholder="Wachtwoord instellen (optioneel, min. 8 tekens)" autocomplete="new-password">
+        <input type="text" id="reg-firstname" name="reg-firstname" placeholder="Voornaam" autocomplete="given-name">
+        <input type="text" id="reg-lastname" name="reg-lastname" placeholder="Achternaam (optioneel)" autocomplete="family-name">
+        <input type="tel" id="reg-phone" name="reg-phone" placeholder="Telefoonnummer (optioneel)" autocomplete="tel">
+        <input type="date" id="reg-dob" name="reg-dob" placeholder="Geboortedatum (optioneel)" autocomplete="bday">
+        <input type="password" id="reg-password" name="reg-password" placeholder="Wachtwoord instellen (optioneel, min. 8 tekens)" autocomplete="new-password">
         <p style="font-size:11px;color:var(--muted);margin:-8px 0 12px;">Laat leeg om voortaan met een e-mailcode in te loggen.</p>
         <label class="consent-row">
           <input type="checkbox" id="reg-privacy" required>
@@ -242,7 +242,7 @@ export class CustomerPortalController {
 
         <div class="section-title" id="password-section-title">Wachtwoord instellen</div>
         <p style="font-size:12px;color:var(--muted);margin:-4px 0 12px;" id="password-section-hint">Met een wachtwoord kun je voortaan direct inloggen, zonder te wachten op een e-mailcode — handig bij de vaste QR-code bij de tablet.</p>
-        <input type="password" id="new-password-input" placeholder="Nieuw wachtwoord (min. 8 tekens)" autocomplete="new-password">
+        <input type="password" id="new-password-input" name="new-password" placeholder="Nieuw wachtwoord (min. 8 tekens)" autocomplete="new-password">
         <button class="btn-primary" id="save-password-btn">Wachtwoord opslaan</button>
         <div class="error-text" id="password-save-error"></div>
         <div class="error-text" id="password-save-success" style="color:#4a7a5e;"></div>
