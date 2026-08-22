@@ -597,6 +597,31 @@ export class GiftCardsService {
     };
   }
 
+  /**
+   * Voor de klantportal: de ingelogde klant wil zijn eigen cadeaukaart
+   * bekijken (QR + leesbaar token). Omdat het ruwe token nooit wordt
+   * opgeslagen, genereren we hier een VERS token en vervangen we de
+   * opgeslagen hash — het oude token wordt daardoor automatisch
+   * ongeldig. Praktisch gevolg, en eigenlijk een pluspunt: een oude
+   * screenshot/print van een eerdere weergave werkt niet meer, alleen
+   * de nieuwste weergave is geldig — veiliger dan een voor altijd
+   * geldige QR.
+   */
+  async rotateAndGetViewToken(orgId: string, giftCardId: string, customerId: string) {
+    const giftCard = await this.prisma.giftCard.findFirst({
+      where: { id: giftCardId, organizationId: orgId, recipientCustomerId: customerId },
+    });
+    if (!giftCard) throw new NotFoundException('Cadeaukaart niet gevonden');
+    if (giftCard.status !== 'active' && giftCard.status !== 'partially_redeemed') {
+      throw new ConflictException(`Deze kaart heeft status "${giftCard.status}" en kan niet bekeken worden`);
+    }
+
+    const newToken = this.generateToken();
+    await this.prisma.giftCard.update({ where: { id: giftCard.id }, data: { publicTokenHash: this.hashToken(newToken) } });
+
+    return { token: newToken, giftCardNumber: giftCard.giftCardNumber, currentBalance: Number(giftCard.currentBalance) };
+  }
+
   // -- Admin: overzicht + detail ---------------------------------------------
 
   async listCards(orgId: string, filters: { status?: string; search?: string }) {
@@ -691,6 +716,30 @@ export class GiftCardsService {
       averageCardValue: cards.length > 0 ? totalSold / cards.length : 0,
       byStatus,
     };
+  }
+
+  /**
+   * Voor de portal: laat een klant zijn EIGEN gekoppelde cadeaukaart
+   * bekijken zonder in een e-mail te hoeven zoeken. Genereert een
+   * VERS token voor dezelfde kaart (zelfde saldo, zelfde geschiedenis
+   * — alleen een nieuw token) en slaat alleen de hash op, exact
+   * hetzelfde principe als overal elders. Het vorige token wordt
+   * daarmee ongeldig; onschadelijk, want dit is de enige legitieme
+   * manier waarop de klant zijn kaart alsnog kan bekijken.
+   */
+  async regenerateTokenForCustomer(orgId: string, customerId: string, giftCardId: string) {
+    const card = await this.prisma.giftCard.findFirst({
+      where: { id: giftCardId, organizationId: orgId, recipientCustomerId: customerId },
+    });
+    if (!card) throw new NotFoundException('Cadeaukaart niet gevonden of hoort niet bij jouw account');
+    if (card.status !== 'active' && card.status !== 'partially_redeemed') {
+      throw new ConflictException(`Deze kaart heeft status "${card.status}" en kan niet bekeken worden`);
+    }
+
+    const token = this.generateToken();
+    await this.prisma.giftCard.update({ where: { id: card.id }, data: { publicTokenHash: this.hashToken(token) } });
+
+    return { giftCardId: card.id, giftCardNumber: card.giftCardNumber, token, currentBalance: Number(card.currentBalance) };
   }
 
   private async getCardOrThrow(orgId: string, giftCardId: string) {

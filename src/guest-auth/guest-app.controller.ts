@@ -6,6 +6,7 @@ import { GuestSessionGuard } from './guest-session.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { WalletPassService } from '../wallet/wallet-pass.service';
 import { LoyaltyCardsService } from '../loyalty-cards/loyalty-cards.service';
+import { GiftCardsService } from '../gift-cards/gift-cards.service';
 import { MailgunService } from '../common/mailgun.service';
 
 class RequestCodeDto {
@@ -79,6 +80,7 @@ export class GuestAppController {
     private prisma: PrismaService,
     private walletPass: WalletPassService,
     private loyaltyCards: LoyaltyCardsService,
+    private giftCards: GiftCardsService,
     private mailgun: MailgunService,
   ) {}
 
@@ -189,6 +191,12 @@ export class GuestAppController {
       issuedAt: c.issuedAt,
       expiresAt: c.expiresAt,
     }));
+  }
+
+  @Post('me/gift-cards/:giftCardId/view-token')
+  @UseGuards(GuestSessionGuard)
+  async getGiftCardViewToken(@Param('giftCardId') giftCardId: string, @Param('orgId') orgId: string, @Req() req: { guestCustomer: { id: string } }) {
+    return this.giftCards.rotateAndGetViewToken(orgId, giftCardId, req.guestCustomer.id);
   }
 
   // -- Eén samengevoegde tijdlijn voor de UI — puur een leesweergave die

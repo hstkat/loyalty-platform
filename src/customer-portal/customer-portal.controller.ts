@@ -358,8 +358,34 @@ export class CustomerPortalController {
         giftCardsEl.innerHTML = '<div class="empty-note">Geen cadeaukaarten gekoppeld.</div>';
       } else {
         giftCardsEl.innerHTML = giftCards.map(function (c) {
-          return '<div class="list-item"><div class="top-row"><span class="item-name">Gift Card ' + c.maskedNumber + '</span><span class="item-value">€' + Number(c.currentBalance).toFixed(2) + '</span></div><div class="item-meta" style="margin-top:4px;">Bekijk via de e-mail die je bij ontvangst kreeg</div></div>';
+          return '<div class="list-item gc-item" data-gc-id="' + c.id + '" style="cursor:pointer;">'
+            + '<div class="top-row"><span class="item-name">Gift Card ' + c.maskedNumber + '</span><span class="item-value">€' + Number(c.currentBalance).toFixed(2) + '</span></div>'
+            + '<div class="item-meta" style="margin-top:4px;">Tik om te bekijken en te gebruiken</div>'
+            + '<div class="gc-qr-area" style="display:none;text-align:center;margin-top:14px;"></div>'
+            + '</div>';
         }).join('');
+
+        document.querySelectorAll('.gc-item').forEach(function (item) {
+          item.addEventListener('click', async function () {
+            const qrArea = item.querySelector('.gc-qr-area');
+            if (qrArea.style.display === 'block') { qrArea.style.display = 'none'; return; }
+            qrArea.style.display = 'block';
+            qrArea.innerHTML = '<div style="font-size:12px;color:var(--muted);">Laden…</div>';
+            try {
+              const res = await fetch(API_BASE + '/guest-app/organizations/' + ORG_ID + '/me/gift-cards/' + item.dataset.gcId + '/view-token', {
+                method: 'POST',
+                headers: { Authorization: 'Bearer ' + currentSessionToken },
+              });
+              const data = await res.json();
+              const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(data.token);
+              qrArea.innerHTML = '<div style="background:white;border-radius:12px;padding:10px;display:inline-block;"><img src="' + qrUrl + '" width="160" height="160" alt="Cadeaukaart-QR"></div>'
+                + '<div style="font-family:monospace;font-size:13px;background:var(--cream);border-radius:6px;padding:8px;margin-top:10px;word-break:break-all;">' + data.token + '</div>'
+                + '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Laat scannen bij de kassa</div>';
+            } catch (err) {
+              qrArea.innerHTML = '<div style="font-size:12px;color:var(--accent-dark);">Kon niet laden — probeer opnieuw.</div>';
+            }
+          });
+        });
       }
 
       const DAY_LABELS_SHORT = { monday: 'ma', tuesday: 'di', wednesday: 'wo', thursday: 'do', friday: 'vr', saturday: 'za', sunday: 'zo' };
