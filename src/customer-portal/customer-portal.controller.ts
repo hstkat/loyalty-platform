@@ -179,9 +179,6 @@ export class CustomerPortalController {
 
         <div class="section-title">Cadeaukaarten</div>
         <div id="db-giftcards"></div>
-
-        <div class="section-title">Recente mutaties</div>
-        <div id="db-recent"></div>
       </div>
 
       <div id="tab-rewards" style="display:none;">
@@ -429,17 +426,6 @@ export class CustomerPortalController {
       }
 
       const ENTRY_LABELS = { earn: 'Gespaard', redeem: 'Besteed', bonus: 'Bonus', migration_import: 'Overgezet saldo', transfer: 'Overgeboekt', correction: 'Correctie', sale: 'Cadeaukaart gekocht', top_up: 'Opgewaardeerd' };
-      function renderActivityRow(a) {
-        const date = new Date(a.occurredAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
-        const label = (ENTRY_LABELS[a.type] || a.type) + (a.source === 'gift_card' ? ' (' + a.giftCardNumber + ')' : '');
-        const amt = Number(a.amount);
-        return '<div class="history-row"><span>' + label + '<br><span style="color:var(--muted);font-size:11px;">' + date + '</span></span><span class="amount ' + (amt >= 0 ? 'positive' : 'negative') + '">' + (amt >= 0 ? '+' : '') + Math.round(Math.abs(amt)) + ' pt</span></div>';
-      }
-
-      const recentEl = document.getElementById('db-recent');
-      recentEl.innerHTML = activity.length === 0
-        ? '<div class="empty-note">Nog geen mutaties.</div>'
-        : '<div class="list-item">' + activity.slice(0, 3).map(renderActivityRow).join('') + '</div>';
 
       const historyEl = document.getElementById('db-history');
       if (activity.length === 0) {
