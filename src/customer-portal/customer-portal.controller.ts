@@ -7,15 +7,16 @@ const API_BASE = 'https://loyalty-platform-live.vercel.app';
 interface BrandConfig {
   slug: string;
   name: string;
+  creditLabel: string;
   accent: string;
   accentDark: string;
 }
 
 const BRANDS: Record<string, BrandConfig> = {
-  'het-strand': { slug: 'het-strand', name: 'Het Strand', accent: '#c47a45', accentDark: '#a1642f' },
-  zomers: { slug: 'zomers', name: 'Zomers Beachclub & Brewery', accent: '#497a9d', accentDark: '#376079' },
+  'het-strand': { slug: 'het-strand', name: 'Het Strand', creditLabel: 'Strand tegoed', accent: '#c47a45', accentDark: '#a1642f' },
+  zomers: { slug: 'zomers', name: 'Zomers Beachclub & Brewery', creditLabel: 'Zomers tegoed', accent: '#497a9d', accentDark: '#376079' },
 };
-const DEFAULT_BRAND: BrandConfig = { slug: '', name: 'Mijn Tegoed', accent: '#e8604a', accentDark: '#c94d38' };
+const DEFAULT_BRAND: BrandConfig = { slug: '', name: 'Mijn Tegoed', creditLabel: 'Tegoed', accent: '#e8604a', accentDark: '#c94d38' };
 
 /**
  * Eén centrale portal-pagina, gebrand op basis van een query-parameter
@@ -67,11 +68,13 @@ export class CustomerPortalController {
       .consent-row { display: flex; align-items: flex-start; gap: 8px; text-align: left; font-size: 13px; color: var(--muted); margin: 10px 0; }
       .consent-row input { width: auto; margin: 3px 0 0; }
 
-      .card-box { background: var(--navy-dark); border-radius: 18px; padding: 22px; text-align: center; color: white; margin-bottom: 16px; }
-      .card-box .tier { font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 4px; }
-      .card-box .name { font-family: Georgia, serif; font-size: 20px; margin-bottom: 14px; }
+      .card-box { background: var(--navy-dark); border-radius: 18px; padding: 26px 22px; text-align: center; color: white; margin-bottom: 16px; }
+      .card-box .name { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+      .card-box .credit-label { font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(255,255,255,0.55); margin-bottom: 14px; }
+      .card-box .big-balance { font-size: 44px; font-weight: 800; color: var(--accent); margin-bottom: 18px; line-height: 1; }
       .card-box .qr-wrap { background: white; border-radius: 12px; padding: 10px; display: inline-block; }
-      .card-box .qr-wrap img { display: block; width: 150px; height: 150px; }
+      .card-box .qr-wrap img { display: block; width: 190px; height: 190px; }
+      .card-box .scan-hint { font-size: 13px; color: rgba(255,255,255,0.6); margin-top: 14px; }
 
       .balance-strip { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
       .balance-tile { background: var(--cream); border-radius: 12px; padding: 16px; text-align: center; }
@@ -158,21 +161,27 @@ export class CustomerPortalController {
     <div class="screen" id="screen-dashboard">
       <div id="tab-overview">
         <div class="card-box">
-          <div class="tier" id="db-tier">—</div>
           <div class="name" id="db-name">—</div>
+          <div class="credit-label" id="db-credit-label">—</div>
+          <div class="big-balance" id="db-balance">—</div>
           <div class="qr-wrap"><img id="db-qr" src="" alt="Mijn QR-code"></div>
+          <div class="scan-hint">Laat scannen bij de kassa</div>
         </div>
 
-        <div class="balance-strip">
-          <div class="balance-tile"><div class="label">Beach Credit</div><div class="value" id="db-balance">—</div></div>
-          <div class="balance-tile"><div class="label">Totaal gespaard</div><div class="value" id="db-lifetime">—</div></div>
-        </div>
         <div class="expiring-note" id="db-expiring" style="display:none;"></div>
 
         <div class="section-title">Cadeaukaarten</div>
         <div id="db-giftcards"></div>
 
-        <div class="section-title">Rewards</div>
+        <div class="section-title">Recente mutaties</div>
+        <div id="db-recent"></div>
+      </div>
+
+      <div id="tab-rewards" style="display:none;">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Vandaag beschikbaar — laat je pas scannen bij de kassa om in te wisselen.</p>
+        <div class="section-title" style="margin-top:0;">Wat je tegoed waard is</div>
+        <div id="db-rate-table"></div>
+        <div class="section-title">Cadeaus</div>
         <div id="db-rewards"></div>
       </div>
 
@@ -189,6 +198,7 @@ export class CustomerPortalController {
 
       <nav class="tabbar">
         <button class="tab-btn active" data-tab="overview">Overzicht</button>
+        <button class="tab-btn" data-tab="rewards">Cadeaus</button>
         <button class="tab-btn" data-tab="history">Historie</button>
         <button class="tab-btn" data-tab="profile">Profiel</button>
       </nav>
@@ -200,6 +210,7 @@ export class CustomerPortalController {
 <script>
   const ORG_ID = ${JSON.stringify(orgId)};
   const API_BASE = ${JSON.stringify(API_BASE)};
+  const CREDIT_LABEL = ${JSON.stringify(brand.creditLabel)};
   const STORAGE_KEY = 'mijn_tegoed_session';
 
   let pendingEmail = '';
@@ -321,18 +332,19 @@ export class CustomerPortalController {
         apiGet('/rewards', token),
         apiGet('/me/activity', token),
         apiGet('/me/qr-token', token),
+        apiGet('/redemption-rates', token),
       ]);
       const me = results[0];
       const giftCards = results[1];
       const rewards = results[2];
       const activity = results[3];
       const qr = results[4];
+      const rates = results[5];
 
       document.getElementById('db-name').textContent = [me.firstName, me.lastName].filter(Boolean).join(' ') || 'Gast';
-      document.getElementById('db-tier').textContent = me.tier || 'Member';
-      document.getElementById('db-balance').textContent = '€' + Number(me.balance).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
-      document.getElementById('db-lifetime').textContent = '€' + Number(me.lifetimeEarned).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
-      document.getElementById('db-qr').src = 'https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=' + encodeURIComponent(qr.token);
+      document.getElementById('db-credit-label').textContent = CREDIT_LABEL;
+      document.getElementById('db-balance').textContent = Math.round(Number(me.balance)) + ' pt';
+      document.getElementById('db-qr').src = 'https://api.qrserver.com/v1/create-qr-code/?size=190x190&data=' + encodeURIComponent(qr.token);
 
       if (me.expiringSoon) {
         const d = new Date(me.expiringSoon.expiresAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
@@ -349,9 +361,26 @@ export class CustomerPortalController {
         }).join('');
       }
 
+      const DAY_LABELS_SHORT = { monday: 'ma', tuesday: 'di', wednesday: 'wo', thursday: 'do', friday: 'vr', saturday: 'za', sunday: 'zo' };
+      function formatDayRange(days) {
+        if (!days || days.length === 0) return 'elke dag';
+        var labels = days.map(function (d) { return (DAY_LABELS_SHORT[d] || d).toUpperCase(); });
+        return labels.length === 1 ? labels[0] : labels[0] + '–' + labels[labels.length - 1];
+      }
+      const rateTableEl = document.getElementById('db-rate-table');
+      if (!rates || rates.length === 0) {
+        rateTableEl.innerHTML = '<div class="empty-note">Geen wisselkoersinformatie beschikbaar.</div>';
+      } else {
+        rateTableEl.innerHTML = '<div class="list-item">' + rates.map(function (r) {
+          var euro = r.blockSize ? Number(r.blockEuroValue).toFixed(2) : null;
+          var valueText = r.blockSize ? (r.blockSize + ' pt = €' + euro) : (r.pointsPerEuro + ' pt/€');
+          return '<div class="top-row" style="padding:6px 0;"><span class="item-name">' + formatDayRange(r.appliesOnDays) + '</span><span class="item-value">' + valueText + '</span></div>';
+        }).join('') + '</div>';
+      }
+
       const rewardsEl = document.getElementById('db-rewards');
       if (rewards.length === 0) {
-        rewardsEl.innerHTML = '<div class="empty-note">Op dit moment geen rewards beschikbaar.</div>';
+        rewardsEl.innerHTML = '<div class="empty-note">Vandaag geen cadeaus beschikbaar.</div>';
       } else {
         rewardsEl.innerHTML = rewards.map(function (r) {
           const locBadge = r.location ? '<div class="location-badge">Alleen geldig bij ' + r.location.name + '</div>' : '';
@@ -359,7 +388,19 @@ export class CustomerPortalController {
         }).join('');
       }
 
-      const ENTRY_LABELS = { earn: 'Beach Credit verdiend', redeem: 'Besteed', bonus: 'Bonus', migration_import: 'Overgezet saldo', transfer: 'Overgeboekt', correction: 'Correctie', sale: 'Cadeaukaart gekocht', top_up: 'Opgewaardeerd' };
+      const ENTRY_LABELS = { earn: 'Gespaard', redeem: 'Besteed', bonus: 'Bonus', migration_import: 'Overgezet saldo', transfer: 'Overgeboekt', correction: 'Correctie', sale: 'Cadeaukaart gekocht', top_up: 'Opgewaardeerd' };
+      function renderActivityRow(a) {
+        const date = new Date(a.occurredAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+        const label = (ENTRY_LABELS[a.type] || a.type) + (a.source === 'gift_card' ? ' (' + a.giftCardNumber + ')' : '');
+        const amt = Number(a.amount);
+        return '<div class="history-row"><span>' + label + '<br><span style="color:var(--muted);font-size:11px;">' + date + '</span></span><span class="amount ' + (amt >= 0 ? 'positive' : 'negative') + '">' + (amt >= 0 ? '+' : '') + Math.round(Math.abs(amt)) + ' pt</span></div>';
+      }
+
+      const recentEl = document.getElementById('db-recent');
+      recentEl.innerHTML = activity.length === 0
+        ? '<div class="empty-note">Nog geen mutaties.</div>'
+        : '<div class="list-item">' + activity.slice(0, 3).map(renderActivityRow).join('') + '</div>';
+
       const historyEl = document.getElementById('db-history');
       if (activity.length === 0) {
         historyEl.innerHTML = '<div class="empty-note">Nog geen historie.</div>';
@@ -384,7 +425,7 @@ export class CustomerPortalController {
     btn.addEventListener('click', function () {
       document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      ['overview', 'history', 'profile'].forEach(function (t) {
+      ['overview', 'rewards', 'history', 'profile'].forEach(function (t) {
         document.getElementById('tab-' + t).style.display = t === btn.dataset.tab ? 'block' : 'none';
       });
     });
