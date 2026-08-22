@@ -60,12 +60,21 @@ export class GuestAuthService {
       });
     }
 
-    if (this.mailgun.isConfigured()) {
-      await this.mailgun.sendEmail(
-        email,
-        'Je inlogcode voor Mijn Tegoed',
-        `Je inlogcode is: ${code}\n\nDeze code is ${CODE_TTL_MINUTES} minuten geldig. Heb je dit niet aangevraagd? Dan kun je dit bericht negeren.`,
-      );
+    // Deliberately de-coupled from whether the account exists (zie de
+    // OR/anti-enumeratie-opmerking hierboven), maar WEL zichtbaar voor de
+    // aanvrager als het versturen zelf mislukt — anders lijkt de portal
+    // "een code gestuurd" te hebben terwijl er niets is aangekomen, wat
+    // eerder een stille Mailgun-storing verborg in plaats van meldde.
+    if (!this.mailgun.isConfigured()) {
+      throw new BadRequestException('E-mailverzending is nog niet geconfigureerd — neem contact op met de zaak.');
+    }
+    const emailResult = await this.mailgun.sendEmail(
+      email,
+      'Je inlogcode voor Mijn Tegoed',
+      `Je inlogcode is: ${code}\n\nDeze code is ${CODE_TTL_MINUTES} minuten geldig. Heb je dit niet aangevraagd? Dan kun je dit bericht negeren.`,
+    );
+    if (!emailResult.sent) {
+      throw new BadRequestException('We konden de code niet versturen — probeer het opnieuw of neem contact op met de zaak.');
     }
 
     return { sent: true };
