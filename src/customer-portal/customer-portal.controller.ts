@@ -131,6 +131,7 @@ export class CustomerPortalController {
         <button class="btn-primary" id="request-code-btn">Verstuur code</button>
         <div class="error-text" id="email-error"></div>
         <button class="btn-text" id="go-to-password-btn">Ik heb een wachtwoord — direct inloggen</button>
+        <button class="btn-text" id="go-to-signup-from-email-btn">Nog geen account? Inschrijven</button>
       </div>
     </div>
 
@@ -152,7 +153,10 @@ export class CustomerPortalController {
         <h1 style="text-align:center;">Account aanmaken</h1>
         <p style="text-align:center;">We sturen eerst een verificatiecode naar je e-mailadres.</p>
         <input type="text" id="su-firstname" placeholder="Voornaam">
+        <input type="text" id="su-lastname" placeholder="Achternaam (optioneel)">
         <input type="email" id="su-email" placeholder="E-mailadres" autocomplete="email">
+        <input type="tel" id="su-phone" placeholder="Telefoonnummer (optioneel)">
+        <input type="date" id="su-dob" placeholder="Geboortedatum (optioneel)">
         <input type="password" id="su-password" placeholder="Wachtwoord (min. 8 tekens)" autocomplete="new-password">
         <label class="consent-row">
           <input type="checkbox" id="su-privacy" required>
@@ -342,6 +346,10 @@ export class CustomerPortalController {
     document.getElementById('su-email').value = document.getElementById('pw-email-input').value.trim();
     showScreen('screen-signup');
   });
+  document.getElementById('go-to-signup-from-email-btn').addEventListener('click', function () {
+    document.getElementById('su-email').value = document.getElementById('email-input').value.trim();
+    showScreen('screen-signup');
+  });
   document.getElementById('back-to-password-from-signup-btn').addEventListener('click', function () { pendingSignupProfile = null; showScreen('screen-password'); });
 
   document.getElementById('password-login-btn').addEventListener('click', async function () {
@@ -380,7 +388,14 @@ export class CustomerPortalController {
     try {
       await apiPost('/auth/request-code', { email: email });
       pendingEmail = email;
-      pendingSignupProfile = { firstName: firstName, password: password, marketingConsent: document.getElementById('su-marketing').checked };
+      pendingSignupProfile = {
+        firstName: firstName,
+        lastName: document.getElementById('su-lastname').value.trim() || undefined,
+        phone: document.getElementById('su-phone').value.trim() || undefined,
+        dateOfBirth: document.getElementById('su-dob').value || undefined,
+        password: password,
+        marketingConsent: document.getElementById('su-marketing').checked,
+      };
       showScreen('screen-code');
     } catch (err) {
       errorEl.textContent = err.message;
@@ -404,7 +419,10 @@ export class CustomerPortalController {
           try {
             const regResult = await apiPost('/auth/complete-registration', {
               firstName: profile.firstName,
+              lastName: profile.lastName,
               email: pendingEmail,
+              phone: profile.phone,
+              dateOfBirth: profile.dateOfBirth,
               marketingConsent: profile.marketingConsent,
               password: profile.password,
               verifiedRegistrationId: result.verifiedRegistrationId,
