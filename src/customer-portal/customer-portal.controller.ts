@@ -161,8 +161,6 @@ export class CustomerPortalController {
           <div class="tier" id="db-tier">—</div>
           <div class="name" id="db-name">—</div>
           <div class="qr-wrap"><img id="db-qr" src="" alt="Mijn QR-code"></div>
-          <button id="email-qr-btn" style="margin-top:12px;background:none;border:1px solid rgba(255,255,255,0.25);color:rgba(255,255,255,0.75);font-size:12px;padding:8px 16px;border-radius:16px;cursor:pointer;">E-mail mijn kaart om te printen</button>
-          <div id="email-qr-result" style="font-size:11px;color:rgba(255,255,255,0.6);margin-top:8px;"></div>
         </div>
 
         <div class="balance-strip">
@@ -390,27 +388,6 @@ export class CustomerPortalController {
         document.getElementById('tab-' + t).style.display = t === btn.dataset.tab ? 'block' : 'none';
       });
     });
-  });
-
-  document.getElementById('email-qr-btn').addEventListener('click', async function () {
-    const btn = document.getElementById('email-qr-btn');
-    const resultEl = document.getElementById('email-qr-result');
-    btn.disabled = true;
-    btn.textContent = 'Bezig…';
-    resultEl.textContent = '';
-    try {
-      const res = await fetch(API_BASE + '/guest-app/organizations/' + ORG_ID + '/me/email-qr-card', {
-        method: 'POST',
-        headers: { Authorization: 'Bearer ' + currentSessionToken },
-      });
-      const data = await res.json();
-      resultEl.textContent = data.sent ? 'Verstuurd! Check je inbox.' : (data.reason || 'Versturen mislukt.');
-    } catch (err) {
-      resultEl.textContent = 'Versturen mislukt.';
-    } finally {
-      btn.disabled = false;
-      btn.textContent = 'E-mail mijn kaart om te printen';
-    }
   });
 
   document.getElementById('logout-btn').addEventListener('click', function () {
