@@ -152,11 +152,11 @@ export class CustomerPortalController {
       <div class="login-card" style="text-align:left;">
         <h1 style="text-align:center;">Account aanmaken</h1>
         <p style="text-align:center;">We sturen eerst een verificatiecode naar je e-mailadres.</p>
-        <input type="text" id="su-firstname" placeholder="Voornaam">
-        <input type="text" id="su-lastname" placeholder="Achternaam (optioneel)">
+        <input type="text" id="su-firstname" placeholder="Voornaam" autocomplete="given-name">
+        <input type="text" id="su-lastname" placeholder="Achternaam (optioneel)" autocomplete="family-name">
         <input type="email" id="su-email" placeholder="E-mailadres" autocomplete="email">
-        <input type="tel" id="su-phone" placeholder="Telefoonnummer (optioneel)">
-        <input type="date" id="su-dob" placeholder="Geboortedatum (optioneel)">
+        <input type="tel" id="su-phone" placeholder="Telefoonnummer" autocomplete="tel" required>
+        <input type="date" id="su-dob" placeholder="Geboortedatum (optioneel)" autocomplete="bday">
         <input type="password" id="su-password" placeholder="Wachtwoord (min. 8 tekens)" autocomplete="new-password">
         <label class="consent-row">
           <input type="checkbox" id="su-privacy" required>
@@ -380,10 +380,13 @@ export class CustomerPortalController {
     errorEl.textContent = '';
     const firstName = document.getElementById('su-firstname').value.trim();
     const email = document.getElementById('su-email').value.trim();
+    const phone = document.getElementById('su-phone').value.trim();
     const password = document.getElementById('su-password').value;
     if (!document.getElementById('su-privacy').checked) { errorEl.textContent = 'Je moet akkoord gaan met de privacyvoorwaarden.'; return; }
     if (!firstName) { errorEl.textContent = 'Vul je voornaam in.'; return; }
     if (!email) { errorEl.textContent = 'Vul een e-mailadres in.'; return; }
+    if (!phone) { errorEl.textContent = 'Vul je telefoonnummer in.'; return; }
+    if (phone.indexOf('@') !== -1) { errorEl.textContent = 'Dat lijkt geen telefoonnummer — controleer het telefoonveld.'; return; }
     if (!password || password.length < 8) { errorEl.textContent = 'Wachtwoord moet minstens 8 tekens lang zijn.'; return; }
     try {
       await apiPost('/auth/request-code', { email: email });
@@ -391,7 +394,7 @@ export class CustomerPortalController {
       pendingSignupProfile = {
         firstName: firstName,
         lastName: document.getElementById('su-lastname').value.trim() || undefined,
-        phone: document.getElementById('su-phone').value.trim() || undefined,
+        phone: phone,
         dateOfBirth: document.getElementById('su-dob').value || undefined,
         password: password,
         marketingConsent: document.getElementById('su-marketing').checked,
