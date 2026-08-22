@@ -234,10 +234,22 @@ export class CustomerPortalController {
   window.addEventListener('load', reportHeight);
   setInterval(reportHeight, 500);
 
+  // Bij een tabwissel (of schermwissel) kan de inhoud korter worden dan
+  // waar de bezoeker toevallig gescrold stond binnen de omringende
+  // WordPress-popup — dat geeft een wit gat erboven totdat er handmatig
+  // omhoog gescrold wordt. We resetten daarom onze eigen scrollpositie
+  // én vragen de omringende pagina (via postMessage) om ook naar de
+  // bovenkant van de popup/iframe te scrollen.
+  function scrollToTop() {
+    window.scrollTo(0, 0);
+    window.parent.postMessage({ type: 'mijn-tegoed-scroll-top' }, '*');
+  }
+
   function showScreen(id) {
     document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
     document.getElementById(id).classList.add('active');
     document.getElementById('logout-btn').style.display = id === 'screen-dashboard' ? 'block' : 'none';
+    scrollToTop();
     setTimeout(reportHeight, 50);
   }
 
@@ -455,6 +467,8 @@ export class CustomerPortalController {
       ['overview', 'rewards', 'history', 'profile'].forEach(function (t) {
         document.getElementById('tab-' + t).style.display = t === btn.dataset.tab ? 'block' : 'none';
       });
+      scrollToTop();
+      setTimeout(reportHeight, 50);
     });
   });
 
