@@ -27,6 +27,24 @@ class VerifyCodeDto {
   deviceInfo?: string;
 }
 
+class LoginPasswordDto {
+  @IsEmail()
+  email!: string;
+
+  @IsString()
+  password!: string;
+
+  @IsOptional()
+  @IsString()
+  deviceInfo?: string;
+}
+
+class SetPasswordDto {
+  @IsString()
+  @Length(8, 72)
+  password!: string;
+}
+
 class RegisterCustomerDto {
   @IsString()
   firstName!: string;
@@ -48,6 +66,11 @@ class RegisterCustomerDto {
 
   @IsOptional()
   marketingConsent?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @Length(8, 72)
+  password?: string;
 
   @IsString()
   verifiedRegistrationId!: string;
@@ -99,9 +122,26 @@ export class GuestAppController {
     return this.guestAuth.completeRegistration(
       orgId,
       dto.verifiedRegistrationId,
-      { firstName: dto.firstName, lastName: dto.lastName, email: dto.email, phone: dto.phone, dateOfBirth: dto.dateOfBirth, marketingConsent: dto.marketingConsent },
+      { firstName: dto.firstName, lastName: dto.lastName, email: dto.email, phone: dto.phone, dateOfBirth: dto.dateOfBirth, marketingConsent: dto.marketingConsent, password: dto.password },
       dto.deviceInfo,
     );
+  }
+
+  // Extra inlogoptie NAAST de e-mailcode-flow — vooral bedoeld voor de
+  // vaste QR-code bij de tablet: eenmalig met een code inloggen en
+  // meteen (of later via het Profiel-tabblad) een wachtwoord instellen,
+  // zodat een volgend bezoek niet steeds een nieuwe code hoeft te
+  // wachten. Een klant die nooit een wachtwoord instelt kan dit
+  // endpoint gewoon niet gebruiken en blijft de codeflow gebruiken.
+  @Post('auth/login-password')
+  loginWithPassword(@Param('orgId') orgId: string, @Body() dto: LoginPasswordDto) {
+    return this.guestAuth.loginWithPassword(orgId, dto.email, dto.password, dto.deviceInfo);
+  }
+
+  @Post('me/set-password')
+  @UseGuards(GuestSessionGuard)
+  setPassword(@Req() req: { guestCustomer: { id: string } }, @Body() dto: SetPasswordDto) {
+    return this.guestAuth.setPassword(req.guestCustomer.id, dto.password);
   }
 
   @Post('auth/logout')
@@ -136,6 +176,7 @@ export class GuestAppController {
       firstName: customer!.firstName,
       lastName: customer!.lastName,
       tier: customer!.tier?.name ?? null,
+      hasPassword: !!customer!.passwordHash,
       // Bewust NIET afgerond naar hele euro's (was een bestaande bug —
       // €18,40 werd getoond als "18") — twee decimalen, exact zoals de
       // ledger het vastlegt.

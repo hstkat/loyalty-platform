@@ -130,6 +130,19 @@ export class CustomerPortalController {
         <input type="email" id="email-input" placeholder="E-mailadres" autocomplete="email">
         <button class="btn-primary" id="request-code-btn">Verstuur code</button>
         <div class="error-text" id="email-error"></div>
+        <button class="btn-text" id="go-to-password-btn">Ik heb een wachtwoord — direct inloggen</button>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-password">
+      <div class="login-card">
+        <h1>Inloggen</h1>
+        <p>Log in met je e-mailadres en wachtwoord.</p>
+        <input type="email" id="pw-email-input" placeholder="E-mailadres" autocomplete="email">
+        <input type="password" id="pw-password-input" placeholder="Wachtwoord" autocomplete="current-password">
+        <button class="btn-primary" id="password-login-btn">Inloggen</button>
+        <div class="error-text" id="password-login-error"></div>
+        <button class="btn-text" id="back-to-email-from-password-btn">Inloggen met code in plaats daarvan</button>
       </div>
     </div>
 
@@ -152,6 +165,8 @@ export class CustomerPortalController {
         <input type="text" id="reg-lastname" placeholder="Achternaam (optioneel)">
         <input type="tel" id="reg-phone" placeholder="Telefoonnummer (optioneel)">
         <input type="date" id="reg-dob" placeholder="Geboortedatum (optioneel)">
+        <input type="password" id="reg-password" placeholder="Wachtwoord instellen (optioneel, min. 8 tekens)" autocomplete="new-password">
+        <p style="font-size:11px;color:var(--muted);margin:-8px 0 12px;">Laat leeg om voortaan met een e-mailcode in te loggen.</p>
         <label class="consent-row">
           <input type="checkbox" id="reg-privacy" required>
           <span>Ik ga akkoord met de privacyvoorwaarden</span>
@@ -198,6 +213,13 @@ export class CustomerPortalController {
         <div class="section-title" style="margin-top:0;">Profiel</div>
         <div class="list-item"><div class="item-name" id="profile-name">—</div><div class="item-meta" id="profile-email"></div></div>
         <p style="font-size:12px;color:var(--muted);margin-top:16px;">Wil je je gegevens wijzigen of je account laten verwijderen? Neem contact op met de zaak.</p>
+
+        <div class="section-title" id="password-section-title">Wachtwoord instellen</div>
+        <p style="font-size:12px;color:var(--muted);margin:-4px 0 12px;" id="password-section-hint">Met een wachtwoord kun je voortaan direct inloggen, zonder te wachten op een e-mailcode — handig bij de vaste QR-code bij de tablet.</p>
+        <input type="password" id="new-password-input" placeholder="Nieuw wachtwoord (min. 8 tekens)" autocomplete="new-password">
+        <button class="btn-primary" id="save-password-btn">Wachtwoord opslaan</button>
+        <div class="error-text" id="password-save-error"></div>
+        <div class="error-text" id="password-save-success" style="color:#4a7a5e;"></div>
       </div>
 
     </div>
@@ -287,6 +309,28 @@ export class CustomerPortalController {
 
   document.getElementById('back-to-email-btn').addEventListener('click', function () { showScreen('screen-email'); });
 
+  document.getElementById('go-to-password-btn').addEventListener('click', function () {
+    document.getElementById('pw-email-input').value = document.getElementById('email-input').value.trim();
+    showScreen('screen-password');
+  });
+  document.getElementById('back-to-email-from-password-btn').addEventListener('click', function () { showScreen('screen-email'); });
+
+  document.getElementById('password-login-btn').addEventListener('click', async function () {
+    const email = document.getElementById('pw-email-input').value.trim();
+    const password = document.getElementById('pw-password-input').value;
+    const errorEl = document.getElementById('password-login-error');
+    errorEl.textContent = '';
+    if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
+    try {
+      const result = await apiPost('/auth/login-password', { email: email, password: password });
+      pendingEmail = email;
+      localStorage.setItem(STORAGE_KEY, result.token);
+      loadDashboard(result.token);
+    } catch (err) {
+      errorEl.textContent = err.message;
+    }
+  });
+
   document.getElementById('verify-code-btn').addEventListener('click', async function () {
     const code = document.getElementById('code-input').value.trim();
     const errorEl = document.getElementById('code-error');
@@ -322,6 +366,7 @@ export class CustomerPortalController {
         phone: document.getElementById('reg-phone').value.trim() || undefined,
         dateOfBirth: document.getElementById('reg-dob').value || undefined,
         marketingConsent: document.getElementById('reg-marketing').checked,
+        password: document.getElementById('reg-password').value || undefined,
         verifiedRegistrationId: pendingRegistrationId,
       });
       localStorage.setItem(STORAGE_KEY, result.token);
@@ -441,11 +486,47 @@ export class CustomerPortalController {
 
       document.getElementById('profile-name').textContent = [me.firstName, me.lastName].filter(Boolean).join(' ');
       document.getElementById('profile-email').textContent = pendingEmail || '';
+
+      if (me.hasPassword) {
+        document.getElementById('password-section-title').textContent = 'Wachtwoord wijzigen';
+        document.getElementById('password-section-hint').textContent = 'Stel een nieuw wachtwoord in — het oude wachtwoord komt daarmee te vervallen.';
+      } else {
+        document.getElementById('password-section-title').textContent = 'Wachtwoord instellen';
+        document.getElementById('password-section-hint').textContent = 'Met een wachtwoord kun je voortaan direct inloggen, zonder te wachten op een e-mailcode — handig bij de vaste QR-code bij de tablet.';
+      }
     } catch (err) {
       localStorage.removeItem(STORAGE_KEY);
       showScreen('screen-email');
     }
   }
+
+  document.getElementById('save-password-btn').addEventListener('click', async function () {
+    const newPassword = document.getElementById('new-password-input').value;
+    const errorEl = document.getElementById('password-save-error');
+    const successEl = document.getElementById('password-save-success');
+    errorEl.textContent = '';
+    successEl.textContent = '';
+    if (!newPassword || newPassword.length < 8) {
+      errorEl.textContent = 'Wachtwoord moet minstens 8 tekens lang zijn.';
+      return;
+    }
+    try {
+      const res = await fetch(API_BASE + '/guest-app/organizations/' + ORG_ID + '/me/set-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + currentSessionToken },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(data.message || 'Er ging iets mis');
+      document.getElementById('new-password-input').value = '';
+      document.getElementById('password-section-title').textContent = 'Wachtwoord wijzigen';
+      document.getElementById('password-section-hint').textContent = 'Stel een nieuw wachtwoord in — het oude wachtwoord komt daarmee te vervallen.';
+      successEl.textContent = 'Wachtwoord opgeslagen.';
+      setTimeout(reportHeight, 50);
+    } catch (err) {
+      errorEl.textContent = err.message;
+    }
+  });
 
   document.querySelectorAll('.tab-btn').forEach(function (btn) {
     btn.addEventListener('click', function () {

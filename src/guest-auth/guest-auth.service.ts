@@ -1,11 +1,15 @@
 import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes, randomInt } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailgunService } from '../common/mailgun.service';
 
 const CODE_TTL_MINUTES = 10;
 const SESSION_TTL_DAYS = 90;
 const MAX_CODE_ATTEMPTS = 5;
+const MAX_PASSWORD_ATTEMPTS = 5;
+const PASSWORD_LOCKOUT_MINUTES = 15;
+const BCRYPT_ROUNDS = 12;
 
 /**
  * Passwordless guest authentication for the mobile app: the guest enters
@@ -121,13 +125,18 @@ export class GuestAuthService {
   async completeRegistration(
     orgId: string,
     verifiedRegistrationId: string,
-    profile: { firstName: string; lastName?: string; email: string; phone?: string; dateOfBirth?: string; marketingConsent?: boolean },
+    profile: { firstName: string; lastName?: string; email: string; phone?: string; dateOfBirth?: string; marketingConsent?: boolean; password?: string },
     deviceInfo?: string,
   ) {
     const regCode = await this.prisma.guestRegistrationCode.findFirst({
       where: { id: verifiedRegistrationId, organizationId: orgId, email: profile.email, usedAt: { not: null } },
     });
     if (!regCode) throw new UnauthorizedException('Verificatie verlopen — begin opnieuw met je e-mailadres');
+
+    if (profile.password && profile.password.length < 8) {
+      throw new BadRequestException('Wachtwoord moet minstens 8 tekens lang zijn');
+    }
+    const passwordHash = profile.password ? await bcrypt.hash(profile.password, BCRYPT_ROUNDS) : undefined;
 
     const normalizedPhone = profile.phone ? profile.phone.replace(/[^\d]/g, '') : undefined;
     let customer = await this.prisma.customer.findFirst({
@@ -148,6 +157,7 @@ export class GuestAuthService {
           phone: profile.phone,
           dateOfBirth: profile.dateOfBirth ? new Date(profile.dateOfBirth) : undefined,
           sourceChannel: 'website',
+          passwordHash,
         } as never,
       });
 
@@ -156,6 +166,10 @@ export class GuestAuthService {
           .create({ data: { customerId: customer.id, consentType: 'marketing', granted: true, source: 'signup_form', privacyPolicyVersion: '2026-01' } as never })
           .catch(() => undefined);
       }
+    } else if (passwordHash) {
+      // Bestond al (bv. via POS aangemaakt) maar stelt nu voor het eerst
+      // een wachtwoord in tijdens deze portalregistratie.
+      await this.prisma.customer.update({ where: { id: customer.id }, data: { passwordHash } });
     }
 
     const session = await this.issueSession(customer.id, deviceInfo);
@@ -198,5 +212,71 @@ export class GuestAuthService {
       data: { revokedAt: new Date() },
     });
     return { loggedOut: true };
+  }
+
+  // -- Wachtwoord-login: EXTRA optie naast de e-mailcode-flow, nooit een
+  // vervanging. Een klant die nooit een wachtwoord instelt, blijft
+  // gewoon de codeflow gebruiken (passwordHash blijft dan null). ------
+
+  private readonly GENERIC_PASSWORD_ERROR = 'E-mailadres of wachtwoord onjuist';
+
+  async loginWithPassword(orgId: string, email: string, password: string, deviceInfo?: string) {
+    const customer = await this.prisma.customer.findFirst({
+      where: { organizationId: orgId, email, deletedAt: null },
+    });
+
+    // Zelfde generieke foutmelding of de klant nu wel/niet bestaat, nog
+    // geen wachtwoord heeft ingesteld, of een fout wachtwoord invoerde —
+    // voorkomt dat een aanvaller e-mailadressen kan "raden" op basis van
+    // het verschil in foutmelding (zelfde principe als bij de codeflow).
+    if (!customer || !customer.passwordHash) {
+      throw new UnauthorizedException(this.GENERIC_PASSWORD_ERROR);
+    }
+
+    if (customer.passwordLockedUntil && customer.passwordLockedUntil > new Date()) {
+      throw new UnauthorizedException('Te veel mislukte pogingen — probeer het over enkele minuten opnieuw, of log in met een code');
+    }
+
+    const valid = await bcrypt.compare(password, customer.passwordHash);
+    if (!valid) {
+      const attempts = customer.passwordFailedAttempts + 1;
+      const lockedOut = attempts >= MAX_PASSWORD_ATTEMPTS;
+      await this.prisma.customer.update({
+        where: { id: customer.id },
+        data: {
+          passwordFailedAttempts: lockedOut ? 0 : attempts,
+          passwordLockedUntil: lockedOut ? new Date(Date.now() + PASSWORD_LOCKOUT_MINUTES * 60 * 1000) : null,
+        },
+      });
+      throw new UnauthorizedException(this.GENERIC_PASSWORD_ERROR);
+    }
+
+    if (customer.passwordFailedAttempts > 0 || customer.passwordLockedUntil) {
+      await this.prisma.customer.update({
+        where: { id: customer.id },
+        data: { passwordFailedAttempts: 0, passwordLockedUntil: null },
+      });
+    }
+
+    const session = await this.issueSession(customer.id, deviceInfo);
+    return { ...session, requiresRegistration: false as const };
+  }
+
+  /**
+   * Wachtwoord instellen of wijzigen. Vereist een geldige, ingelogde
+   * sessie (via de guard op de controller) — een gast kan dus nooit het
+   * wachtwoord van een ander account zetten, alleen het eigen account
+   * nádat die zich al via een code heeft aangemeld.
+   */
+  async setPassword(customerId: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('Wachtwoord moet minstens 8 tekens lang zijn');
+    }
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.customer.update({
+      where: { id: customerId },
+      data: { passwordHash, passwordFailedAttempts: 0, passwordLockedUntil: null },
+    });
+    return { passwordSet: true };
   }
 }

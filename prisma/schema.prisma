@@ -119,6 +119,14 @@ model Customer {
   dateOfBirth DateTime? @map("date_of_birth") @db.Date
   language    String    @default("nl")
 
+  // Optioneel wachtwoord voor de klantportal — NAAST de bestaande
+  // e-mailcode-login, nooit als vervanging. Nullable: klanten die nooit
+  // een wachtwoord instellen blijven gewoon de codeflow gebruiken. Enkel
+  // een bcrypt-hash wordt opgeslagen, nooit het wachtwoord zelf.
+  passwordHash String? @map("password_hash")
+  passwordFailedAttempts Int       @default(0) @map("password_failed_attempts")
+  passwordLockedUntil    DateTime? @map("password_locked_until")
+
   // Herkomst-identificatie voor migraties (bijv. Piggy-import) — maakt
   // toekomstige heraanlevering van dezelfde bron veilig herkenbaar,
   // zonder een apart identificatie-model te introduceren.
