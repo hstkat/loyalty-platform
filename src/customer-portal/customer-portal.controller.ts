@@ -53,7 +53,7 @@ export class CustomerPortalController {
       header .brand-name { font-family: Georgia, serif; color: var(--white); font-size: 18px; }
       header button { background: none; border: 1px solid rgba(255,255,255,0.25); color: rgba(255,255,255,0.75); font-size: 12px; padding: 7px 14px; border-radius: 16px; cursor: pointer; }
       .accent-line { height: 3px; background: var(--accent); }
-      main { padding: 20px; padding-bottom: 60px; }
+      main { padding: 20px; padding-bottom: 30px; }
       .screen { display: none; }
       .screen.active { display: block; }
 
@@ -95,9 +95,9 @@ export class CustomerPortalController {
       .history-row .amount.positive { color: #4a7a5e; font-weight: 600; }
       .history-row .amount.negative { color: var(--accent-dark); font-weight: 600; }
 
-      nav.tabbar { position: sticky; bottom: 0; background: var(--white); border-top: 1px solid var(--line); display: flex; padding: 8px 4px; }
-      nav.tabbar button { flex: 1; background: none; border: none; font-size: 10px; color: var(--muted); padding: 6px 2px; cursor: pointer; }
-      nav.tabbar button.active { color: var(--accent-dark); font-weight: 600; }
+      nav.tabbar { position: sticky; top: 0; z-index: 5; background: var(--white); border-bottom: 1px solid var(--line); display: flex; padding: 0; }
+      nav.tabbar button { flex: 1; background: none; border: none; border-bottom: 2px solid transparent; font-size: 12px; font-weight: 600; color: var(--muted); padding: 14px 2px; cursor: pointer; }
+      nav.tabbar button.active { color: var(--accent-dark); border-bottom-color: var(--accent); }
     `;
 
     return `<!DOCTYPE html>
@@ -115,6 +115,12 @@ export class CustomerPortalController {
     <button id="logout-btn" style="display:none;">Uitloggen</button>
   </header>
   <div class="accent-line"></div>
+  <nav class="tabbar" id="dashboard-tabbar" style="display:none;">
+    <button class="tab-btn active" data-tab="overview">Overzicht</button>
+    <button class="tab-btn" data-tab="rewards">Cadeaus</button>
+    <button class="tab-btn" data-tab="history">Historie</button>
+    <button class="tab-btn" data-tab="profile">Profiel</button>
+  </nav>
   <main>
 
     <div class="screen active" id="screen-email">
@@ -197,12 +203,6 @@ export class CustomerPortalController {
         <p style="font-size:12px;color:var(--muted);margin-top:16px;">Wil je je gegevens wijzigen of je account laten verwijderen? Neem contact op met de zaak.</p>
       </div>
 
-      <nav class="tabbar">
-        <button class="tab-btn active" data-tab="overview">Overzicht</button>
-        <button class="tab-btn" data-tab="rewards">Cadeaus</button>
-        <button class="tab-btn" data-tab="history">Historie</button>
-        <button class="tab-btn" data-tab="profile">Profiel</button>
-      </nav>
     </div>
 
   </main>
@@ -249,6 +249,7 @@ export class CustomerPortalController {
     document.querySelectorAll('.screen').forEach(function (s) { s.classList.remove('active'); });
     document.getElementById(id).classList.add('active');
     document.getElementById('logout-btn').style.display = id === 'screen-dashboard' ? 'block' : 'none';
+    document.getElementById('dashboard-tabbar').style.display = id === 'screen-dashboard' ? 'flex' : 'none';
     scrollToTop();
     setTimeout(reportHeight, 50);
   }
