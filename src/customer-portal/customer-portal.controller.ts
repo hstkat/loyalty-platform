@@ -143,6 +143,28 @@ export class CustomerPortalController {
         <button class="btn-primary" id="password-login-btn">Inloggen</button>
         <div class="error-text" id="password-login-error"></div>
         <button class="btn-text" id="back-to-email-from-password-btn">Inloggen met code in plaats daarvan</button>
+        <button class="btn-text" id="go-to-signup-btn">Nog geen account? Inschrijven</button>
+      </div>
+    </div>
+
+    <div class="screen" id="screen-signup">
+      <div class="login-card" style="text-align:left;">
+        <h1 style="text-align:center;">Account aanmaken</h1>
+        <p style="text-align:center;">We sturen eerst een verificatiecode naar je e-mailadres.</p>
+        <input type="text" id="su-firstname" placeholder="Voornaam">
+        <input type="email" id="su-email" placeholder="E-mailadres" autocomplete="email">
+        <input type="password" id="su-password" placeholder="Wachtwoord (min. 8 tekens)" autocomplete="new-password">
+        <label class="consent-row">
+          <input type="checkbox" id="su-privacy" required>
+          <span>Ik ga akkoord met de privacyvoorwaarden</span>
+        </label>
+        <label class="consent-row">
+          <input type="checkbox" id="su-marketing" checked>
+          <span>Ik wil aanbiedingen en nieuws ontvangen (optioneel)</span>
+        </label>
+        <button class="btn-primary" id="send-signup-code-btn">Verstuur verificatiecode</button>
+        <div class="error-text" id="signup-error"></div>
+        <button class="btn-text" id="back-to-password-from-signup-btn">Al een account? Inloggen</button>
       </div>
     </div>
 
@@ -235,6 +257,7 @@ export class CustomerPortalController {
 
   let pendingEmail = '';
   let pendingRegistrationId = null;
+  let pendingSignupProfile = null;
 
   // -- Hoogte doorgeven aan de omringende pagina (bijv. een WordPress-
   // iframe-embed) — zodat de HELE pagina normaal scrolt in plaats van
@@ -307,13 +330,19 @@ export class CustomerPortalController {
     }
   });
 
-  document.getElementById('back-to-email-btn').addEventListener('click', function () { showScreen('screen-email'); });
+  document.getElementById('back-to-email-btn').addEventListener('click', function () { pendingSignupProfile = null; showScreen('screen-email'); });
 
   document.getElementById('go-to-password-btn').addEventListener('click', function () {
     document.getElementById('pw-email-input').value = document.getElementById('email-input').value.trim();
     showScreen('screen-password');
   });
   document.getElementById('back-to-email-from-password-btn').addEventListener('click', function () { showScreen('screen-email'); });
+
+  document.getElementById('go-to-signup-btn').addEventListener('click', function () {
+    document.getElementById('su-email').value = document.getElementById('pw-email-input').value.trim();
+    showScreen('screen-signup');
+  });
+  document.getElementById('back-to-password-from-signup-btn').addEventListener('click', function () { pendingSignupProfile = null; showScreen('screen-password'); });
 
   document.getElementById('password-login-btn').addEventListener('click', async function () {
     const email = document.getElementById('pw-email-input').value.trim();
@@ -331,6 +360,33 @@ export class CustomerPortalController {
     }
   });
 
+  // Directe inschrijving MET wachtwoord, mét e-mailverificatie: we
+  // bewaren de ingevulde gegevens (voornaam, wachtwoord, consent) even
+  // in het geheugen, sturen een verificatiecode, en ronden de
+  // registratie pas af zodra die code correct is ingevoerd — het
+  // e-mailadres is dan bewezen van de aanvrager zelf, exact hetzelfde
+  // principe als de bestaande codeflow, alleen nu met het account meteen
+  // klaar voor wachtwoord-login.
+  document.getElementById('send-signup-code-btn').addEventListener('click', async function () {
+    const errorEl = document.getElementById('signup-error');
+    errorEl.textContent = '';
+    const firstName = document.getElementById('su-firstname').value.trim();
+    const email = document.getElementById('su-email').value.trim();
+    const password = document.getElementById('su-password').value;
+    if (!document.getElementById('su-privacy').checked) { errorEl.textContent = 'Je moet akkoord gaan met de privacyvoorwaarden.'; return; }
+    if (!firstName) { errorEl.textContent = 'Vul je voornaam in.'; return; }
+    if (!email) { errorEl.textContent = 'Vul een e-mailadres in.'; return; }
+    if (!password || password.length < 8) { errorEl.textContent = 'Wachtwoord moet minstens 8 tekens lang zijn.'; return; }
+    try {
+      await apiPost('/auth/request-code', { email: email });
+      pendingEmail = email;
+      pendingSignupProfile = { firstName: firstName, password: password, marketingConsent: document.getElementById('su-marketing').checked };
+      showScreen('screen-code');
+    } catch (err) {
+      errorEl.textContent = err.message;
+    }
+  });
+
   document.getElementById('verify-code-btn').addEventListener('click', async function () {
     const code = document.getElementById('code-input').value.trim();
     const errorEl = document.getElementById('code-error');
@@ -339,7 +395,28 @@ export class CustomerPortalController {
       const result = await apiPost('/auth/verify-code', { email: pendingEmail, code: code });
       if (result.requiresRegistration) {
         pendingRegistrationId = result.verifiedRegistrationId;
-        showScreen('screen-register');
+        if (pendingSignupProfile) {
+          // Kwam via het directe inschrijfformulier — alle gegevens
+          // (inclusief wachtwoord) zijn al ingevuld, dus we ronden meteen
+          // af in plaats van het losse registratieformulier nog te tonen.
+          const profile = pendingSignupProfile;
+          pendingSignupProfile = null;
+          try {
+            const regResult = await apiPost('/auth/complete-registration', {
+              firstName: profile.firstName,
+              email: pendingEmail,
+              marketingConsent: profile.marketingConsent,
+              password: profile.password,
+              verifiedRegistrationId: result.verifiedRegistrationId,
+            });
+            localStorage.setItem(STORAGE_KEY, regResult.token);
+            loadDashboard(regResult.token);
+          } catch (regErr) {
+            errorEl.textContent = regErr.message;
+          }
+        } else {
+          showScreen('screen-register');
+        }
       } else {
         localStorage.setItem(STORAGE_KEY, result.token);
         loadDashboard(result.token);
