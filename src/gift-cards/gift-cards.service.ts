@@ -103,6 +103,21 @@ export class GiftCardsService {
       afterState: { originalValue: dto.originalValue, giftCardNumber },
     });
 
+    // Kritiek: als de kaart direct aan een BEKENDE klant gekoppeld wordt
+    // (recipientCustomerId, i.p.v. een los recipientEmail-veld), is dit
+    // token straks nergens anders meer terug te vinden — niet in de
+    // portal, niet ergens anders. Zonder deze e-mail zou de klant zijn
+    // eigen kaart dus nooit meer kunnen openen. Nooit een harde fout
+    // laten optreden op de uitgifte zelf als het versturen mislukt —
+    // de kaart is al geldig aangemaakt, dat mag niet teruggedraaid worden.
+    if (dto.recipientCustomerId && !dto.recipientEmail) {
+      const recipient = await this.prisma.customer.findUnique({ where: { id: dto.recipientCustomerId }, select: { email: true } });
+      if (recipient?.email) {
+        await this.prisma.giftCard.update({ where: { id: giftCard.id }, data: { recipientEmail: recipient.email } });
+        await this.sendDigitalCard(orgId, giftCard.id, token).catch(() => undefined);
+      }
+    }
+
     return { giftCardId: giftCard.id, giftCardNumber, token, currentBalance: dto.originalValue };
   }
 

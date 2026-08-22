@@ -87,6 +87,7 @@ export class CustomerPortalController {
       .list-item .top-row { display: flex; justify-content: space-between; align-items: center; }
       .list-item .item-name { font-weight: 600; color: var(--navy); font-size: 14px; }
       .list-item .item-value { font-family: Georgia, serif; color: var(--accent-dark); font-size: 15px; }
+      .list-item .item-meta { font-size: 11px; color: var(--muted); }
       .location-badge { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 8px; background: var(--line); color: var(--muted); margin-top: 5px; }
       .empty-note { font-size: 13px; color: var(--muted); text-align: center; padding: 16px; }
 
@@ -357,7 +358,7 @@ export class CustomerPortalController {
         giftCardsEl.innerHTML = '<div class="empty-note">Geen cadeaukaarten gekoppeld.</div>';
       } else {
         giftCardsEl.innerHTML = giftCards.map(function (c) {
-          return '<div class="list-item"><div class="top-row"><span class="item-name">Gift Card ' + c.maskedNumber + '</span><span class="item-value">€' + Number(c.currentBalance).toFixed(2) + '</span></div></div>';
+          return '<div class="list-item"><div class="top-row"><span class="item-name">Gift Card ' + c.maskedNumber + '</span><span class="item-value">€' + Number(c.currentBalance).toFixed(2) + '</span></div><div class="item-meta" style="margin-top:4px;">Bekijk via de e-mail die je bij ontvangst kreeg</div></div>';
         }).join('');
       }
 
