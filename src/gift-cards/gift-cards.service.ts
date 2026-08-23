@@ -252,10 +252,27 @@ export class GiftCardsService {
 
     const rawToken = (payment.metadata as { rawToken?: string } | null)?.rawToken;
 
+    // Koppel de kaart automatisch aan een BESTAAND klantaccount met
+    // hetzelfde e-mailadres, zodat die 'm meteen ziet staan onder
+    // "Cadeaukaarten" in Mijn Tegoed — zonder dat de koper of ontvanger
+    // daar iets voor hoeft te doen. Bewust GEEN nieuw account aanmaken
+    // als er nog geen match is: dat zou een account aanmaken zonder
+    // toestemming/verificatie van de ontvanger. In dat geval blijft de
+    // kaart gewoon bereikbaar via de e-mail met de losse kaartlink/QR,
+    // exact zoals nu al het geval is.
+    let recipientCustomerId: string | undefined;
+    if (giftCard.recipientEmail) {
+      const matchingCustomer = await this.prisma.customer.findFirst({
+        where: { organizationId: giftCard.organizationId, email: giftCard.recipientEmail, deletedAt: null },
+        select: { id: true },
+      });
+      recipientCustomerId = matchingCustomer?.id;
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.giftCard.update({
         where: { id: giftCard.id },
-        data: { status: 'active', currentBalance: giftCard.originalValue, activatedAt: new Date() },
+        data: { status: 'active', currentBalance: giftCard.originalValue, activatedAt: new Date(), recipientCustomerId },
       });
       await tx.giftCardLedgerEntry.create({
         data: {
