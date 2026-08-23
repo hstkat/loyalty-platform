@@ -136,21 +136,37 @@ export class GiftCardCheckoutController {
 
   private renderBuyPage(orgId: string, brand: GiftCardBrandConfig): string {
     const styles = `
-      :root { --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a; --body-text: #3a4a5c; --muted: #7a8ea0; --accent: ${brand.accent}; --accent-dark: ${brand.accentDark}; --line: rgba(27,58,92,0.12); }
+      :root { --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a; --body-text: #3a4a5c; --muted: #7a8ea0; --accent: ${brand.accent}; --accent-dark: ${brand.accentDark}; --line: rgba(27,58,92,0.1); }
       * { box-sizing: border-box; }
-      body { margin: 0; background: var(--cream); font-family: -apple-system, 'Inter', sans-serif; padding: 20px; }
-      .card { width: 100%; max-width: 420px; margin: 0 auto; background: var(--white); border-radius: 20px; padding: 24px 22px; }
-      .brand-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
-      h1 { font-family: Georgia, serif; font-size: 22px; color: var(--navy); margin: 0 0 18px; }
-      .amounts { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+      body { margin: 0; background: transparent; font-family: -apple-system, 'Inter', sans-serif; padding: 14px; }
+      .frame { width: 100%; max-width: 420px; margin: 0 auto; background: var(--accent); border-radius: 22px; padding: 14px; }
+      .banner { border-radius: 14px; padding: 22px 20px 18px; margin-bottom: 14px; background: linear-gradient(160deg, var(--navy-dark), var(--navy)); }
+      .banner-label { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: color-mix(in srgb, var(--accent) 70%, white); font-weight: 700; margin-bottom: 6px; }
+      .banner-title { font-family: Georgia, serif; font-size: 26px; color: var(--white); font-weight: 700; letter-spacing: 0.01em; text-transform: uppercase; }
+      .panel { background: var(--white); border-radius: 14px; padding: 18px 18px 6px; margin-bottom: 12px; }
+      .panel-title { font-family: Georgia, serif; font-size: 17px; color: var(--navy); margin-bottom: 3px; }
+      .panel-sub { font-size: 12.5px; color: var(--muted); margin-bottom: 14px; line-height: 1.4; }
+      .amounts { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
       .amount-chip { border: 1px solid var(--line); background: var(--cream); color: var(--navy); padding: 10px 18px; border-radius: 20px; font-size: 14px; cursor: pointer; }
-      .amount-chip.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, white); color: var(--accent-dark); font-weight: 600; }
-      input, textarea { width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--cream); font-size: 14px; margin-bottom: 12px; font-family: inherit; color: var(--body-text); }
+      .amount-chip.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, white); color: var(--accent-dark); font-weight: 600; }
+      .field-row { display: flex; gap: 10px; }
+      .field-row > div { flex: 1; min-width: 0; }
+      input, textarea { width: 100%; padding: 11px 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--cream); font-size: 14px; margin-bottom: 14px; font-family: inherit; color: var(--body-text); }
       textarea { resize: vertical; min-height: 60px; }
-      button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--accent); color: white; font-weight: 600; font-size: 15px; cursor: pointer; }
-      button:disabled { opacity: 0.6; }
-      .error { color: var(--accent-dark); font-size: 13px; margin-top: 8px; min-height: 16px; }
-      label { font-size: 12px; color: var(--navy); font-weight: 500; display: block; margin-bottom: 6px; }
+      label { font-size: 12.5px; color: var(--navy); font-weight: 600; display: block; margin-bottom: 6px; }
+      .toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; cursor: pointer; user-select: none; }
+      .toggle-row span.label-text { font-size: 13.5px; color: var(--navy); font-weight: 500; }
+      .toggle-switch { position: relative; width: 40px; height: 23px; flex-shrink: 0; }
+      .toggle-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+      .toggle-slider { position: absolute; inset: 0; background: var(--line); border-radius: 20px; transition: background 0.15s; pointer-events: none; }
+      .toggle-slider::before { content: ''; position: absolute; width: 17px; height: 17px; left: 3px; top: 3px; background: var(--white); border-radius: 50%; transition: transform 0.15s; }
+      .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
+      .toggle-switch input:checked + .toggle-slider::before { transform: translateX(17px); }
+      #message-field { display: none; }
+      button#pay-btn { width: 100%; padding: 15px; border-radius: 11px; border: none; background: var(--accent-dark); color: white; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 2px; }
+      button#pay-btn:disabled { opacity: 0.6; }
+      .error { color: var(--white); background: rgba(0,0,0,0.18); border-radius: 8px; padding: 0; font-size: 13px; margin-top: 10px; min-height: 0; text-align: center; }
+      .error:not(:empty) { padding: 10px; }
     `;
     return `<!DOCTYPE html>
 <html lang="nl">
@@ -161,27 +177,52 @@ export class GiftCardCheckoutController {
 <style>${styles}</style>
 </head>
 <body>
-  <div class="card">
-    <div class="brand-label">${brand.name}</div>
-    <h1>Cadeaukaart kopen</h1>
-    <label>Bedrag</label>
-    <div class="amounts" id="amounts">
-      <div class="amount-chip" data-value="25">€25</div>
-      <div class="amount-chip" data-value="50">€50</div>
-      <div class="amount-chip" data-value="100">€100</div>
-      <div class="amount-chip" data-value="custom">Anders…</div>
+  <div class="frame">
+    <div class="banner">
+      <div class="banner-label">${brand.name}</div>
+      <div class="banner-title">Cadeaukaart</div>
     </div>
-    <input type="number" id="custom-amount" name="custom-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01" style="display:none;">
-    <label>Je naam</label>
-    <input type="text" id="sender-name" name="sender-name" placeholder="Voor op de aankoopbevestiging" autocomplete="name">
-    <label>Je e-mailadres</label>
-    <input type="email" id="sender-email" name="sender-email" placeholder="Voor je aankoopbevestiging" autocomplete="email">
-    <label>Naam ontvanger (optioneel)</label>
-    <input type="text" id="recipient-name" name="recipient-name" placeholder="Voor jezelf? Leeg laten" autocomplete="off">
-    <label>E-mailadres ontvanger (optioneel)</label>
-    <input type="email" id="recipient-email" name="recipient-email" placeholder="Waar mag de kaart heen?" autocomplete="off">
-    <label>Persoonlijke boodschap (optioneel)</label>
-    <textarea id="message" name="message" placeholder="Bijv. Gefeliciteerd!"></textarea>
+
+    <div class="panel">
+      <div class="panel-title">Bedrag</div>
+      <div class="panel-sub">Kies een bedrag of vul er zelf een in.</div>
+      <div class="amounts" id="amounts">
+        <div class="amount-chip" data-value="25">€25</div>
+        <div class="amount-chip" data-value="50">€50</div>
+        <div class="amount-chip" data-value="100">€100</div>
+        <div class="amount-chip" data-value="custom">Anders…</div>
+      </div>
+      <input type="number" id="custom-amount" name="custom-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01" style="display:none;">
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Je gegevens</div>
+      <div class="panel-sub">Je ontvangt een bevestiging van je bestelling.</div>
+      <label>Je naam</label>
+      <input type="text" id="sender-name" name="sender-name" placeholder="Voornaam en achternaam" autocomplete="name">
+      <label>Je e-mailadres</label>
+      <input type="email" id="sender-email" name="sender-email" placeholder="Voor je aankoopbevestiging" autocomplete="email">
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Gegevens ontvanger</div>
+      <div class="panel-sub">De ontvanger ontvangt een e-mail met de kaart. Voor jezelf? Laat leeg.</div>
+      <label>Naam ontvanger (optioneel)</label>
+      <input type="text" id="recipient-name" name="recipient-name" placeholder="Voor wie is de kaart?" autocomplete="off">
+      <label>E-mailadres ontvanger (optioneel)</label>
+      <input type="email" id="recipient-email" name="recipient-email" placeholder="Waar mag de kaart heen?" autocomplete="off">
+    </div>
+
+    <div class="panel">
+      <label class="toggle-row" id="message-toggle-row">
+        <span class="toggle-switch"><input type="checkbox" id="message-toggle"><span class="toggle-slider"></span></span>
+        <span class="label-text">Voeg een persoonlijk bericht toe</span>
+      </label>
+      <div id="message-field">
+        <textarea id="message" name="message" placeholder="Bijv. Gefeliciteerd!"></textarea>
+      </div>
+    </div>
+
     <button id="pay-btn">Doorgaan naar betalen</button>
     <div class="error" id="error"></div>
   </div>
@@ -210,6 +251,11 @@ export class GiftCardCheckoutController {
       if (domainParts.length < 2) return false;
       return domainParts.every(function (part) { return part.length > 0; });
     }
+
+    document.getElementById('message-toggle').addEventListener('change', function () {
+      document.getElementById('message-field').style.display = this.checked ? 'block' : 'none';
+      setTimeout(reportHeight, 50);
+    });
 
     let selectedAmount = null;
     document.querySelectorAll('.amount-chip').forEach((chip) => {
