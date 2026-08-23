@@ -66,8 +66,21 @@ async function main() {
       create: { organizationId: orgId, email, passwordHash, firstName, lastName: lastName || null, permissions, isActive: true },
     });
 
+    // Bij een wachtwoord-wijziging (dit script wordt zowel voor het
+    // eerste aanmaken als voor een latere reset gebruikt) alle bestaande
+    // sessies van dit account intrekken — hetzelfde principe als een
+    // "wachtwoord vergeten"-flow: een oude, nog geldige sessietoken mag
+    // na een reset niet blijven werken.
+    const revoked = await prisma.staffSession.updateMany({
+      where: { staffUserId: staffUser.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
     console.log(`OK — staff-account klaar: ${staffUser.email} (${staffUser.id})`);
     console.log(`Permissies: ${staffUser.permissions.join(', ')}`);
+    if (revoked.count > 0) {
+      console.log(`${revoked.count} bestaande sessie(s) ingetrokken — dit account moet overal opnieuw inloggen.`);
+    }
   } finally {
     await prisma.$disconnect();
   }
