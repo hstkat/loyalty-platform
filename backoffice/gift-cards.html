@@ -299,6 +299,16 @@
 
     <div class="form-row">
       <div class="form-field">
+        <label>Naam afzender (optioneel)</label>
+        <input type="text" id="sender-name-input" placeholder="Bijv. bij telefonische bestelling">
+      </div>
+      <div class="form-field">
+        <label>E-mailadres afzender (optioneel)</label>
+        <input type="email" id="sender-email-input" placeholder="Voor een aankoopbevestiging">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-field">
         <label>Naam ontvanger (optioneel)</label>
         <input type="text" id="recipient-name-input" placeholder="Voor jezelf laten? Leeg laten">
       </div>
@@ -401,6 +411,8 @@
     customAmountInput: document.getElementById('custom-amount-input'),
     recipientNameInput: document.getElementById('recipient-name-input'),
     recipientEmailInput: document.getElementById('recipient-email-input'),
+    senderNameInput: document.getElementById('sender-name-input'),
+    senderEmailInput: document.getElementById('sender-email-input'),
     messageInput: document.getElementById('message-input'),
     issueBtn: document.getElementById('issue-btn'),
     issueResult: document.getElementById('issue-result'),
@@ -449,19 +461,28 @@
     });
   });
 
+  const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   els.issueBtn.addEventListener('click', async () => {
     const amount = selectedAmount || parseFloat(els.customAmountInput.value);
     if (!amount || amount < 10) { alert('Minimaal bedrag is €10 (i.v.m. transactiekosten).'); return; }
+
+    const recipientEmail = els.recipientEmailInput.value.trim();
+    const senderName = els.senderNameInput.value.trim();
+    const senderEmail = els.senderEmailInput.value.trim();
+    if (recipientEmail && !EMAIL_PATTERN.test(recipientEmail)) { alert('Het e-mailadres van de ontvanger lijkt niet geldig.'); return; }
+    if (senderEmail && !EMAIL_PATTERN.test(senderEmail)) { alert('Het e-mailadres van de afzender lijkt niet geldig.'); return; }
 
     els.issueBtn.disabled = true;
     els.issueBtn.textContent = 'Bezig…';
     try {
       const { orgId } = getConfig();
-      const recipientEmail = els.recipientEmailInput.value.trim();
       const result = await apiPost('/organizations/' + orgId + '/gift-cards/issue', {
         originalValue: amount,
         recipientName: els.recipientNameInput.value.trim() || undefined,
         recipientEmail: recipientEmail || undefined,
+        senderName: senderName || undefined,
+        senderEmail: senderEmail || undefined,
         personalMessage: els.messageInput.value.trim() || undefined,
       });
 
@@ -477,11 +498,19 @@
         }
       }
 
+      if (senderEmail) {
+        resultHtml += result.senderConfirmationSent
+          ? `<div style="margin-top:4px;color:var(--teal-dark);">✓ Aankoopbevestiging verstuurd naar ${senderEmail}</div>`
+          : `<div style="margin-top:4px;color:var(--coral);">Aankoopbevestiging aan afzender is niet gelukt — controleer het e-mailadres.</div>`;
+      }
+
       els.issueResult.innerHTML = resultHtml;
       els.issueResult.classList.add('show');
 
       els.recipientNameInput.value = '';
       els.recipientEmailInput.value = '';
+      els.senderNameInput.value = '';
+      els.senderEmailInput.value = '';
       els.messageInput.value = '';
       loadReport();
       loadCards();
@@ -519,10 +548,12 @@
     }
     els.cardList.innerHTML = cards.map((card) => {
       const recipient = card.recipient ? [card.recipient.firstName, card.recipient.lastName].filter(Boolean).join(' ') : (card.recipientName || 'Geen ontvanger');
+      const senderLine = card.senderName ? `<div class="customer" style="font-size:11px;color:var(--muted);">Van: ${card.senderName}</div>` : '';
       return `<div class="card-row" data-id="${card.id}">
         <div>
           <div class="number">${card.giftCardNumber}</div>
           <div class="customer">${recipient}</div>
+          ${senderLine}
         </div>
         <div style="display:flex;align-items:center;gap:12px;">
           <span class="balance">€${Number(card.currentBalance).toFixed(2)}</span>
@@ -562,12 +593,20 @@
     const purchaser = card.purchaser ? [card.purchaser.firstName, card.purchaser.lastName].filter(Boolean).join(' ') : '—';
     const recipient = card.recipient ? [card.recipient.firstName, card.recipient.lastName].filter(Boolean).join(' ') : (card.recipientName || '—');
     const issuedDate = new Date(card.issuedAt).toLocaleDateString('nl-NL');
+    const confirmationStatus = card.senderEmail
+      ? (card.senderConfirmationSentAt ? 'Verstuurd (' + new Date(card.senderConfirmationSentAt).toLocaleDateString('nl-NL') + ')' : 'Nog niet verstuurd')
+      : '—';
 
     els.detailGrid.innerHTML = `
       <div class="detail-tile"><div class="label">Status</div><div class="value">${STATUS_LABELS[card.status] || card.status}</div></div>
       <div class="detail-tile"><div class="label">Saldo</div><div class="value">€${Number(card.currentBalance).toFixed(2)} / €${Number(card.originalValue).toFixed(2)}</div></div>
-      <div class="detail-tile"><div class="label">Koper</div><div class="value">${purchaser}</div></div>
+      <div class="detail-tile"><div class="label">Koper (account)</div><div class="value">${purchaser}</div></div>
+      <div class="detail-tile"><div class="label">Afzender</div><div class="value">${card.senderName || '—'}</div></div>
+      <div class="detail-tile"><div class="label">Afzender e-mail</div><div class="value">${card.senderEmail || '—'}</div></div>
+      <div class="detail-tile"><div class="label">Aankoopbevestiging</div><div class="value">${confirmationStatus}</div></div>
       <div class="detail-tile"><div class="label">Ontvanger</div><div class="value">${recipient}</div></div>
+      <div class="detail-tile"><div class="label">Ontvanger e-mail</div><div class="value">${card.recipientEmail || '—'}</div></div>
+      <div class="detail-tile"><div class="label">Persoonlijke boodschap</div><div class="value">${card.personalMessage || '—'}</div></div>
       <div class="detail-tile"><div class="label">Uitgegeven op</div><div class="value">${issuedDate}</div></div>
       <div class="detail-tile"><div class="label">Vervangen door</div><div class="value">${card.replacedByGiftCard ? card.replacedByGiftCard.giftCardNumber : '—'}</div></div>
     `;

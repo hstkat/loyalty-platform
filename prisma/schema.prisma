@@ -2683,6 +2683,13 @@ model GiftCard {
   recipientCustomerId String? @map("recipient_customer_id") @db.Uuid
   recipientName       String? @map("recipient_name")
   recipientEmail      String? @map("recipient_email")
+  // Afzender bij online aankoop — losse vrije-tekstvelden (geen
+  // koppeling aan een klantaccount, in tegenstelling tot
+  // purchaserCustomerId hierboven, dat een AL BESTAAND account koppelt).
+  // Nodig voor de aparte bevestigingsmail aan de koper zelf.
+  senderName                String?   @map("sender_name")
+  senderEmail               String?   @map("sender_email")
+  senderConfirmationSentAt  DateTime? @map("sender_confirmation_sent_at")
   // Online verkoop via Mollie (iDEAL e.d.) — de kaart blijft bewust op
   // status 'draft' totdat de webhook een bevestigde betaling meldt; zie
   // MollieService voor de reden waarom nooit op de webhook-inhoud zelf

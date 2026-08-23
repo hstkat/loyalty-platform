@@ -20,6 +20,17 @@ import {
 const MAX_BATCH_QUANTITY = 5000;
 const MIN_GIFT_CARD_VALUE = 10; // onder dit bedrag wegen de vaste transactiekosten (Mollie e.d.) niet meer op tegen de waarde
 
+// Simpele formaatcheck — geen poging om elk technisch geldig e-mailadres
+// te dekken, maar voldoende om overduidelijke tikfouten (geen @, geen
+// domeinnaam) tegen te houden vóór er geld/een echte e-mail bij komt
+// kijken. IssueGiftCardDto is een plain interface (geen class-validator-
+// klasse), dus de globale ValidationPipe valideert dit NIET automatisch
+// — vandaar deze expliciete check hier in de service.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(value: string | undefined): boolean {
+  return !!value && EMAIL_PATTERN.test(value.trim());
+}
+
 /**
  * GiftCard -> GiftCardLedgerEntry — een volledig aparte boekhouding van
  * het loyaltytegoed (Customer -> Wallet -> WalletLedgerEntry). Een
@@ -58,6 +69,12 @@ export class GiftCardsService {
 
   async issue(orgId: string, ctx: RequestContext, dto: IssueGiftCardDto) {
     if (dto.originalValue < MIN_GIFT_CARD_VALUE) throw new BadRequestException(`Minimaal bedrag is €${MIN_GIFT_CARD_VALUE} (i.v.m. transactiekosten)`);
+    if (dto.recipientEmail && !isValidEmail(dto.recipientEmail)) {
+      throw new BadRequestException('Het e-mailadres van de ontvanger lijkt niet geldig.');
+    }
+    if (dto.senderEmail && !isValidEmail(dto.senderEmail)) {
+      throw new BadRequestException('Het e-mailadres van de afzender lijkt niet geldig.');
+    }
 
     const existingCount = await this.prisma.giftCard.count({ where: { organizationId: orgId } });
     const token = this.generateToken();
@@ -77,6 +94,8 @@ export class GiftCardsService {
         recipientCustomerId: dto.recipientCustomerId,
         recipientName: dto.recipientName,
         recipientEmail: dto.recipientEmail,
+        senderName: dto.senderName,
+        senderEmail: dto.senderEmail,
         personalMessage: dto.personalMessage,
         scheduledSendAt: dto.scheduledSendAt ? new Date(dto.scheduledSendAt) : undefined,
         expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
@@ -128,7 +147,19 @@ export class GiftCardsService {
       }
     }
 
-    return { giftCardId: giftCard.id, giftCardNumber, token, currentBalance: dto.originalValue, emailSent };
+    let senderConfirmationSent: boolean | undefined;
+    if (dto.senderEmail) {
+      senderConfirmationSent = await this.sendPurchaseConfirmationToSender(orgId, giftCard.id)
+        .then(() => true)
+        .catch((err) => {
+          this.logger.error(
+            `Cadeaukaart ${giftCardNumber} (${giftCard.id}) uitgegeven, maar bevestigingsmail naar afzender ${dto.senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+          );
+          return false;
+        });
+    }
+
+    return { giftCardId: giftCard.id, giftCardNumber, token, currentBalance: dto.originalValue, emailSent, senderConfirmationSent };
   }
 
   /**
@@ -188,6 +219,21 @@ export class GiftCardsService {
       return { checkoutUrl: null, reason: 'Online betalen is nog niet ingesteld — neem contact op met de zaak.' };
     }
 
+    // Afzendergegevens zijn bij een ONLINE aankoop altijd verplicht (de
+    // koper betaalt zelf en moet een bevestiging kunnen krijgen) — in
+    // tegenstelling tot de admin/POS-uitgifte, waar een medewerker een
+    // kaart ook zonder deze gegevens mag aanmaken (bijv. contant aan de
+    // balie, geen digitale bevestiging nodig).
+    if (!dto.senderName || !dto.senderName.trim()) {
+      throw new BadRequestException('Vul je naam in.');
+    }
+    if (!isValidEmail(dto.senderEmail)) {
+      throw new BadRequestException('Vul een geldig e-mailadres in (voor je aankoopbevestiging).');
+    }
+    if (dto.recipientEmail && !isValidEmail(dto.recipientEmail)) {
+      throw new BadRequestException('Het e-mailadres van de ontvanger lijkt niet geldig.');
+    }
+
     const existingCount = await this.prisma.giftCard.count({ where: { organizationId: orgId } });
     const token = this.generateToken();
     const giftCardNumber = 'GC-' + String(existingCount + 1).padStart(6, '0');
@@ -202,6 +248,8 @@ export class GiftCardsService {
         currentBalance: 0,
         recipientName: dto.recipientName,
         recipientEmail: dto.recipientEmail,
+        senderName: dto.senderName.trim(),
+        senderEmail: dto.senderEmail!.trim(),
         personalMessage: dto.personalMessage,
         scheduledSendAt: dto.scheduledSendAt ? new Date(dto.scheduledSendAt) : undefined,
       },
@@ -269,11 +317,25 @@ export class GiftCardsService {
       recipientCustomerId = matchingCustomer?.id;
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.giftCard.update({
-        where: { id: giftCard.id },
+    // Atomair CLAIMEN van de activering: de where-clause herhaalt de
+    // status='draft'-voorwaarde in de UPDATE zelf (niet alleen in de
+    // eerdere read hierboven), en de claim + ledger-entry zitten samen
+    // in één transactie. Mollie kan de webhook soms bijna gelijktijdig
+    // twee keer aanroepen — zonder deze extra check zouden beide
+    // requests de eerdere `giftCard.status !== 'draft'`-lezing allebei
+    // nog als 'draft' kunnen zien vóórdat de ander zijn write heeft
+    // voltooid (klassieke read-then-write-race), en dan alsnog dubbel
+    // activeren/mailen/boeken. Postgres serialiseert twee gelijktijdige
+    // UPDATE's op dezelfde rij vanzelf (rij-lock) — de tweede transactie
+    // ziet na de eerste committed heeft status niet meer 'draft' en
+    // matcht dus 0 rijen.
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.giftCard.updateMany({
+        where: { id: giftCard.id, status: 'draft' },
         data: { status: 'active', currentBalance: giftCard.originalValue, activatedAt: new Date(), recipientCustomerId },
       });
+      if (claim.count === 0) return false;
+
       await tx.giftCardLedgerEntry.create({
         data: {
           giftCardId: giftCard.id,
@@ -284,7 +346,11 @@ export class GiftCardsService {
           metadata: { molliePaymentId },
         },
       });
+      return true;
     });
+    if (!claimed) {
+      return { processed: true }; // de andere, gelijktijdige aanroep won de race — niets meer te doen hier
+    }
 
     await this.audit.record({
       organizationId: giftCard.organizationId,
@@ -294,7 +360,7 @@ export class GiftCardsService {
       actor: { actorType: 'system', actorId: null, ipAddress: null },
       beforeState: { status: 'draft' },
       afterState: { status: 'active' },
-      reason: 'Online betaling bevestigd via Mollie',
+      reason: `Online betaling bevestigd via Mollie — afzender ${giftCard.senderName ?? 'onbekend'} <${giftCard.senderEmail ?? 'onbekend'}>, ontvanger ${giftCard.recipientName ?? '(geen naam opgegeven)'} <${giftCard.recipientEmail ?? '(geen e-mail opgegeven)'}>`,
     });
 
     if (giftCard.recipientEmail && rawToken) {
@@ -310,7 +376,52 @@ export class GiftCardsService {
       });
     }
 
+    if (giftCard.senderEmail) {
+      await this.sendPurchaseConfirmationToSender(giftCard.organizationId, giftCard.id).catch((err) => {
+        this.logger.error(
+          `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar bevestigingsmail naar afzender ${giftCard.senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+        );
+      });
+    }
+
     return { processed: true };
+  }
+
+  /**
+   * Aparte bevestigingsmail aan de KOPER (afzender) zelf — bewust NOOIT
+   * de kaart-token/QR of een bruikbare cadeaukaart-code hierin, alleen
+   * bevestiging + samenvatting. De daadwerkelijke kaart gaat uitsluitend
+   * naar de ontvanger via sendDigitalCard hierboven.
+   */
+  private async sendPurchaseConfirmationToSender(orgId: string, giftCardId: string): Promise<void> {
+    const giftCard = await this.prisma.giftCard.findFirst({ where: { id: giftCardId, organizationId: orgId } });
+    if (!giftCard || !giftCard.senderEmail) return;
+    if (giftCard.senderConfirmationSentAt) return; // extra vangnet, los van de atomaire claim hierboven
+
+    const amount = Number(giftCard.originalValue).toFixed(2).replace('.', ',');
+    const purchaseDate = (giftCard.activatedAt ?? giftCard.issuedAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
+    const recipientLine = giftCard.recipientEmail
+      ? `Verstuurd naar: ${giftCard.recipientEmail}`
+      : 'Er is geen ontvanger-e-mailadres opgegeven — je vindt de kaart terug op de bedankpagina die je na de betaling zag.';
+
+    const lines = [
+      'Je cadeaukaart is succesvol verstuurd',
+      '',
+      `Bedrag: €${amount}`,
+      `Ontvanger: ${giftCard.recipientName || '(geen naam opgegeven)'}`,
+      recipientLine,
+      `Van: ${giftCard.senderName ?? ''}`,
+      giftCard.personalMessage ? `Persoonlijke boodschap: "${giftCard.personalMessage}"` : undefined,
+      `Ordernummer: ${giftCard.giftCardNumber}`,
+      `Datum van aankoop: ${purchaseDate}`,
+    ].filter((line): line is string => line !== undefined);
+
+    const emailResult = await this.mailgun.sendEmail(giftCard.senderEmail, 'Je cadeaukaart is succesvol verstuurd', lines.join('\n'));
+    if (!emailResult.sent) {
+      throw new Error(emailResult.reason || 'Mailgun gaf geen reden voor de mislukking');
+    }
+
+    await this.prisma.giftCard.update({ where: { id: giftCard.id }, data: { senderConfirmationSentAt: new Date() } });
   }
 
   // -- Batches met lege fysieke kaarten (later bij POS geactiveerd) --------
@@ -687,6 +798,8 @@ export class GiftCardsService {
                 { giftCardNumber: { contains: filters.search, mode: 'insensitive' } },
                 { recipientName: { contains: filters.search, mode: 'insensitive' } },
                 { recipientEmail: { contains: filters.search, mode: 'insensitive' } },
+                { senderName: { contains: filters.search, mode: 'insensitive' } },
+                { senderEmail: { contains: filters.search, mode: 'insensitive' } },
                 ...(customerMatchIds.length > 0
                   ? [{ purchaserCustomerId: { in: customerMatchIds } }, { recipientCustomerId: { in: customerMatchIds } }]
                   : []),

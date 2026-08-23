@@ -119,6 +119,8 @@ export class GiftCardCheckoutController {
       originalValue: number;
       recipientName?: string;
       recipientEmail?: string;
+      senderName?: string;
+      senderEmail?: string;
       personalMessage?: string;
     },
   ) {
@@ -170,10 +172,14 @@ export class GiftCardCheckoutController {
       <div class="amount-chip" data-value="custom">Anders…</div>
     </div>
     <input type="number" id="custom-amount" name="custom-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01" style="display:none;">
+    <label>Je naam</label>
+    <input type="text" id="sender-name" name="sender-name" placeholder="Voor op de aankoopbevestiging" autocomplete="name">
+    <label>Je e-mailadres</label>
+    <input type="email" id="sender-email" name="sender-email" placeholder="Voor je aankoopbevestiging" autocomplete="email">
     <label>Naam ontvanger (optioneel)</label>
-    <input type="text" id="recipient-name" name="recipient-name" placeholder="Voor jezelf? Leeg laten" autocomplete="name">
+    <input type="text" id="recipient-name" name="recipient-name" placeholder="Voor jezelf? Leeg laten" autocomplete="off">
     <label>E-mailadres ontvanger (optioneel)</label>
-    <input type="email" id="recipient-email" name="recipient-email" placeholder="Waar mag de kaart heen?" autocomplete="email">
+    <input type="email" id="recipient-email" name="recipient-email" placeholder="Waar mag de kaart heen?" autocomplete="off">
     <label>Persoonlijke boodschap (optioneel)</label>
     <textarea id="message" name="message" placeholder="Bijv. Gefeliciteerd!"></textarea>
     <button id="pay-btn">Doorgaan naar betalen</button>
@@ -188,6 +194,8 @@ export class GiftCardCheckoutController {
     }
     window.addEventListener('load', reportHeight);
     setInterval(reportHeight, 500);
+
+    const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     let selectedAmount = null;
     document.querySelectorAll('.amount-chip').forEach((chip) => {
@@ -212,6 +220,13 @@ export class GiftCardCheckoutController {
       const amount = selectedAmount || parseFloat(document.getElementById('custom-amount').value);
       if (!amount || amount < 10) { errorEl.textContent = 'Minimaal bedrag is €10 (i.v.m. transactiekosten).'; setTimeout(reportHeight, 50); return; }
 
+      const senderName = document.getElementById('sender-name').value.trim();
+      const senderEmail = document.getElementById('sender-email').value.trim();
+      const recipientEmail = document.getElementById('recipient-email').value.trim();
+      if (!senderName) { errorEl.textContent = 'Vul je naam in.'; setTimeout(reportHeight, 50); return; }
+      if (!EMAIL_PATTERN.test(senderEmail)) { errorEl.textContent = 'Vul een geldig e-mailadres in (voor je aankoopbevestiging).'; setTimeout(reportHeight, 50); return; }
+      if (recipientEmail && !EMAIL_PATTERN.test(recipientEmail)) { errorEl.textContent = 'Het e-mailadres van de ontvanger lijkt niet geldig.'; setTimeout(reportHeight, 50); return; }
+
       const btn = document.getElementById('pay-btn');
       btn.disabled = true;
       btn.textContent = 'Bezig…';
@@ -222,7 +237,9 @@ export class GiftCardCheckoutController {
           body: JSON.stringify({
             originalValue: amount,
             recipientName: document.getElementById('recipient-name').value || undefined,
-            recipientEmail: document.getElementById('recipient-email').value || undefined,
+            recipientEmail: recipientEmail || undefined,
+            senderName: senderName,
+            senderEmail: senderEmail,
             personalMessage: document.getElementById('message').value || undefined,
           }),
         });
@@ -234,7 +251,7 @@ export class GiftCardCheckoutController {
           // gewone "afrekenen"-link zou doen), niet alleen de iframe.
           if (window.top) { window.top.location.href = data.checkoutUrl; } else { window.location.href = data.checkoutUrl; }
         } else {
-          errorEl.textContent = data.reason || 'Kon geen betaling starten.';
+          errorEl.textContent = data.reason || data.message || 'Kon geen betaling starten.';
           btn.disabled = false;
           btn.textContent = 'Doorgaan naar betalen';
           setTimeout(reportHeight, 50);

@@ -6,6 +6,8 @@ export interface IssueGiftCardDto {
   recipientCustomerId?: string;
   recipientName?: string;
   recipientEmail?: string;
+  senderName?: string;
+  senderEmail?: string;
   personalMessage?: string;
   scheduledSendAt?: string;
   expiresAt?: string;
