@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -37,6 +37,8 @@ const MIN_GIFT_CARD_VALUE = 10; // onder dit bedrag wegen de vaste transactiekos
  */
 @Injectable()
 export class GiftCardsService {
+  private readonly logger = new Logger(GiftCardsService.name);
+
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
@@ -110,15 +112,23 @@ export class GiftCardsService {
     // eigen kaart dus nooit meer kunnen openen. Nooit een harde fout
     // laten optreden op de uitgifte zelf als het versturen mislukt —
     // de kaart is al geldig aangemaakt, dat mag niet teruggedraaid worden.
+    let emailSent: boolean | undefined;
     if (dto.recipientCustomerId && !dto.recipientEmail) {
       const recipient = await this.prisma.customer.findUnique({ where: { id: dto.recipientCustomerId }, select: { email: true } });
       if (recipient?.email) {
         await this.prisma.giftCard.update({ where: { id: giftCard.id }, data: { recipientEmail: recipient.email } });
-        await this.sendDigitalCard(orgId, giftCard.id, token).catch(() => undefined);
+        emailSent = await this.sendDigitalCard(orgId, giftCard.id, token)
+          .then(() => true)
+          .catch((err) => {
+            this.logger.error(
+              `Cadeaukaart ${giftCardNumber} (${giftCard.id}) uitgegeven, maar e-mail naar ${recipient.email} mislukt: ${err instanceof Error ? err.message : err}`,
+            );
+            return false;
+          });
       }
     }
 
-    return { giftCardId: giftCard.id, giftCardNumber, token, currentBalance: dto.originalValue };
+    return { giftCardId: giftCard.id, giftCardNumber, token, currentBalance: dto.originalValue, emailSent };
   }
 
   /**
@@ -271,9 +281,16 @@ export class GiftCardsService {
     });
 
     if (giftCard.recipientEmail && rawToken) {
-      await this.sendDigitalCard(giftCard.organizationId, giftCard.id, rawToken).catch(() => undefined);
-      // Bewust geen harde fout hier — de betaling en activering zijn al
-      // veiliggesteld; een mislukte e-mail mag dat nooit terugdraaien.
+      await this.sendDigitalCard(giftCard.organizationId, giftCard.id, rawToken).catch((err) => {
+        // Bewust geen harde fout hier — de betaling en activering zijn al
+        // veiliggesteld; een mislukte e-mail mag dat nooit terugdraaien.
+        // WEL duidelijk loggen (zichtbaar in Vercel → project → Logs),
+        // anders lijkt een online cadeaukaart-aankoop stil te verdwijnen
+        // zonder dat iemand het merkt.
+        this.logger.error(
+          `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar e-mail naar ${giftCard.recipientEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+        );
+      });
     }
 
     return { processed: true };
