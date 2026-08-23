@@ -195,7 +195,21 @@ export class GiftCardCheckoutController {
     window.addEventListener('load', reportHeight);
     setInterval(reportHeight, 500);
 
-    const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    // Bewust GEEN regex-literal hier — dit stukje JS zit genest in een
+    // grote TypeScript-template-literal (renderBuyPage() bouwt de hele
+    // pagina als één backtick-string), en een \s daarin verloor zijn
+    // backslash bij het compileren (werd stille "s"), waardoor elk
+    // e-mailadres met een letter "s" vóór de @ per ongeluk werd
+    // afgekeurd. Deze check gebruikt alleen losse stringbewerkingen,
+    // dus geen backslash die verkeerd kan escapen.
+    function isValidEmailFormat(value) {
+      if (!value || value.indexOf(' ') !== -1) return false;
+      const atParts = value.split('@');
+      if (atParts.length !== 2 || !atParts[0] || !atParts[1]) return false;
+      const domainParts = atParts[1].split('.');
+      if (domainParts.length < 2) return false;
+      return domainParts.every(function (part) { return part.length > 0; });
+    }
 
     let selectedAmount = null;
     document.querySelectorAll('.amount-chip').forEach((chip) => {
@@ -224,8 +238,8 @@ export class GiftCardCheckoutController {
       const senderEmail = document.getElementById('sender-email').value.trim();
       const recipientEmail = document.getElementById('recipient-email').value.trim();
       if (!senderName) { errorEl.textContent = 'Vul je naam in.'; setTimeout(reportHeight, 50); return; }
-      if (!EMAIL_PATTERN.test(senderEmail)) { errorEl.textContent = 'Vul een geldig e-mailadres in (voor je aankoopbevestiging).'; setTimeout(reportHeight, 50); return; }
-      if (recipientEmail && !EMAIL_PATTERN.test(recipientEmail)) { errorEl.textContent = 'Het e-mailadres van de ontvanger lijkt niet geldig.'; setTimeout(reportHeight, 50); return; }
+      if (!isValidEmailFormat(senderEmail)) { errorEl.textContent = 'Vul een geldig e-mailadres in (voor je aankoopbevestiging).'; setTimeout(reportHeight, 50); return; }
+      if (recipientEmail && !isValidEmailFormat(recipientEmail)) { errorEl.textContent = 'Het e-mailadres van de ontvanger lijkt niet geldig.'; setTimeout(reportHeight, 50); return; }
 
       const btn = document.getElementById('pay-btn');
       btn.disabled = true;
