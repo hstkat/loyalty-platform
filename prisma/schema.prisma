@@ -42,8 +42,53 @@ model Organization {
   customerTags        CustomerTag[]
   customerCustomFields CustomerCustomField[]
   auditLogs           AuditLog[]
+  staffUsers          StaffUser[]
 
   @@map("organizations")
+}
+
+// Echte, geverifieerde backoffice-gebruikers — vervangt de vorige
+// "auth-stub" waarbij organizationId/permissions/actorId zomaar uit
+// client-headers werden overgenomen zonder enige controle. Wachtwoord
+// wordt altijd als bcrypt-hash opgeslagen, nooit als platte tekst.
+// `permissions` is bewust een losse lijst strings (zelfde policy-based
+// aanpak als de rest van het systeem al gebruikte) i.p.v. een vaste
+// rollentabel — een organisatie kan zo zelf rollen samenstellen.
+model StaffUser {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  email                 String
+  passwordHash          String    @map("password_hash")
+  firstName             String    @map("first_name")
+  lastName              String?   @map("last_name")
+  permissions           String[]
+  isActive              Boolean   @default(true) @map("is_active")
+  failedLoginAttempts   Int       @default(0) @map("failed_login_attempts")
+  lockedUntil           DateTime? @map("locked_until")
+  lastLoginAt           DateTime? @map("last_login_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sessions     StaffSession[]
+
+  @@unique([organizationId, email])
+  @@map("staff_users")
+}
+
+model StaffSession {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  staffUserId String    @map("staff_user_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash")
+  deviceInfo  String?   @map("device_info")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_sessions")
 }
 
 model Location {
@@ -1219,6 +1264,31 @@ model WalletLedgerAllocation {
   @@index([debitEntryId])
   @@index([creditEntryId])
   @@map("wallet_ledger_allocations")
+}
+
+// Vervangt de vorige in-process JavaScript Map voor het two-phase
+// redemption-mechanisme (reserve -> confirm/cancel). Die Map overleefde
+// geen herstart en werkte niet over meerdere serverless-instances heen
+// (Vercel start voor elke aanroep mogelijk een ander functie-exemplaar)
+// — een reservering kon daardoor spontaan "verdwijnen", en dubbele
+// requests met dezelfde idempotencyKey werden niet betrouwbaar herkend.
+// Nu een echte, gedeelde tabel: elke instance ziet dezelfde staat.
+model WalletRedemptionReservation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  walletId        String    @map("wallet_id") @db.Uuid
+  customerId      String    @map("customer_id") @db.Uuid
+  amount          Decimal   @db.Decimal(10, 2)
+  lockedEntryIds  String[]  @map("locked_entry_ids") @db.Uuid
+  transactionId   String?   @map("transaction_id") @db.Uuid
+  idempotencyKey  String    @map("idempotency_key")
+  status          String    @default("active") // 'active' | 'confirmed' | 'cancelled'
+  createdAt       DateTime  @default(now()) @map("created_at")
+  expiresAt       DateTime  @map("expires_at")
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status])
+  @@map("wallet_redemption_reservations")
 }
 
 enum WalletPassType {

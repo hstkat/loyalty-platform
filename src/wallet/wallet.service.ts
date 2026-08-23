@@ -4,16 +4,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { ReserveRedemptionDto, ManualAdjustmentDto } from './dto/wallet.dto';
 import { ExchangeRateService } from './exchange-rate.service';
 
-interface PendingReservation {
-  organizationId: string;
-  walletId: string;
-  amount: number;
-  lockedEntryIds: string[];
-  transactionId: string;
-  idempotencyKey: string;
-  createdAt: number;
-}
-
 const RESERVATION_TTL_MS = 5 * 60 * 1000; // 5 minutes, per Module 3 design doc section 6
 const DEFAULT_VALIDITY_DAYS = 60;
 
@@ -22,17 +12,15 @@ const DEFAULT_VALIDITY_DAYS = 60;
  * trigger from Module 4's reward calculations, and the two-phase
  * redemption flow (reserve -> confirm/cancel).
  *
- * SIMPLIFICATION vs. the design doc: reservations are held in an
- * in-process Map rather than a persisted table/distributed lock. This
- * works correctly for a single server instance but will NOT survive a
- * restart or work across multiple instances — a production deployment
- * needs a real store (Redis, or a `wallet_redemption_reservations`
- * table) for this. Documented here and in the README.
+ * Reservations live in the `wallet_redemption_reservations` table (not
+ * an in-process Map) specifically because Vercel's serverless functions
+ * don't share memory between invocations/instances — a Map-based
+ * reservation could "disappear" between reserve and confirm, or fail to
+ * recognize a retried idempotencyKey, if the two calls land on
+ * different instances. The DB is the one thing every instance shares.
  */
 @Injectable()
 export class WalletService {
-  private reservations = new Map<string, PendingReservation>();
-  private idempotencyIndex = new Map<string, string>(); // idempotencyKey -> reservationId
 
   constructor(
     private prisma: PrismaService,
@@ -163,9 +151,11 @@ export class WalletService {
   }
 
   async reserveRedemption(orgId: string, customerId: string, dto: ReserveRedemptionDto) {
-    const existingReservationId = this.idempotencyIndex.get(dto.idempotencyKey);
-    if (existingReservationId && this.reservations.has(existingReservationId)) {
-      return { reservationId: existingReservationId, amount: dto.amount, replayed: true };
+    const existing = await this.prisma.walletRedemptionReservation.findUnique({
+      where: { organizationId_idempotencyKey: { organizationId: orgId, idempotencyKey: dto.idempotencyKey } },
+    });
+    if (existing && existing.status === 'active' && existing.expiresAt > new Date()) {
+      return { reservationId: existing.id, amount: Number(existing.amount), replayed: true };
     }
 
     const wallet = await this.getOrCreateWallet(orgId, customerId);
@@ -211,32 +201,57 @@ export class WalletService {
       remainingToCover -= Number(lot.remainingAmount);
     }
 
-    await this.prisma.walletLedgerEntry.updateMany({
-      where: { id: { in: lockedEntryIds } },
-      data: { status: 'reserved' },
-    });
+    // Lot-locking, balansmutatie én het aanmaken van de reservering
+    // gebeuren in ÉÉN transactie: als twee gelijktijdige requests met
+    // dezelfde idempotencyKey allebei hier voorbij de check hierboven
+    // komen, botst de tweede op de unique-constraint op
+    // (organizationId, idempotencyKey) en rolt Prisma de HELE transactie
+    // terug — inclusief de lot-locks en balansmutatie van die tweede
+    // poging. Zo kan een dubbele reservering nooit per ongeluk dubbel
+    // saldo vasthouden.
+    try {
+      const reservation = await this.prisma.$transaction(async (tx) => {
+        await tx.walletLedgerEntry.updateMany({
+          where: { id: { in: lockedEntryIds } },
+          data: { status: 'reserved' },
+        });
 
-    await this.prisma.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        availableBalance: { decrement: dto.amount },
-        reservedBalance: { increment: dto.amount },
-      },
-    });
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            availableBalance: { decrement: dto.amount },
+            reservedBalance: { increment: dto.amount },
+          },
+        });
 
-    const reservationId = crypto.randomUUID();
-    this.reservations.set(reservationId, {
-      organizationId: orgId,
-      walletId: wallet.id,
-      amount: dto.amount,
-      lockedEntryIds,
-      transactionId: dto.transactionId,
-      idempotencyKey: dto.idempotencyKey,
-      createdAt: Date.now(),
-    });
-    this.idempotencyIndex.set(dto.idempotencyKey, reservationId);
+        return tx.walletRedemptionReservation.create({
+          data: {
+            organizationId: orgId,
+            walletId: wallet.id,
+            customerId,
+            amount: dto.amount,
+            lockedEntryIds,
+            transactionId: dto.transactionId,
+            idempotencyKey: dto.idempotencyKey,
+            status: 'active',
+            expiresAt: new Date(Date.now() + RESERVATION_TTL_MS),
+          },
+        });
+      });
 
-    return { reservationId, amount: dto.amount, expiresInSeconds: RESERVATION_TTL_MS / 1000, replayed: false };
+      return { reservationId: reservation.id, amount: dto.amount, expiresInSeconds: RESERVATION_TTL_MS / 1000, replayed: false };
+    } catch (err) {
+      // P2002 = unique constraint verbroken — een gelijktijdige request
+      // met dezelfde idempotencyKey won de race. Geef diens reservering
+      // terug in plaats van een verwarrende databasefout.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        const winner = await this.prisma.walletRedemptionReservation.findUnique({
+          where: { organizationId_idempotencyKey: { organizationId: orgId, idempotencyKey: dto.idempotencyKey } },
+        });
+        if (winner) return { reservationId: winner.id, amount: Number(winner.amount), replayed: true };
+      }
+      throw err;
+    }
   }
 
   async confirmRedemption(
@@ -245,7 +260,8 @@ export class WalletService {
     reservationId: string,
     options?: { reason?: string; metadata?: Record<string, unknown> },
   ) {
-    const reservation = this.getActiveReservation(reservationId);
+    const reservation = await this.getActiveReservation(reservationId);
+    const reservedAmount = Number(reservation.amount);
 
     const wallet = await this.getOrCreateWallet(orgId, customerId);
 
@@ -255,7 +271,7 @@ export class WalletService {
           walletId: wallet.id,
           organizationId: orgId,
           entryType: 'redeem',
-          amount: reservation.amount,
+          amount: reservedAmount,
           source: 'pos',
           transactionId: reservation.transactionId,
           performedByType: 'staff',
@@ -265,7 +281,7 @@ export class WalletService {
         },
       });
 
-      let remainingToAllocate = reservation.amount;
+      let remainingToAllocate = reservedAmount;
       for (const lotId of reservation.lockedEntryIds) {
         if (remainingToAllocate <= 0) break;
         const lot = await tx.walletLedgerEntry.findUniqueOrThrow({ where: { id: lotId } });
@@ -291,53 +307,83 @@ export class WalletService {
       await tx.wallet.update({
         where: { id: wallet.id },
         data: {
-          reservedBalance: { decrement: reservation.amount },
-          lifetimeRedeemed: { increment: reservation.amount },
+          reservedBalance: { decrement: reservedAmount },
+          lifetimeRedeemed: { increment: reservedAmount },
         },
+      });
+
+      await tx.walletRedemptionReservation.update({
+        where: { id: reservation.id },
+        data: { status: 'confirmed' },
       });
 
       return debit;
     });
 
-    this.releaseReservation(reservationId);
-    return { redeemed: reservation.amount, ledgerEntryId: debitEntry.id };
+    return { redeemed: reservedAmount, ledgerEntryId: debitEntry.id };
   }
 
   async cancelRedemption(orgId: string, customerId: string, reservationId: string) {
-    const reservation = this.getActiveReservation(reservationId);
+    const reservation = await this.getActiveReservation(reservationId);
+    const reservedAmount = Number(reservation.amount);
     const wallet = await this.getOrCreateWallet(orgId, customerId);
 
-    await this.prisma.walletLedgerEntry.updateMany({
-      where: { id: { in: reservation.lockedEntryIds } },
-      data: { status: 'available' },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.walletLedgerEntry.updateMany({
+        where: { id: { in: reservation.lockedEntryIds } },
+        data: { status: 'available' },
+      });
+
+      await tx.wallet.update({
+        where: { id: wallet.id },
+        data: {
+          availableBalance: { increment: reservedAmount },
+          reservedBalance: { decrement: reservedAmount },
+        },
+      });
+
+      await tx.walletRedemptionReservation.update({
+        where: { id: reservation.id },
+        data: { status: 'cancelled' },
+      });
     });
 
-    await this.prisma.wallet.update({
-      where: { id: wallet.id },
-      data: {
-        availableBalance: { increment: reservation.amount },
-        reservedBalance: { decrement: reservation.amount },
-      },
-    });
-
-    this.releaseReservation(reservationId);
     return { cancelled: true };
   }
 
-  private getActiveReservation(reservationId: string): PendingReservation {
-    const reservation = this.reservations.get(reservationId);
-    if (!reservation) throw new NotFoundException('Reservation not found or already expired');
-    if (Date.now() - reservation.createdAt > RESERVATION_TTL_MS) {
-      this.reservations.delete(reservationId);
+  /**
+   * Haalt een actieve, nog niet verlopen reservering op uit de database
+   * (niet uit geheugen — zie klasse-comment). Een verlopen reservering
+   * wordt meteen als 'cancelled' gemarkeerd en de vastgehouden lots/
+   * saldo teruggegeven, zodat een vergeten/nooit-bevestigde reservering
+   * niet voor altijd saldo blokkeert.
+   */
+  private async getActiveReservation(reservationId: string) {
+    const reservation = await this.prisma.walletRedemptionReservation.findUnique({ where: { id: reservationId } });
+    if (!reservation || reservation.status !== 'active') {
+      throw new NotFoundException('Reservation not found or already expired');
+    }
+    if (reservation.expiresAt <= new Date()) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.walletLedgerEntry.updateMany({
+          where: { id: { in: reservation.lockedEntryIds } },
+          data: { status: 'available' },
+        });
+        await tx.wallet.update({
+          where: { id: reservation.walletId },
+          data: {
+            availableBalance: { increment: Number(reservation.amount) },
+            reservedBalance: { decrement: Number(reservation.amount) },
+          },
+        });
+        await tx.walletRedemptionReservation.update({
+          where: { id: reservation.id },
+          data: { status: 'cancelled' },
+        });
+      });
       throw new BadRequestException('Reservation has expired');
     }
     return reservation;
-  }
-
-  private releaseReservation(reservationId: string) {
-    const reservation = this.reservations.get(reservationId);
-    if (reservation) this.idempotencyIndex.delete(reservation.idempotencyKey);
-    this.reservations.delete(reservationId);
   }
 
   // -- Manual adjustment (admin, section 12) ------------------------------

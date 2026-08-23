@@ -124,6 +124,60 @@
 </style>
 </head>
 <body>
+<div id="staff-login-overlay" style="position:fixed;inset:0;background:#0e1c2ae6;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,'Inter',sans-serif;">
+  <div style="width:100%;max-width:360px;background:#f6f3ec;border-radius:16px;padding:32px 28px;">
+    <h2 style="font-family:Georgia,serif;font-size:20px;color:#1b3a5c;margin:0 0 6px;">Inloggen</h2>
+    <p style="font-size:13px;color:#7a8ea0;margin:0 0 20px;">Log in met je backoffice-account.</p>
+    <input type="email" id="staff-login-email" name="staff-login-email" placeholder="E-mailadres" autocomplete="username" style="width:100%;padding:11px 14px;border-radius:8px;border:1px solid rgba(27,58,92,0.12);background:#fff;font-size:14px;margin-bottom:10px;box-sizing:border-box;">
+    <input type="password" id="staff-login-password" name="staff-login-password" placeholder="Wachtwoord" autocomplete="current-password" style="width:100%;padding:11px 14px;border-radius:8px;border:1px solid rgba(27,58,92,0.12);background:#fff;font-size:14px;margin-bottom:14px;box-sizing:border-box;">
+    <button id="staff-login-btn" style="width:100%;padding:13px;border-radius:8px;border:none;background:#e8604a;color:#fff;font-weight:600;font-size:14px;cursor:pointer;">Inloggen</button>
+    <div id="staff-login-error" style="color:#e8604a;font-size:12px;margin-top:10px;min-height:14px;"></div>
+  </div>
+</div>
+<script>
+  function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  function setStaffToken(t) { localStorage.setItem('staff_token', t); }
+  function clearStaffToken() { localStorage.removeItem('staff_token'); }
+  function staffLogout() { clearStaffToken(); location.reload(); }
+
+  function showStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'flex'; }
+  function hideStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'none'; }
+
+  document.getElementById('staff-login-btn').addEventListener('click', async function () {
+    const errorEl = document.getElementById('staff-login-error');
+    errorEl.textContent = '';
+    const email = document.getElementById('staff-login-email').value.trim();
+    const password = document.getElementById('staff-login-password').value;
+    if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
+    const { apiBase, orgId } = getConfig();
+    try {
+      const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password }),
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) { errorEl.textContent = data.message || 'Inloggen mislukt.'; return; }
+      setStaffToken(data.token);
+      hideStaffLoginOverlay();
+      bootAfterLogin();
+    } catch (err) {
+      errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    }
+  });
+
+  // Pas checken/booten nadat de HELE pagina (inclusief het script
+  // onderaan dat bootAfterLogin() definieert) is ingeladen — anders
+  // bestaat die functie nog niet op het moment van deze check.
+  window.addEventListener('DOMContentLoaded', function () {
+    if (getStaffToken()) {
+      hideStaffLoginOverlay();
+      bootAfterLogin();
+    } else {
+      showStaffLoginOverlay();
+    }
+  });
+</script>
 
 <header>
   <div class="header-inner">
@@ -232,19 +286,21 @@
   }
 
   async function apiGet(path) {
-    const { apiBase, orgId } = getConfig();
-    const res = await fetch(apiBase + path, { headers: { 'x-organization-id': orgId, 'x-permissions': PERMISSIONS } });
+    const { apiBase } = getConfig();
+    const res = await fetch(apiBase + path, { headers: { Authorization: 'Bearer ' + getStaffToken() } });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
     if (!res.ok) throw new Error('API-fout: ' + res.status);
     return res.json();
   }
 
   async function apiPost(path, body) {
-    const { apiBase, orgId } = getConfig();
+    const { apiBase } = getConfig();
     const res = await fetch(apiBase + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-organization-id': orgId, 'x-permissions': PERMISSIONS },
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getStaffToken() },
       body: JSON.stringify(body),
     });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
     if (!res.ok) {
       const errBody = await res.json().catch(() => ({}));
       throw new Error(errBody.message ? [].concat(errBody.message).join(', ') : 'API-fout: ' + res.status);
@@ -384,7 +440,9 @@
     loadCampaigns();
   });
 
-  loadCampaigns();
+  function bootAfterLogin() {
+    loadCampaigns();
+  }
 </script>
 
 </body>

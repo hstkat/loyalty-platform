@@ -22,11 +22,13 @@ import { LoyaltyCardsModule } from './loyalty-cards/loyalty-cards.module';
 import { AdminModule } from './admin/admin.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { CustomerPortalModule } from './customer-portal/customer-portal.module';
+import { StaffAuthModule } from './staff-auth/staff-auth.module';
 
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     PrismaModule,
+    StaffAuthModule,
     AuditModule,
     CustomersModule,
     OrgResourcesModule,

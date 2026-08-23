@@ -13,6 +13,7 @@
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:studio": "prisma studio",
     "db:seed": "ts-node prisma/seed.ts",
+    "staff:create": "ts-node scripts/create-staff-user.ts",
     "db:seed:rewards": "ts-node prisma/seed-rewards.ts"
   },
   "devDependencies": {
