@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { StaffAuthService } from './staff-auth.service';
@@ -47,6 +47,17 @@ export class StaffAuthController {
   @Post('logout')
   logout(@Body() dto: StaffLogoutDto) {
     return this.staffAuth.logout(dto.token);
+  }
+
+  // Elke backoffice-pagina roept dit aan bij het laden om te weten welke
+  // tabbladen te tonen — de bron van waarheid is hier altijd de
+  // geverifieerde sessie (staffContext, door PermissionsGuard gezet),
+  // nooit iets dat de pagina zelf onthoudt uit het loginmoment (rechten
+  // kunnen tussentijds wijzigen).
+  @Get('me')
+  @UseGuards(PermissionsGuard)
+  me(@Req() req: { staffContext?: { actorId: string | null; permissions: string[] } }) {
+    return { permissions: req.staffContext?.permissions ?? [] };
   }
 
   @Post('change-password')

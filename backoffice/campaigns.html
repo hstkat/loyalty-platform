@@ -143,6 +143,49 @@
   function showStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'flex'; }
   function hideStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'none'; }
 
+  // Welke permissie geeft toegang tot welk tabblad — moet in lockstep
+  // blijven met de @RequirePermissions(...) op de belangrijkste
+  // endpoints van elke pagina. Een tabblad verbergen is puur UX (geen
+  // beveiliging op zich — de ECHTE afscherming zit server-side in
+  // PermissionsGuard); dit voorkomt alleen dat iemand op een tabblad
+  // klikt en daar meteen een foutmelding krijgt.
+  const NAV_PAGE_PERMISSION = {
+    dashboard: 'analytics.read',
+    customers: 'customer.read',
+    campaigns: 'campaign.read',
+    transacties: 'transaction.write',
+    cadeaus: 'credit_rules.read',
+    inschrijven: 'customer.write',
+    import: 'import.read',
+    'loyalty-cards': 'loyalty_card.read',
+    instellingen: 'admin.read',
+    medewerkers: 'admin.read',
+    'gift-cards': 'gift_card.read',
+  };
+
+  function applyNavPermissions(permissions) {
+    document.querySelectorAll('nav [data-page]').forEach(function (link) {
+      const required = NAV_PAGE_PERMISSION[link.getAttribute('data-page')];
+      link.style.display = (!required || permissions.indexOf(required) !== -1) ? '' : 'none';
+    });
+  }
+
+  async function fetchAndApplyOwnPermissions() {
+    const { apiBase, orgId } = getConfig();
+    try {
+      const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/me', {
+        headers: { Authorization: 'Bearer ' + getStaffToken() },
+      });
+      if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); return; }
+      const data = await res.json();
+      applyNavPermissions(data.permissions || []);
+    } catch (err) {
+      // Menu-filtering is best-effort UX — als dit faalt, blijft het
+      // volledige menu gewoon zichtbaar; de echte toegangscontrole
+      // gebeurt sowieso server-side bij elke aanroep.
+    }
+  }
+
   document.getElementById('staff-login-btn').addEventListener('click', async function () {
     const errorEl = document.getElementById('staff-login-error');
     errorEl.textContent = '';
@@ -159,6 +202,7 @@
       const data = await res.json().catch(function () { return {}; });
       if (!res.ok) { errorEl.textContent = data.message || 'Inloggen mislukt.'; return; }
       setStaffToken(data.token);
+      applyNavPermissions((data.staffUser && data.staffUser.permissions) || []);
       hideStaffLoginOverlay();
       bootAfterLogin();
     } catch (err) {
@@ -172,6 +216,7 @@
   window.addEventListener('DOMContentLoaded', function () {
     if (getStaffToken()) {
       hideStaffLoginOverlay();
+      fetchAndApplyOwnPermissions();
       bootAfterLogin();
     } else {
       showStaffLoginOverlay();
@@ -187,17 +232,17 @@
     </div>
     <div>
       <nav>
-        <a href="dashboard.html">Overzicht</a>
-        <a href="customers.html">Klanten</a>
-        <a href="#" class="active" aria-current="page">Campagnes</a>
-        <a href="transacties.html">Spaarpunten</a>
-        <a href="cadeaus.html">Cadeaus</a>
-        <a href="inschrijven.html">Inschrijven</a>
-        <a href="import.html">Import</a>
-        <a href="loyalty-cards.html">Kaarten</a>
-        <a href="instellingen.html">Instellingen</a>
-        <a href="medewerkers.html">Medewerkers</a>
-        <a href="gift-cards.html">Gift Cards</a>
+        <a href="dashboard.html" data-page="dashboard">Overzicht</a>
+        <a href="customers.html" data-page="customers">Klanten</a>
+        <a href="#" class="active" aria-current="page" data-page="campaigns">Campagnes</a>
+        <a href="transacties.html" data-page="transacties">Spaarpunten</a>
+        <a href="cadeaus.html" data-page="cadeaus">Cadeaus</a>
+        <a href="inschrijven.html" data-page="inschrijven">Inschrijven</a>
+        <a href="import.html" data-page="import">Import</a>
+        <a href="loyalty-cards.html" data-page="loyalty-cards">Kaarten</a>
+        <a href="instellingen.html" data-page="instellingen">Instellingen</a>
+        <a href="medewerkers.html" data-page="medewerkers">Medewerkers</a>
+        <a href="gift-cards.html" data-page="gift-cards">Gift Cards</a>
       </nav>
       <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
     </div>
