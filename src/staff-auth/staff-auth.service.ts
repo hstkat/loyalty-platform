@@ -1,7 +1,8 @@
-import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { VALID_PERMISSION_KEYS } from './permission-catalog';
 
 const SESSION_TTL_DAYS = 14;
 const MAX_LOGIN_ATTEMPTS = 5;
@@ -126,5 +127,137 @@ export class StaffAuthService {
       data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
     });
     return { changed: true };
+  }
+
+  // -- Medewerkersbeheer (alleen voor accounts met 'admin.write') ---------
+  // Rechten worden hier gevalideerd tegen de vaste PERMISSION_CATALOG —
+  // een admin kan dus nooit per ongeluk (of via een geknutselde request)
+  // een niet-bestaande of verkeerd gespelde permissiestring toekennen.
+
+  private validatePermissions(permissions: string[]) {
+    const invalid = permissions.filter((p) => !VALID_PERMISSION_KEYS.has(p));
+    if (invalid.length > 0) {
+      throw new BadRequestException(`Onbekende permissie(s): ${invalid.join(', ')}`);
+    }
+  }
+
+  async listUsers(orgId: string) {
+    const users = await this.prisma.staffUser.findMany({
+      where: { organizationId: orgId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        permissions: true,
+        isActive: true,
+        lastLoginAt: true,
+        lockedUntil: true,
+        createdAt: true,
+      },
+    });
+    return users;
+  }
+
+  async createUser(
+    orgId: string,
+    dto: { email: string; password: string; firstName: string; lastName?: string; permissions: string[] },
+  ) {
+    this.validatePermissions(dto.permissions);
+    if (!dto.password || dto.password.length < 10) {
+      throw new BadRequestException('Wachtwoord moet minstens 10 tekens lang zijn');
+    }
+
+    const existing = await this.prisma.staffUser.findFirst({ where: { organizationId: orgId, email: dto.email } });
+    if (existing) throw new ConflictException('Er bestaat al een medewerker met dit e-mailadres');
+
+    const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+    const staffUser = await this.prisma.staffUser.create({
+      data: {
+        organizationId: orgId,
+        email: dto.email,
+        passwordHash,
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        permissions: dto.permissions,
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, permissions: true, isActive: true },
+    });
+    return staffUser;
+  }
+
+  async updateUser(
+    orgId: string,
+    targetUserId: string,
+    dto: { firstName?: string; lastName?: string; permissions?: string[]; isActive?: boolean },
+  ) {
+    if (dto.permissions) this.validatePermissions(dto.permissions);
+
+    const target = await this.prisma.staffUser.findFirst({ where: { id: targetUserId, organizationId: orgId } });
+    if (!target) throw new NotFoundException('Medewerker niet gevonden');
+
+    const updated = await this.prisma.staffUser.update({
+      where: { id: targetUserId },
+      data: {
+        firstName: dto.firstName,
+        lastName: dto.lastName,
+        permissions: dto.permissions,
+        isActive: dto.isActive,
+      },
+      select: { id: true, email: true, firstName: true, lastName: true, permissions: true, isActive: true },
+    });
+
+    // Alle actieve sessies van dit account intrekken zodra iemand het
+    // account deactiveert of de rechten aanpast — anders blijft een
+    // bestaande, nog niet verlopen sessietoken de OUDE rechten houden
+    // tot die vanzelf afloopt (tot 14 dagen).
+    if (dto.isActive === false || dto.permissions) {
+      await this.prisma.staffSession.updateMany({
+        where: { staffUserId: targetUserId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Een admin zet een nieuw wachtwoord voor EEN ANDER account (in
+   * tegenstelling tot changeOwnPassword, dat alleen het eigen
+   * wachtwoord kan wijzigen). Trekt ook meteen alle bestaande sessies
+   * van dat account in — belangrijk als dit gebruikt wordt omdat een
+   * medewerker uit dienst is of het account gecompromitteerd leek.
+   */
+  async adminResetPassword(orgId: string, targetUserId: string, newPassword: string) {
+    if (!newPassword || newPassword.length < 10) {
+      throw new BadRequestException('Wachtwoord moet minstens 10 tekens lang zijn');
+    }
+    const target = await this.prisma.staffUser.findFirst({ where: { id: targetUserId, organizationId: orgId } });
+    if (!target) throw new NotFoundException('Medewerker niet gevonden');
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.prisma.staffUser.update({
+      where: { id: targetUserId },
+      data: { passwordHash, failedLoginAttempts: 0, lockedUntil: null },
+    });
+    await this.prisma.staffSession.updateMany({
+      where: { staffUserId: targetUserId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { reset: true };
+  }
+
+  /**
+   * Zachte verwijdering (isActive: false), nooit een harde delete —
+   * behoudt de audit-trail (wie heeft wat gedaan) en voorkomt kapotte
+   * verwijzingen. Een admin kan zichzelf niet deactiveren, dat zou
+   * kunnen leiden tot een organisatie zonder enig actief admin-account.
+   */
+  async deactivateUser(orgId: string, targetUserId: string, requestingUserId: string) {
+    if (targetUserId === requestingUserId) {
+      throw new ForbiddenException('Je kunt je eigen account niet deactiveren');
+    }
+    return this.updateUser(orgId, targetUserId, { isActive: false });
   }
 }
