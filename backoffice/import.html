@@ -196,6 +196,7 @@
 
   footer { max-width: 1000px; margin: 0 auto; padding: 24px 32px 40px; font-size: 12px; color: var(--muted); }
 </style>
+<style>nav a[data-page] { display: none; }</style>
 </head>
 <body>
 <div id="staff-login-overlay" style="position:fixed;inset:0;background:#0e1c2ae6;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,'Inter',sans-serif;">
@@ -211,7 +212,7 @@
 <script>
   function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
   function setStaffToken(t) { localStorage.setItem('staff_token', t); }
-  function clearStaffToken() { localStorage.removeItem('staff_token'); }
+  function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
   function staffLogout() { clearStaffToken(); location.reload(); }
 
   function showStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'flex'; }
@@ -237,11 +238,29 @@
     'gift-cards': 'gift_card.read',
   };
 
+  // Alle tabbladen staan standaard op display:none via CSS (zie de
+  // <style>-regel in <head>) — dit toont alleen de toegestane, in
+  // plaats van dat we eerst alles laten zien en dan verkeerde weer
+  // wegtoveren (dat gaf een storende flits van tabbladen die er niet
+  // horen te zijn).
   function applyNavPermissions(permissions) {
+    localStorage.setItem('staff_permissions', JSON.stringify(permissions));
     document.querySelectorAll('nav [data-page]').forEach(function (link) {
       const required = NAV_PAGE_PERMISSION[link.getAttribute('data-page')];
       link.style.display = (!required || permissions.indexOf(required) !== -1) ? '' : 'none';
     });
+  }
+
+  // Gecachte rechten van de vorige keer meteen (synchroon, geen
+  // netwerk-vertraging) toepassen zodat het menu vanaf de eerste
+  // seconde al (bijna altijd) correct staat — de live servercall
+  // hieronder ververst dit daarna alsnog, voor het geval rechten
+  // intussen gewijzigd zijn.
+  function applyCachedPermissionsImmediately() {
+    try {
+      const cached = JSON.parse(localStorage.getItem('staff_permissions') || '[]');
+      if (cached.length) applyNavPermissions(cached);
+    } catch (err) { /* geen geldige cache — laat gewoon alles verborgen tot de servercall terug is */ }
   }
 
   async function fetchAndApplyOwnPermissions() {
@@ -255,8 +274,9 @@
       applyNavPermissions(data.permissions || []);
     } catch (err) {
       // Menu-filtering is best-effort UX — als dit faalt, blijft het
-      // volledige menu gewoon zichtbaar; de echte toegangscontrole
-      // gebeurt sowieso server-side bij elke aanroep.
+      // menu op de laatst gecachte stand staan (of leeg, als er nog
+      // geen cache was); de echte toegangscontrole gebeurt sowieso
+      // server-side bij elke aanroep.
     }
   }
 
@@ -290,6 +310,7 @@
   window.addEventListener('DOMContentLoaded', function () {
     if (getStaffToken()) {
       hideStaffLoginOverlay();
+      applyCachedPermissionsImmediately();
       fetchAndApplyOwnPermissions();
       bootAfterLogin();
     } else {
