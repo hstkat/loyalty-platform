@@ -1,4 +1,5 @@
 import { Controller, Get, Header, Param, Post, Body, Query, Res } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -107,6 +108,9 @@ export class GiftCardCheckoutController {
     res.status(200).send(this.renderBuyPage(orgId, brand));
   }
 
+  // Voorkomt spam van lege concept-cadeaukaarten en herhaalde
+  // Mollie-betaalverzoeken vanaf één bron.
+  @Throttle({ default: { limit: 10, ttl: 300000 } })
   @Post('buy/:orgId')
   async startPurchase(
     @Param('orgId') orgId: string,

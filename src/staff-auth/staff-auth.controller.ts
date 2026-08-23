@@ -1,4 +1,5 @@
 import { Body, Controller, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { StaffAuthService } from './staff-auth.service';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -33,6 +34,11 @@ class ChangePasswordDto {
 export class StaffAuthController {
   constructor(private staffAuth: StaffAuthService) {}
 
+  // Bovenop de account-level lockout in StaffAuthService (5 pogingen,
+  // dan 15 min. geblokkeerd) ook een IP-level rate limit — voorkomt dat
+  // iemand tegelijk veel VERSCHILLENDE e-mailadressen afgaat vanaf één
+  // bron.
+  @Throttle({ default: { limit: 10, ttl: 300000 } })
   @Post('login')
   login(@Param('orgId') orgId: string, @Body() dto: StaffLoginDto) {
     return this.staffAuth.login(orgId, dto.email, dto.password, dto.deviceInfo);

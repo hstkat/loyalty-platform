@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuditModule } from './audit/audit.module';
 import { CustomersModule } from './customers/customers.module';
@@ -27,6 +29,13 @@ import { StaffAuthModule } from './staff-auth/staff-auth.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Algemene bescherming tegen misbruik/spam op ALLE endpoints — 100
+    // aanroepen per minuut per IP-adres is ruim voldoende voor normaal
+    // gebruik (portal, backoffice, widgets), maar remt geautomatiseerd
+    // aftasten/spammen flink af. Gevoelige endpoints (staff-login,
+    // e-mailcode aanvragen) hebben daarbovenop een eigen, veel strengere
+    // @Throttle-limiet — zie guest-auth en staff-auth controllers.
+    ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     PrismaModule,
     StaffAuthModule,
     AuditModule,
@@ -51,5 +60,6 @@ import { StaffAuthModule } from './staff-auth/staff-auth.module';
     GiftCardsModule,
     CustomerPortalModule,
   ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

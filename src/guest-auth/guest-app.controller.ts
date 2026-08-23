@@ -1,4 +1,5 @@
 import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsOptional, IsString, Length } from 'class-validator';
 import { createHash, randomBytes } from 'crypto';
 import { GuestAuthService } from './guest-auth.service';
@@ -107,11 +108,21 @@ export class GuestAppController {
     private mailgun: MailgunService,
   ) {}
 
+  // Streng gelimiteerd: dit stuurt een echte e-mail. Zonder limiet kan
+  // iemand dit endpoint gebruiken om een willekeurig e-mailadres te
+  // bestoken met codes (spam), los van het feit dat elke code sowieso
+  // maar 10 minuten geldig is.
+  @Throttle({ default: { limit: 5, ttl: 300000 } })
   @Post('auth/request-code')
   requestCode(@Param('orgId') orgId: string, @Body() dto: RequestCodeDto) {
     return this.guestAuth.requestCode(orgId, dto.email);
   }
 
+  // Streng gelimiteerd: dit is de brute-force-gevoelige stap (een
+  // 6-cijferige code raden). De code zelf heeft al een intern
+  // pogingenlimiet, maar dit remt ook geautomatiseerd aftasten via veel
+  // verschillende e-mailadressen tegelijk af.
+  @Throttle({ default: { limit: 10, ttl: 300000 } })
   @Post('auth/verify-code')
   verifyCode(@Param('orgId') orgId: string, @Body() dto: VerifyCodeDto) {
     return this.guestAuth.verifyCode(orgId, dto.email, dto.code, dto.deviceInfo);
@@ -133,6 +144,7 @@ export class GuestAppController {
   // zodat een volgend bezoek niet steeds een nieuwe code hoeft te
   // wachten. Een klant die nooit een wachtwoord instelt kan dit
   // endpoint gewoon niet gebruiken en blijft de codeflow gebruiken.
+  @Throttle({ default: { limit: 10, ttl: 300000 } })
   @Post('auth/login-password')
   loginWithPassword(@Param('orgId') orgId: string, @Body() dto: LoginPasswordDto) {
     return this.guestAuth.loginWithPassword(orgId, dto.email, dto.password, dto.deviceInfo);
