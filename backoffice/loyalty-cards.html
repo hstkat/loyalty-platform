@@ -170,6 +170,18 @@
     });
   }
 
+  // Terugvalmechanisme: als het ophalen van de rechten om wat voor
+  // reden dan ook mislukt (tijdelijke netwerkstoring, trage server,
+  // een endpoint dat nog niet overal is uitgerold), mag het menu NOOIT
+  // permanent leeg blijven staan — dat is erger dan te veel tonen. In
+  // het ergste geval ziet iemand een tabblad waar ze geen rechten voor
+  // hebben en krijgen ze bij een klik een nette foutmelding; de ECHTE
+  // beveiliging blijft altijd server-side (PermissionsGuard) staan,
+  // ongeacht wat hier in de UI zichtbaar is.
+  function showAllNavTabs() {
+    document.querySelectorAll('nav [data-page]').forEach(function (link) { link.style.display = ''; });
+  }
+
   // Gecachte rechten van de vorige keer meteen (synchroon, geen
   // netwerk-vertraging) toepassen zodat het menu vanaf de eerste
   // seconde al (bijna altijd) correct staat — de live servercall
@@ -179,23 +191,27 @@
     try {
       const cached = JSON.parse(localStorage.getItem('staff_permissions') || '[]');
       if (cached.length) applyNavPermissions(cached);
-    } catch (err) { /* geen geldige cache — laat gewoon alles verborgen tot de servercall terug is */ }
+    } catch (err) { /* geen geldige cache — wacht op de servercall hieronder */ }
   }
 
   async function fetchAndApplyOwnPermissions() {
     const { apiBase, orgId } = getConfig();
+    // Als de servercall te lang duurt (trage verbinding), na 6 seconden
+    // toch maar alles tonen i.p.v. de medewerker met een leeg menu te
+    // laten zitten.
+    const fallbackTimer = setTimeout(showAllNavTabs, 6000);
     try {
       const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/me', {
         headers: { Authorization: 'Bearer ' + getStaffToken() },
       });
+      clearTimeout(fallbackTimer);
       if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); return; }
+      if (!res.ok) { showAllNavTabs(); return; }
       const data = await res.json();
       applyNavPermissions(data.permissions || []);
     } catch (err) {
-      // Menu-filtering is best-effort UX — als dit faalt, blijft het
-      // menu op de laatst gecachte stand staan (of leeg, als er nog
-      // geen cache was); de echte toegangscontrole gebeurt sowieso
-      // server-side bij elke aanroep.
+      clearTimeout(fallbackTimer);
+      showAllNavTabs();
     }
   }
 
@@ -215,7 +231,11 @@
       const data = await res.json().catch(function () { return {}; });
       if (!res.ok) { errorEl.textContent = data.message || 'Inloggen mislukt.'; return; }
       setStaffToken(data.token);
-      applyNavPermissions((data.staffUser && data.staffUser.permissions) || []);
+      if (data.staffUser && data.staffUser.permissions) {
+        applyNavPermissions(data.staffUser.permissions);
+      } else {
+        showAllNavTabs();
+      }
       hideStaffLoginOverlay();
       bootAfterLogin();
     } catch (err) {
