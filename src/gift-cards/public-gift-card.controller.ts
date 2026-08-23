@@ -5,6 +5,22 @@ import { PrismaService } from '../prisma/prisma.service';
 import { GiftCardsService } from './gift-cards.service';
 import { MollieService } from '../common/mollie.service';
 
+interface GiftCardBrandConfig {
+  name: string;
+  accent: string;
+  accentDark: string;
+}
+
+// Zelfde merken/kleuren als de Mijn Tegoed-portal (customer-portal.controller.ts)
+// — bewust hier apart gehouden i.p.v. gedeeld geïmporteerd, want deze
+// controller kent geen afhankelijkheid op de portal-module en dit is
+// een kleine, stabiele config die zelden wijzigt.
+const GIFT_CARD_BRANDS: Record<string, GiftCardBrandConfig> = {
+  'het-strand': { name: 'Het Strand', accent: '#c47a45', accentDark: '#a1642f' },
+  zomers: { name: 'Zomers Beachclub & Brewery', accent: '#497a9d', accentDark: '#376079' },
+};
+const DEFAULT_GIFT_CARD_BRAND: GiftCardBrandConfig = { name: 'Het Strand & Zomers', accent: '#e8604a', accentDark: '#c94d38' };
+
 /**
  * Publiek, niet-geauthenticeerd — net als bij de fysieke loyaltykaarten
  * (/c/:token) toont deze pagina bewust minimale, niet-gevoelige info:
@@ -86,8 +102,9 @@ export class GiftCardCheckoutController {
 
   @Get('buy/:orgId')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  buyPage(@Param('orgId') orgId: string, @Res() res: Response) {
-    res.status(200).send(this.renderBuyPage(orgId));
+  buyPage(@Param('orgId') orgId: string, @Query('brand') brandParam: string | undefined, @Res() res: Response) {
+    const brand = (brandParam && GIFT_CARD_BRANDS[brandParam]) || DEFAULT_GIFT_CARD_BRAND;
+    res.status(200).send(this.renderBuyPage(orgId, brand));
   }
 
   @Post('buy/:orgId')
@@ -111,21 +128,22 @@ export class GiftCardCheckoutController {
     return rawToken ?? null;
   }
 
-  private renderBuyPage(orgId: string): string {
+  private renderBuyPage(orgId: string, brand: GiftCardBrandConfig): string {
     const styles = `
-      :root { --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a; --body-text: #3a4a5c; --muted: #7a8ea0; --coral: #e8604a; --line: rgba(27,58,92,0.12); }
+      :root { --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a; --body-text: #3a4a5c; --muted: #7a8ea0; --accent: ${brand.accent}; --accent-dark: ${brand.accentDark}; --line: rgba(27,58,92,0.12); }
       * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; background: var(--cream); font-family: -apple-system, 'Inter', sans-serif; display: flex; align-items: center; justify-content: center; padding: 24px; }
-      .card { width: 100%; max-width: 420px; background: var(--white); border-radius: 24px; padding: 32px 28px; box-shadow: 0 4px 24px rgba(27,58,92,0.1); }
+      body { margin: 0; background: var(--cream); font-family: -apple-system, 'Inter', sans-serif; padding: 20px; }
+      .card { width: 100%; max-width: 420px; margin: 0 auto; background: var(--white); border-radius: 20px; padding: 24px 22px; }
+      .brand-label { font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent); font-weight: 600; margin-bottom: 6px; }
       h1 { font-family: Georgia, serif; font-size: 22px; color: var(--navy); margin: 0 0 18px; }
       .amounts { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
       .amount-chip { border: 1px solid var(--line); background: var(--cream); color: var(--navy); padding: 10px 18px; border-radius: 20px; font-size: 14px; cursor: pointer; }
-      .amount-chip.selected { border-color: var(--coral); background: rgba(232,96,74,0.08); color: var(--coral); font-weight: 600; }
+      .amount-chip.selected { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, white); color: var(--accent-dark); font-weight: 600; }
       input, textarea { width: 100%; padding: 11px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--cream); font-size: 14px; margin-bottom: 12px; font-family: inherit; color: var(--body-text); }
       textarea { resize: vertical; min-height: 60px; }
-      button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--coral); color: white; font-weight: 600; font-size: 15px; cursor: pointer; }
+      button { width: 100%; padding: 14px; border-radius: 10px; border: none; background: var(--accent); color: white; font-weight: 600; font-size: 15px; cursor: pointer; }
       button:disabled { opacity: 0.6; }
-      .error { color: var(--coral); font-size: 13px; margin-top: 8px; min-height: 16px; }
+      .error { color: var(--accent-dark); font-size: 13px; margin-top: 8px; min-height: 16px; }
       label { font-size: 12px; color: var(--navy); font-weight: 500; display: block; margin-bottom: 6px; }
     `;
     return `<!DOCTYPE html>
@@ -133,11 +151,12 @@ export class GiftCardCheckoutController {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cadeaukaart kopen — Het Strand &amp; Zomers</title>
+<title>Cadeaukaart kopen — ${brand.name}</title>
 <style>${styles}</style>
 </head>
 <body>
   <div class="card">
+    <div class="brand-label">${brand.name}</div>
     <h1>Cadeaukaart kopen</h1>
     <label>Bedrag</label>
     <div class="amounts" id="amounts">
@@ -146,17 +165,26 @@ export class GiftCardCheckoutController {
       <div class="amount-chip" data-value="100">€100</div>
       <div class="amount-chip" data-value="custom">Anders…</div>
     </div>
-    <input type="number" id="custom-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01" style="display:none;">
+    <input type="number" id="custom-amount" name="custom-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01" style="display:none;">
     <label>Naam ontvanger (optioneel)</label>
-    <input type="text" id="recipient-name" placeholder="Voor jezelf? Leeg laten">
+    <input type="text" id="recipient-name" name="recipient-name" placeholder="Voor jezelf? Leeg laten" autocomplete="name">
     <label>E-mailadres ontvanger (optioneel)</label>
-    <input type="email" id="recipient-email" placeholder="Waar mag de kaart heen?">
+    <input type="email" id="recipient-email" name="recipient-email" placeholder="Waar mag de kaart heen?" autocomplete="email">
     <label>Persoonlijke boodschap (optioneel)</label>
-    <textarea id="message" placeholder="Bijv. Gefeliciteerd!"></textarea>
+    <textarea id="message" name="message" placeholder="Bijv. Gefeliciteerd!"></textarea>
     <button id="pay-btn">Doorgaan naar betalen</button>
     <div class="error" id="error"></div>
   </div>
   <script>
+    // Hoogte doorgeven aan de omringende pagina — zelfde mechanisme als
+    // de Mijn Tegoed-portal, zodat de WordPress-widget de iframe precies
+    // zo hoog kan maken als de inhoud, zonder interne scrollbalk.
+    function reportHeight() {
+      window.parent.postMessage({ type: 'gift-card-buy-resize', height: document.body.scrollHeight }, '*');
+    }
+    window.addEventListener('load', reportHeight);
+    setInterval(reportHeight, 500);
+
     let selectedAmount = null;
     document.querySelectorAll('.amount-chip').forEach((chip) => {
       chip.addEventListener('click', () => {
@@ -170,6 +198,7 @@ export class GiftCardCheckoutController {
           customInput.style.display = 'none';
           selectedAmount = parseFloat(chip.dataset.value);
         }
+        setTimeout(reportHeight, 50);
       });
     });
 
@@ -177,7 +206,7 @@ export class GiftCardCheckoutController {
       const errorEl = document.getElementById('error');
       errorEl.textContent = '';
       const amount = selectedAmount || parseFloat(document.getElementById('custom-amount').value);
-      if (!amount || amount < 10) { errorEl.textContent = 'Minimaal bedrag is €10 (i.v.m. transactiekosten).'; return; }
+      if (!amount || amount < 10) { errorEl.textContent = 'Minimaal bedrag is €10 (i.v.m. transactiekosten).'; setTimeout(reportHeight, 50); return; }
 
       const btn = document.getElementById('pay-btn');
       btn.disabled = true;
@@ -195,16 +224,22 @@ export class GiftCardCheckoutController {
         });
         const data = await res.json();
         if (data.checkoutUrl) {
-          window.location.href = data.checkoutUrl;
+          // Cadeaukaart-checkout gaat naar Mollie's eigen betaalpagina —
+          // dat kan (en mag) niet in de kleine widget-iframe, dus we
+          // navigeren het HELE bovenliggende venster erheen (net als een
+          // gewone "afrekenen"-link zou doen), niet alleen de iframe.
+          if (window.top) { window.top.location.href = data.checkoutUrl; } else { window.location.href = data.checkoutUrl; }
         } else {
           errorEl.textContent = data.reason || 'Kon geen betaling starten.';
           btn.disabled = false;
           btn.textContent = 'Doorgaan naar betalen';
+          setTimeout(reportHeight, 50);
         }
       } catch (err) {
         errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
         btn.disabled = false;
         btn.textContent = 'Doorgaan naar betalen';
+        setTimeout(reportHeight, 50);
       }
     });
   </script>
