@@ -298,8 +298,6 @@ export class GiftCardsService {
       return { processed: true }; // nog niet (of niet meer) betaald — nog niets te activeren
     }
 
-    const rawToken = (payment.metadata as { rawToken?: string } | null)?.rawToken;
-
     // Koppel de kaart automatisch aan een BESTAAND klantaccount met
     // hetzelfde e-mailadres, zodat die 'm meteen ziet staan onder
     // "Cadeaukaarten" in Mijn Tegoed — zonder dat de koper of ontvanger
@@ -329,10 +327,25 @@ export class GiftCardsService {
     // UPDATE's op dezelfde rij vanzelf (rij-lock) — de tweede transactie
     // ziet na de eerste committed heeft status niet meer 'draft' en
     // matcht dus 0 rijen.
+    // Wanneer er een ontvanger-e-mailadres is, genereren we hier een
+    // VERS token in plaats van te vertrouwen op het teruglezen van het
+    // oorspronkelijke token uit Mollie's metadata — dat teruglezen bleek
+    // in de praktijk niet altijd betrouwbaar, en faalde daarbij volledig
+    // stil (geen log, geen foutmelding — de kaart werd dan gewoon nooit
+    // verstuurd). Dit nieuwe token is nooit eerder aan iemand getoond,
+    // dus vervangen is altijd veilig.
+    const freshRecipientToken = giftCard.recipientEmail ? this.generateToken() : undefined;
+
     const claimed = await this.prisma.$transaction(async (tx) => {
       const claim = await tx.giftCard.updateMany({
         where: { id: giftCard.id, status: 'draft' },
-        data: { status: 'active', currentBalance: giftCard.originalValue, activatedAt: new Date(), recipientCustomerId },
+        data: {
+          status: 'active',
+          currentBalance: giftCard.originalValue,
+          activatedAt: new Date(),
+          recipientCustomerId,
+          ...(freshRecipientToken ? { publicTokenHash: this.hashToken(freshRecipientToken) } : {}),
+        },
       });
       if (claim.count === 0) return false;
 
@@ -363,8 +376,8 @@ export class GiftCardsService {
       reason: `Online betaling bevestigd via Mollie — afzender ${giftCard.senderName ?? 'onbekend'} <${giftCard.senderEmail ?? 'onbekend'}>, ontvanger ${giftCard.recipientName ?? '(geen naam opgegeven)'} <${giftCard.recipientEmail ?? '(geen e-mail opgegeven)'}>`,
     });
 
-    if (giftCard.recipientEmail && rawToken) {
-      await this.sendDigitalCard(giftCard.organizationId, giftCard.id, rawToken).catch((err) => {
+    if (giftCard.recipientEmail && freshRecipientToken) {
+      await this.sendDigitalCard(giftCard.organizationId, giftCard.id, freshRecipientToken).catch((err) => {
         // Bewust geen harde fout hier — de betaling en activering zijn al
         // veiliggesteld; een mislukte e-mail mag dat nooit terugdraaien.
         // WEL duidelijk loggen (zichtbaar in Vercel → project → Logs),
@@ -374,6 +387,14 @@ export class GiftCardsService {
           `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar e-mail naar ${giftCard.recipientEmail} mislukt: ${err instanceof Error ? err.message : err}`,
         );
       });
+    } else if (giftCard.recipientEmail && !freshRecipientToken) {
+      // Zou nooit mogen gebeuren (freshRecipientToken wordt hierboven
+      // altijd gegenereerd zodra recipientEmail gezet is) — toch expliciet
+      // loggen in plaats van stil niets te doen, mocht er ooit een
+      // logicafout sluipen die dit combineert.
+      this.logger.error(
+        `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) heeft een ontvanger-e-mailadres (${giftCard.recipientEmail}) maar geen token om te versturen — niet verstuurd.`,
+      );
     }
 
     if (giftCard.senderEmail) {
