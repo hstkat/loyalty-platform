@@ -13,7 +13,7 @@
  *     "een-sterk-wachtwoord-hier" \
  *     Henny \
  *     "" \
- *     "customer.read,customer.write,customer.merge,transaction.read,transaction.write,wallet.read,wallet.write,gift_card.read,gift_card.write,loyalty_card.read,loyalty_card.write,campaign.read,campaign.write,analytics.read,ai_assistant.use,import.read,import.write,credit_rules.read,credit_rules.write,reward_rules.read,reward_rules.write,messaging.read,messaging.write,journeys.read,journeys.write,occupancy.read,occupancy.write,tags.read,tags.write,custom_fields.read,custom_fields.write,pos_connections.read,pos_connections.write,admin.read,admin.write"
+ *     "customer.read,customer.write,customer.merge,customer.notes.read,customer.notes.write,customer.export,customer.anonymize,consent.write,transaction.read,transaction.write,transaction.correct,transaction.void,wallet.read,wallet.redeem,wallet.adjust,gift_card.read,gift_card.write,gift_card.redeem,loyalty_card.read,loyalty_card.write,campaign.read,campaign.write,campaign.launch,segment.read,segment.write,journey.read,journey.write,journey.publish,journey.pause,journey.stop,message.read,message.send,message.template.read,message.template.write,reservation.read,reservation.write,analytics.read,ai_assistant.use,ai_campaign_suggestion.approve,import.read,import.write,credit_rules.read,credit_rules.write,reward_rule.read,reward_rule.write,reward_calculation.read,admin.read,admin.write"
  *
  * Laat je het permissies-argument weg, dan krijgt het account bovenstaande
  * volledige lijst standaard (handig voor het eerste/enige admin-account).
@@ -24,22 +24,21 @@ import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 const FULL_PERMISSIONS = [
-  'customer.read', 'customer.write', 'customer.merge',
-  'transaction.read', 'transaction.write',
-  'wallet.read', 'wallet.write',
-  'gift_card.read', 'gift_card.write',
+  'customer.read', 'customer.write', 'customer.merge', 'customer.notes.read', 'customer.notes.write',
+  'customer.export', 'customer.anonymize', 'consent.write',
+  'transaction.read', 'transaction.write', 'transaction.correct', 'transaction.void',
+  'wallet.read', 'wallet.redeem', 'wallet.adjust',
+  'gift_card.read', 'gift_card.write', 'gift_card.redeem',
   'loyalty_card.read', 'loyalty_card.write',
-  'campaign.read', 'campaign.write',
-  'analytics.read', 'ai_assistant.use',
+  'campaign.read', 'campaign.write', 'campaign.launch',
+  'segment.read', 'segment.write',
+  'journey.read', 'journey.write', 'journey.publish', 'journey.pause', 'journey.stop',
+  'message.read', 'message.send', 'message.template.read', 'message.template.write',
+  'reservation.read', 'reservation.write',
+  'analytics.read', 'ai_assistant.use', 'ai_campaign_suggestion.approve',
   'import.read', 'import.write',
   'credit_rules.read', 'credit_rules.write',
-  'reward_rules.read', 'reward_rules.write',
-  'messaging.read', 'messaging.write',
-  'journeys.read', 'journeys.write',
-  'occupancy.read', 'occupancy.write',
-  'tags.read', 'tags.write',
-  'custom_fields.read', 'custom_fields.write',
-  'pos_connections.read', 'pos_connections.write',
+  'reward_rule.read', 'reward_rule.write', 'reward_calculation.read',
   'admin.read', 'admin.write',
 ];
 
