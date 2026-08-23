@@ -245,7 +245,7 @@
     localStorage.setItem('staff_permissions', JSON.stringify(permissions));
     document.querySelectorAll('nav [data-page]').forEach(function (link) {
       const required = NAV_PAGE_PERMISSION[link.getAttribute('data-page')];
-      link.style.display = (!required || permissions.indexOf(required) !== -1) ? '' : 'none';
+      link.style.display = (!required || permissions.indexOf(required) !== -1) ? 'inline' : 'none';
     });
   }
 
@@ -258,7 +258,7 @@
   // beveiliging blijft altijd server-side (PermissionsGuard) staan,
   // ongeacht wat hier in de UI zichtbaar is.
   function showAllNavTabs() {
-    document.querySelectorAll('nav [data-page]').forEach(function (link) { link.style.display = ''; });
+    document.querySelectorAll('nav [data-page]').forEach(function (link) { link.style.display = 'inline'; });
   }
 
   // Gecachte rechten van de vorige keer meteen (synchroon, geen
