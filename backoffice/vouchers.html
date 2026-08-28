@@ -353,7 +353,8 @@
       <input type="text" id="issue-customer-search" placeholder="Typ om te zoeken…" autocomplete="off">
       <div id="issue-customer-results" style="margin-top:6px;"></div>
     </div>
-    <div id="issue-selected-customer" style="display:none;margin:10px 0;padding:10px 12px;background:var(--cream);border-radius:8px;font-size:13px;"></div>
+    <div id="issue-selected-customer" style="display:none;margin:10px 0;padding:10px 12px;background:var(--cream);border:1px solid var(--teal);border-radius:8px;font-size:13px;"></div>
+    <button class="btn-text" id="issue-clear-customer-btn" style="display:none;">Andere klant kiezen</button>
     <div class="form-field" style="margin-top:12px;">
       <label>Voucher-template</label>
       <select id="issue-template-select" style="width:100%;padding:11px 13px;border-radius:8px;border:1px solid var(--line);background:var(--cream);font-family:inherit;font-size:14px;"></select>
@@ -657,15 +658,26 @@
       try {
         const results = await apiGet('/organizations/' + orgId + '/customers?search=' + encodeURIComponent(query));
         const list = Array.isArray(results) ? results : (results.items || results.data || []);
-        resultsEl.innerHTML = list.slice(0, 6).map((c) => {
+        if (list.length === 0) {
+          resultsEl.innerHTML = '<div class="sub" style="margin:4px 0 0;">Geen klant gevonden met deze naam/e-mailadres.</div>';
+          return;
+        }
+        const hint = '<div class="sub" style="margin:0 0 6px;">Klik op een klant hieronder om te selecteren:</div>';
+        resultsEl.innerHTML = hint + list.slice(0, 6).map((c) => {
           const name = [c.firstName, c.lastName].filter(Boolean).join(' ');
-          return '<div class="overview-tile" data-customer-id="' + c.id + '" data-customer-name="' + name + '" data-customer-email="' + (c.email || '') + '" style="cursor:pointer;padding:8px 12px;margin-bottom:4px;">' + name + ' — ' + (c.email || '') + '</div>';
+          return '<div class="overview-tile customer-result-tile" data-customer-id="' + c.id + '" data-customer-name="' + name + '" data-customer-email="' + (c.email || '') + '" style="cursor:pointer;padding:10px 12px;margin-bottom:4px;border:1px solid var(--line);transition:background 0.1s;">'
+            + '<strong>' + name + '</strong> — ' + (c.email || '')
+            + ' <span style="float:right;color:var(--accent);font-size:12px;">Selecteren →</span>'
+            + '</div>';
         }).join('');
-        resultsEl.querySelectorAll('[data-customer-id]').forEach((el) => {
+        resultsEl.querySelectorAll('.customer-result-tile').forEach((el) => {
+          el.addEventListener('mouseenter', function () { this.style.background = 'var(--cream)'; });
+          el.addEventListener('mouseleave', function () { this.style.background = ''; });
           el.addEventListener('click', function () {
             selectedCustomerId = this.getAttribute('data-customer-id');
             document.getElementById('issue-selected-customer').style.display = 'block';
-            document.getElementById('issue-selected-customer').textContent = 'Geselecteerd: ' + this.getAttribute('data-customer-name') + ' (' + this.getAttribute('data-customer-email') + ')';
+            document.getElementById('issue-selected-customer').innerHTML = '<span style="color:var(--teal-dark);">✓ Geselecteerd:</span> ' + this.getAttribute('data-customer-name') + ' (' + this.getAttribute('data-customer-email') + ')';
+            document.getElementById('issue-clear-customer-btn').style.display = 'inline-block';
             resultsEl.innerHTML = '';
             document.getElementById('issue-customer-search').value = '';
           });
@@ -681,7 +693,7 @@
     const successEl = document.getElementById('issue-success');
     errorEl.textContent = '';
     successEl.textContent = '';
-    if (!selectedCustomerId) { errorEl.textContent = 'Zoek en selecteer eerst een klant.'; return; }
+    if (!selectedCustomerId) { errorEl.textContent = 'Klik eerst op een klant in de zoekresultaten om die te selecteren (je ziet dan een vinkje ✓ verschijnen).'; return; }
     const templateId = document.getElementById('issue-template-select').value;
     if (!templateId) { errorEl.textContent = 'Kies een voucher-template.'; return; }
 
@@ -695,10 +707,17 @@
       successEl.textContent = 'Voucher uitgegeven.';
       selectedCustomerId = null;
       document.getElementById('issue-selected-customer').style.display = 'none';
+      document.getElementById('issue-clear-customer-btn').style.display = 'none';
       document.getElementById('issue-reason').value = '';
     } catch (err) {
       errorEl.textContent = err.message;
     }
+  });
+
+  document.getElementById('issue-clear-customer-btn').addEventListener('click', () => {
+    selectedCustomerId = null;
+    document.getElementById('issue-selected-customer').style.display = 'none';
+    document.getElementById('issue-clear-customer-btn').style.display = 'none';
   });
 
   function bootAfterLogin() {
