@@ -249,6 +249,7 @@ export class VouchersService {
         status: effectiveStatus,
         daysLeft: effectiveStatus === 'active' ? Math.max(daysLeft, 0) : undefined,
         locationIds: v.voucherTemplate.locationIds,
+        issueReason: v.issueReason,
       };
       if (effectiveStatus === 'active') categorized.available.push(shaped);
       else if (effectiveStatus === 'scheduled') categorized.upcoming.push(shaped);
@@ -286,6 +287,7 @@ export class VouchersService {
       validUntil: voucher.validUntil,
       status: this.deriveEffectiveStatus(voucher),
       locationIds: voucher.voucherTemplate.locationIds,
+      issueReason: voucher.issueReason,
     };
   }
 

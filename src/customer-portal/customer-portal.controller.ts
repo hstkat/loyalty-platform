@@ -272,7 +272,8 @@ export class CustomerPortalController {
     <div id="voucher-detail-benefit" style="font-size:14px;color:var(--accent-dark);font-weight:600;margin-bottom:10px;"></div>
     <div id="voucher-detail-terms" style="font-size:12px;color:var(--muted);margin-bottom:14px;"></div>
     <div id="voucher-detail-qr" style="margin:0 auto 12px;width:180px;height:180px;background:var(--cream);border-radius:10px;display:flex;align-items:center;justify-content:center;"></div>
-    <div id="voucher-detail-validity" style="font-size:12px;color:var(--muted);margin-bottom:16px;"></div>
+    <div id="voucher-detail-validity" style="font-size:12px;color:var(--muted);margin-bottom:6px;"></div>
+    <div id="voucher-detail-reason" style="font-size:12px;color:var(--muted);font-style:italic;margin-bottom:16px;"></div>
     <button class="btn-text" id="voucher-detail-close-btn">Sluiten</button>
   </div>
 </div>
@@ -606,10 +607,12 @@ export class CustomerPortalController {
           const daysLine = (v.status === 'active' && typeof v.daysLeft === 'number')
             ? '<div class="item-meta" style="margin-top:2px;font-weight:600;color:var(--accent-dark);">' + (v.daysLeft === 0 ? 'Vandaag laatste dag' : 'Nog ' + v.daysLeft + ' dag' + (v.daysLeft === 1 ? '' : 'en') + ' geldig') + '</div>'
             : '';
+          const reasonLine = v.issueReason ? '<div class="item-meta" style="margin-top:2px;font-style:italic;">' + v.issueReason + '</div>' : '';
           return '<div class="list-item voucher-item" data-voucher-id="' + v.id + '" style="cursor:pointer;">'
             + '<div class="top-row"><span class="item-name">' + v.name + '</span></div>'
             + '<div class="item-meta">Geldig t/m ' + validUntilLabel + '</div>'
             + daysLine
+            + reasonLine
             + '</div>';
         }).join('');
         el.querySelectorAll('.voucher-item').forEach(function (item) {
@@ -666,6 +669,7 @@ export class CustomerPortalController {
     document.getElementById('voucher-detail-terms').textContent = '';
     document.getElementById('voucher-detail-qr').innerHTML = '';
     document.getElementById('voucher-detail-validity').textContent = '';
+    document.getElementById('voucher-detail-reason').textContent = '';
 
     try {
       const detail = await fetch(API_BASE + '/guest-app/organizations/' + ORG_ID + '/me/vouchers/' + voucherId, {
@@ -678,6 +682,7 @@ export class CustomerPortalController {
       const validFromLabel = new Date(detail.validFrom).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
       const validUntilLabel = new Date(detail.validUntil).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
       document.getElementById('voucher-detail-validity').textContent = 'Geldig ' + validFromLabel + ' t/m ' + validUntilLabel;
+      document.getElementById('voucher-detail-reason').textContent = detail.issueReason || '';
 
       const qrArea = document.getElementById('voucher-detail-qr');
       if (detail.status !== 'active') {
