@@ -594,6 +594,9 @@
     els.detailTitle.textContent = 'Cadeaukaart ' + card.giftCardNumber;
     const purchaser = card.purchaser ? [card.purchaser.firstName, card.purchaser.lastName].filter(Boolean).join(' ') : '—';
     const recipient = card.recipient ? [card.recipient.firstName, card.recipient.lastName].filter(Boolean).join(' ') : (card.recipientName || '—');
+    const recipientAccount = card.recipient
+      ? '✓ Gekoppeld (' + card.recipient.email + ')'
+      : '✗ Niet gekoppeld aan een account — zichtbaar via de e-mail-link, maar niet in Mijn Tegoed';
     const issuedDate = new Date(card.issuedAt).toLocaleDateString('nl-NL');
     const confirmationStatus = card.senderEmail
       ? (card.senderConfirmationSentAt ? 'Verstuurd (' + new Date(card.senderConfirmationSentAt).toLocaleDateString('nl-NL') + ')' : 'Nog niet verstuurd')
@@ -608,6 +611,7 @@
       <div class="detail-tile"><div class="label">Aankoopbevestiging</div><div class="value">${confirmationStatus}</div></div>
       <div class="detail-tile"><div class="label">Ontvanger</div><div class="value">${recipient}</div></div>
       <div class="detail-tile"><div class="label">Ontvanger e-mail</div><div class="value">${card.recipientEmail || '—'}</div></div>
+      <div class="detail-tile"><div class="label">Ontvanger-account (Mijn Tegoed)</div><div class="value" style="font-size:13px;">${recipientAccount}</div></div>
       <div class="detail-tile"><div class="label">Persoonlijke boodschap</div><div class="value">${card.personalMessage || '—'}</div></div>
       <div class="detail-tile"><div class="label">Uitgegeven op</div><div class="value">${issuedDate}</div></div>
       <div class="detail-tile"><div class="label">Vervangen door</div><div class="value">${card.replacedByGiftCard ? card.replacedByGiftCard.giftCardNumber : '—'}</div></div>

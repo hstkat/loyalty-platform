@@ -61,6 +61,30 @@ export class GiftCardsService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  /**
+   * Klant-e-mailadres heeft GEEN unieke-constraint in het datamodel — er
+   * kunnen dus meerdere klantrecords met hetzelfde e-mailadres bestaan
+   * (bijv. één via Piggy-import, één handmatig aangemaakt, één via
+   * portal-zelfregistratie). Een simpele findFirst() zou dan willekeurig
+   * (databasevolgorde) het EERSTE record pakken — mogelijk niet het
+   * account waar de klant daadwerkelijk op inlogt.
+   *
+   * Voorkeur, in volgorde:
+   *   1. Een record met een wachtwoord ingesteld (bewijs dat dit account
+   *      echt via de portal gebruikt wordt).
+   *   2. Anders het meest recent aangemaakte record.
+   */
+  private async findBestMatchingCustomer(orgId: string, email: string): Promise<{ id: string } | null> {
+    const candidates = await this.prisma.customer.findMany({
+      where: { organizationId: orgId, email: { equals: email, mode: 'insensitive' }, deletedAt: null },
+      select: { id: true, passwordHash: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (candidates.length === 0) return null;
+    const withPassword = candidates.find((c) => !!c.passwordHash);
+    return withPassword ?? candidates[0];
+  }
+
   private generateToken(): string {
     return randomBytes(12).toString('base64url'); // 96 bits entropie, zelfde niveau als de loyaltykaarten
   }
@@ -80,6 +104,13 @@ export class GiftCardsService {
     const token = this.generateToken();
     const giftCardNumber = 'GC-' + String(existingCount + 1).padStart(6, '0');
 
+    // Als de medewerker alleen een vrij-tekst e-mailadres invulde (geen
+    // expliciet gekozen klant via recipientCustomerId), toch proberen te
+    // koppelen aan een bestaand account met dat e-mailadres — zelfde
+    // gedachte als bij de online koop-flow.
+    const resolvedRecipientCustomerId =
+      dto.recipientCustomerId ?? (dto.recipientEmail ? (await this.findBestMatchingCustomer(orgId, dto.recipientEmail))?.id : undefined);
+
     const giftCard = await this.prisma.giftCard.create({
       data: {
         organizationId: orgId,
@@ -91,7 +122,7 @@ export class GiftCardsService {
         currentBalance: dto.originalValue,
         isOrganizationWide: dto.isOrganizationWide ?? true,
         purchaserCustomerId: dto.purchaserCustomerId,
-        recipientCustomerId: dto.recipientCustomerId,
+        recipientCustomerId: resolvedRecipientCustomerId,
         recipientName: dto.recipientName,
         recipientEmail: dto.recipientEmail,
         senderName: dto.senderName,
@@ -308,10 +339,7 @@ export class GiftCardsService {
     // exact zoals nu al het geval is.
     let recipientCustomerId: string | undefined;
     if (giftCard.recipientEmail) {
-      const matchingCustomer = await this.prisma.customer.findFirst({
-        where: { organizationId: giftCard.organizationId, email: { equals: giftCard.recipientEmail, mode: 'insensitive' }, deletedAt: null },
-        select: { id: true },
-      });
+      const matchingCustomer = await this.findBestMatchingCustomer(giftCard.organizationId, giftCard.recipientEmail);
       recipientCustomerId = matchingCustomer?.id;
     }
 

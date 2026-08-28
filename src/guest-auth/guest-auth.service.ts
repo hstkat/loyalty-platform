@@ -100,6 +100,12 @@ export class GuestAuthService {
       }
       await this.prisma.guestLoginCode.update({ where: { id: loginCode.id }, data: { usedAt: new Date() } });
 
+      // Zelfde vangnet als bij nieuwe registraties: als er ondertussen
+      // (bijv. vóór deze koppel-logica bestond, of door de eerder
+      // gevonden duplicate-klant-ambiguïteit) nog een niet-gekoppelde
+      // cadeaukaart voor dit e-mailadres klaarstaat, alsnog koppelen.
+      await this.giftCards.linkUnclaimedGiftCardsToCustomer(orgId, customer.id, email).catch(() => undefined);
+
       const session = await this.issueSession(customer.id, deviceInfo);
       return { ...session, requiresRegistration: false as const };
     }
@@ -274,6 +280,8 @@ export class GuestAuthService {
         data: { passwordFailedAttempts: 0, passwordLockedUntil: null },
       });
     }
+
+    await this.giftCards.linkUnclaimedGiftCardsToCustomer(orgId, customer.id, email).catch(() => undefined);
 
     const session = await this.issueSession(customer.id, deviceInfo);
     return { ...session, requiresRegistration: false as const };
