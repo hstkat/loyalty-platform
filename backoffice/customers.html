@@ -289,6 +289,32 @@
 <main>
   <p class="status-line" id="status-line">Klanten laden…</p>
 
+  <div id="bulk-action-bar" style="display:none;background:var(--navy);color:var(--white);border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+    <span id="bulk-selection-count" style="font-size:13px;"></span>
+    <div style="display:flex;gap:8px;">
+      <button class="btn-secondary" id="bulk-voucher-btn" style="background:var(--white);">🎁 Voucher uitgeven</button>
+      <button class="btn-text" id="bulk-clear-btn" style="color:var(--white);">Selectie wissen</button>
+    </div>
+  </div>
+
+  <div id="bulk-voucher-panel" style="display:none;background:var(--white);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;">
+    <div style="font-family:'Fraunces',serif;color:var(--navy);font-size:15px;margin-bottom:8px;">Voucher uitgeven aan <span id="bulk-voucher-count"></span> klanten</div>
+    <div class="form-field">
+      <label>Voucher-template</label>
+      <select id="bulk-template-select" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--cream);font-family:inherit;font-size:14px;"></select>
+    </div>
+    <div class="form-field" style="margin-top:10px;">
+      <label>Reden (optioneel, zichtbaar in elk klantprofiel)</label>
+      <input type="text" id="bulk-voucher-reason" placeholder="Bijv. Zomeractie augustus" style="width:100%;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--cream);font-family:inherit;font-size:14px;">
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;">
+      <button class="btn-primary" id="bulk-voucher-confirm-btn">Uitgeven</button>
+      <button class="btn-secondary" id="bulk-voucher-cancel-btn">Annuleren</button>
+    </div>
+    <div class="status-line error" id="bulk-voucher-error" style="margin-top:8px;margin-bottom:0;"></div>
+    <div class="status-line" id="bulk-voucher-success" style="margin-top:8px;margin-bottom:0;color:var(--teal-dark);"></div>
+  </div>
+
   <div class="list-panel">
     <input type="text" class="search-box" id="search-box" placeholder="Zoek op naam, e-mail of telefoon…">
     <div id="customer-list"></div>
@@ -374,6 +400,7 @@
 
   let allCustomers = [];
   let selectedId = null;
+  const bulkSelectedIds = new Set();
 
   function renderList(filterText) {
     const filtered = !filterText
@@ -392,16 +419,26 @@
       .map((c) => {
         const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '(naam onbekend)';
         const tier = c.tierId ? '<span class="tier">Goud</span>' : '';
-        return `<div class="customer-row ${c.id === selectedId ? 'selected' : ''}" data-id="${c.id}" tabindex="0" role="button">
-          <span class="name">${name}${tier}</span>
+        const checked = bulkSelectedIds.has(c.id) ? 'checked' : '';
+        return `<div class="customer-row ${c.id === selectedId ? 'selected' : ''}" data-id="${c.id}" tabindex="0" role="button" style="display:flex;align-items:center;gap:10px;">
+          <input type="checkbox" class="bulk-select-checkbox" data-id="${c.id}" ${checked} style="flex-shrink:0;">
+          <span class="name" style="flex:1;">${name}${tier}</span>
           <span class="balance">${points(c.availableBalance)}</span>
         </div>`;
       })
       .join('');
 
     els.customerList.querySelectorAll('.customer-row').forEach((row) => {
-      row.addEventListener('click', () => selectCustomer(row.dataset.id));
+      row.addEventListener('click', (e) => { if (e.target.classList.contains('bulk-select-checkbox')) return; selectCustomer(row.dataset.id); });
       row.addEventListener('keypress', (e) => { if (e.key === 'Enter') selectCustomer(row.dataset.id); });
+    });
+    els.customerList.querySelectorAll('.bulk-select-checkbox').forEach((box) => {
+      box.addEventListener('click', (e) => e.stopPropagation());
+      box.addEventListener('change', () => {
+        if (box.checked) bulkSelectedIds.add(box.dataset.id);
+        else bulkSelectedIds.delete(box.dataset.id);
+        updateBulkActionBar();
+      });
     });
   }
 
@@ -532,6 +569,84 @@
   els.searchBox.addEventListener('input', () => {
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => renderList(els.searchBox.value), 150);
+  });
+
+  // -- Bulk voucher uitgeven aan geselecteerde klanten ---------------------
+
+  function updateBulkActionBar() {
+    const count = bulkSelectedIds.size;
+    const bar = document.getElementById('bulk-action-bar');
+    if (count === 0) {
+      bar.style.display = 'none';
+      document.getElementById('bulk-voucher-panel').style.display = 'none';
+      return;
+    }
+    bar.style.display = 'flex';
+    document.getElementById('bulk-selection-count').textContent = count + ' klant' + (count === 1 ? '' : 'en') + ' geselecteerd';
+  }
+
+  document.getElementById('bulk-clear-btn').addEventListener('click', () => {
+    bulkSelectedIds.clear();
+    updateBulkActionBar();
+    renderList(els.searchBox.value);
+  });
+
+  let voucherTemplatesForBulk = [];
+  document.getElementById('bulk-voucher-btn').addEventListener('click', async () => {
+    const panel = document.getElementById('bulk-voucher-panel');
+    const select = document.getElementById('bulk-template-select');
+    document.getElementById('bulk-voucher-count').textContent = bulkSelectedIds.size;
+    document.getElementById('bulk-voucher-error').textContent = '';
+    document.getElementById('bulk-voucher-success').textContent = '';
+    panel.style.display = 'block';
+    select.innerHTML = '<option>Laden…</option>';
+    try {
+      const { orgId } = getConfig();
+      voucherTemplatesForBulk = await apiGet('/organizations/' + orgId + '/vouchers/templates');
+      select.innerHTML = voucherTemplatesForBulk.length
+        ? voucherTemplatesForBulk.map((t) => '<option value="' + t.id + '">' + t.name + ' — ' + t.benefit + '</option>').join('')
+        : '<option value="">Geen actieve templates — maak er eerst één aan op de Vouchers-pagina</option>';
+    } catch (err) {
+      select.innerHTML = '<option value="">Kon templates niet laden</option>';
+    }
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  });
+
+  document.getElementById('bulk-voucher-cancel-btn').addEventListener('click', () => {
+    document.getElementById('bulk-voucher-panel').style.display = 'none';
+  });
+
+  document.getElementById('bulk-voucher-confirm-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('bulk-voucher-confirm-btn');
+    const errorEl = document.getElementById('bulk-voucher-error');
+    const successEl = document.getElementById('bulk-voucher-success');
+    errorEl.textContent = '';
+    successEl.textContent = '';
+    if (btn.disabled) return;
+
+    const templateId = document.getElementById('bulk-template-select').value;
+    if (!templateId) { errorEl.textContent = 'Kies een voucher-template.'; return; }
+
+    btn.disabled = true;
+    btn.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      const result = await apiPost('/organizations/' + orgId + '/vouchers/issue-bulk', {
+        customerIds: Array.from(bulkSelectedIds),
+        voucherTemplateId: templateId,
+        issueReason: document.getElementById('bulk-voucher-reason').value.trim() || undefined,
+      });
+      successEl.textContent = '✓ ' + result.issued + ' voucher(s) uitgegeven.' + (result.failed.length ? ' (' + result.failed.length + ' mislukt)' : '');
+      bulkSelectedIds.clear();
+      updateBulkActionBar();
+      renderList(els.searchBox.value);
+      document.getElementById('bulk-voucher-reason').value = '';
+    } catch (err) {
+      errorEl.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Uitgeven';
+    }
   });
 
   function bootAfterLogin() {

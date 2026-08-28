@@ -208,6 +208,48 @@ export class VouchersService {
     return voucher;
   }
 
+  /**
+   * Voor het "aanvinken in het klantenbestand"-scenario in de
+   * backoffice. Hergebruikt issueVoucher() per klant (dus dezelfde
+   * validatie, audit-log en messaging-melding als een losse uitgifte) —
+   * één mislukking blokkeert de rest van de batch niet, maar wordt wel
+   * teruggegeven zodat de beheerder ziet wat er misging.
+   *
+   * Bewust een harde limiet: dit endpoint verwerkt sequentieel (elke
+   * uitgifte doet een paar databaseschrijvingen + een messaging-call),
+   * en Vercel-functies hebben een tijdslimiet. Voor grotere doelgroepen
+   * (bijv. "alle klanten die in juli zijn geweest") is de Campaign
+   * Manager het juiste gereedschap — die is al gebouwd voor grote
+   * aantallen en draait de verzending asynchroon per ontvanger.
+   */
+  async issueBulk(
+    orgId: string,
+    dto: { customerIds: string[]; voucherTemplateId: string; issueReason?: string },
+    actor: ActorContext,
+  ): Promise<{ issued: number; failed: { customerId: string; error: string }[] }> {
+    if (!dto.customerIds || dto.customerIds.length === 0) throw new BadRequestException('Geen klanten geselecteerd');
+    const MAX_BULK_RECIPIENTS = 150;
+    if (dto.customerIds.length > MAX_BULK_RECIPIENTS) {
+      throw new BadRequestException(`Maximaal ${MAX_BULK_RECIPIENTS} klanten tegelijk — gebruik voor grotere groepen de Campaign Manager.`);
+    }
+
+    let issued = 0;
+    const failed: { customerId: string; error: string }[] = [];
+    for (const customerId of dto.customerIds) {
+      try {
+        await this.issueVoucher(
+          orgId,
+          { customerId, voucherTemplateId: dto.voucherTemplateId, issueReason: dto.issueReason, issueSource: 'manual' },
+          actor,
+        );
+        issued += 1;
+      } catch (err) {
+        failed.push({ customerId, error: err instanceof Error ? err.message : String(err) });
+      }
+    }
+    return { issued, failed };
+  }
+
   private toMessagingSourceType(issueSource: string): 'campaign' | 'journey' | 'system' {
     if (issueSource === 'campaign') return 'campaign';
     if (issueSource === 'journey') return 'journey';

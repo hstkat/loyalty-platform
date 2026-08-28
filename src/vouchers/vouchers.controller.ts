@@ -65,6 +65,19 @@ class IssueVoucherBodyDto {
   issueReason?: string;
 }
 
+class IssueVoucherBulkBodyDto {
+  @IsArray()
+  @IsString({ each: true })
+  customerIds!: string[];
+
+  @IsString()
+  voucherTemplateId!: string;
+
+  @IsOptional()
+  @IsString()
+  issueReason?: string;
+}
+
 class CancelVoucherBodyDto {
   @IsOptional()
   @IsString()
@@ -123,6 +136,16 @@ export class VouchersController {
     return this.vouchers.issueVoucher(
       orgId,
       { customerId: dto.customerId, voucherTemplateId: dto.voucherTemplateId, issueReason: dto.issueReason, issueSource: 'manual' },
+      { actorType: 'staff', actorId: ctx.actorId, ipAddress: ctx.ipAddress },
+    );
+  }
+
+  @Post('issue-bulk')
+  @RequirePermissions('voucher.write')
+  issueBulk(@Param('orgId') orgId: string, @Ctx() ctx: RequestContext, @Body() dto: IssueVoucherBulkBodyDto) {
+    return this.vouchers.issueBulk(
+      orgId,
+      { customerIds: dto.customerIds, voucherTemplateId: dto.voucherTemplateId, issueReason: dto.issueReason },
       { actorType: 'staff', actorId: ctx.actorId, ipAddress: ctx.ipAddress },
     );
   }
