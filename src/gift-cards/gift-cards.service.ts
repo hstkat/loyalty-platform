@@ -309,7 +309,7 @@ export class GiftCardsService {
     let recipientCustomerId: string | undefined;
     if (giftCard.recipientEmail) {
       const matchingCustomer = await this.prisma.customer.findFirst({
-        where: { organizationId: giftCard.organizationId, email: giftCard.recipientEmail, deletedAt: null },
+        where: { organizationId: giftCard.organizationId, email: { equals: giftCard.recipientEmail, mode: 'insensitive' }, deletedAt: null },
         select: { id: true },
       });
       recipientCustomerId = matchingCustomer?.id;
@@ -443,6 +443,28 @@ export class GiftCardsService {
     }
 
     await this.prisma.giftCard.update({ where: { id: giftCard.id }, data: { senderConfirmationSentAt: new Date() } });
+  }
+
+  /**
+   * Koppelt bestaande, nog niet gekoppelde cadeaukaarten met.recipientEmail
+   * gelijk aan dit e-mailadres alsnog aan dit klantaccount — dekt precies
+   * de omgekeerde volgorde van de automatische koppeling in
+   * confirmMolliePayment (die alleen koppelt als het account op het
+   * moment van BETALEN al bestond). Als iemand pas ÁCHTERAF een account
+   * aanmaakt met hetzelfde e-mailadres als waar een cadeaukaart eerder
+   * naartoe gestuurd is, zag die de kaart tot nu toe niet staan in Mijn
+   * Tegoed — dit repareert dat alsnog, op het moment van accountaanmaak.
+   * Bewust alleen 'active' kaarten (nooit 'draft', die zijn nog niet
+   * betaald) en alleen kaarten die nog geen koppeling hebben (nooit een
+   * bestaande koppeling overschrijven).
+   */
+  async linkUnclaimedGiftCardsToCustomer(orgId: string, customerId: string, email: string): Promise<number> {
+    if (!email) return 0;
+    const result = await this.prisma.giftCard.updateMany({
+      where: { organizationId: orgId, recipientEmail: { equals: email, mode: 'insensitive' }, recipientCustomerId: null, status: 'active' },
+      data: { recipientCustomerId: customerId },
+    });
+    return result.count;
   }
 
   // -- Batches met lege fysieke kaarten (later bij POS geactiveerd) --------

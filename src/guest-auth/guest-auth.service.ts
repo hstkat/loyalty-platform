@@ -3,6 +3,7 @@ import { createHash, randomBytes, randomInt } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailgunService } from '../common/mailgun.service';
+import { GiftCardsService } from '../gift-cards/gift-cards.service';
 
 const CODE_TTL_MINUTES = 10;
 const SESSION_TTL_DAYS = 90;
@@ -32,6 +33,7 @@ export class GuestAuthService {
   constructor(
     private prisma: PrismaService,
     private mailgun: MailgunService,
+    private giftCards: GiftCardsService,
   ) {}
 
   private hash(value: string): string {
@@ -180,6 +182,12 @@ export class GuestAuthService {
       // een wachtwoord in tijdens deze portalregistratie.
       await this.prisma.customer.update({ where: { id: customer.id }, data: { passwordHash } });
     }
+
+    // Cadeaukaarten die eerder naar dit e-mailadres verstuurd zijn (vóórdat
+    // er een account bestond) alsnog koppelen — anders blijven ze
+    // onzichtbaar in Mijn Tegoed. Nooit de registratie laten mislukken als
+    // dit om wat voor reden dan ook faalt.
+    await this.giftCards.linkUnclaimedGiftCardsToCustomer(orgId, customer.id, profile.email).catch(() => undefined);
 
     const session = await this.issueSession(customer.id, deviceInfo);
     return { ...session, requiresRegistration: false as const };
