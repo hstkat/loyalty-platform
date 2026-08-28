@@ -25,6 +25,7 @@ import { AdminModule } from './admin/admin.module';
 import { GiftCardsModule } from './gift-cards/gift-cards.module';
 import { CustomerPortalModule } from './customer-portal/customer-portal.module';
 import { StaffAuthModule } from './staff-auth/staff-auth.module';
+import { VouchersModule } from './vouchers/vouchers.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { StaffAuthModule } from './staff-auth/staff-auth.module';
     AdminModule,
     GiftCardsModule,
     CustomerPortalModule,
+    VouchersModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

@@ -13,7 +13,7 @@
  *     "een-sterk-wachtwoord-hier" \
  *     Henny \
  *     "" \
- *     "customer.read,customer.write,customer.merge,customer.notes.read,customer.notes.write,customer.export,customer.anonymize,consent.write,transaction.read,transaction.write,transaction.correct,transaction.void,wallet.read,wallet.redeem,wallet.adjust,gift_card.read,gift_card.write,gift_card.redeem,loyalty_card.read,loyalty_card.write,campaign.read,campaign.write,campaign.launch,segment.read,segment.write,journey.read,journey.write,journey.publish,journey.pause,journey.stop,message.read,message.send,message.template.read,message.template.write,reservation.read,reservation.write,analytics.read,ai_assistant.use,ai_campaign_suggestion.approve,import.read,import.write,credit_rules.read,credit_rules.write,reward_rule.read,reward_rule.write,reward_calculation.read,admin.read,admin.write"
+ *     "customer.read,customer.write,customer.merge,customer.notes.read,customer.notes.write,customer.export,customer.anonymize,consent.write,transaction.read,transaction.write,transaction.correct,transaction.void,wallet.read,wallet.redeem,wallet.adjust,gift_card.read,gift_card.write,gift_card.redeem,loyalty_card.read,loyalty_card.write,voucher.read,voucher.write,voucher.redeem,campaign.read,campaign.write,campaign.launch,segment.read,segment.write,journey.read,journey.write,journey.publish,journey.pause,journey.stop,message.read,message.send,message.template.read,message.template.write,reservation.read,reservation.write,analytics.read,ai_assistant.use,ai_campaign_suggestion.approve,import.read,import.write,credit_rules.read,credit_rules.write,reward_rule.read,reward_rule.write,reward_calculation.read,admin.read,admin.write"
  *
  * Laat je het permissies-argument weg, dan krijgt het account bovenstaande
  * volledige lijst standaard (handig voor het eerste/enige admin-account).
@@ -30,6 +30,7 @@ const FULL_PERMISSIONS = [
   'wallet.read', 'wallet.redeem', 'wallet.adjust',
   'gift_card.read', 'gift_card.write', 'gift_card.redeem',
   'loyalty_card.read', 'loyalty_card.write',
+  'voucher.read', 'voucher.write', 'voucher.redeem',
   'campaign.read', 'campaign.write', 'campaign.launch',
   'segment.read', 'segment.write',
   'journey.read', 'journey.write', 'journey.publish', 'journey.pause', 'journey.stop',

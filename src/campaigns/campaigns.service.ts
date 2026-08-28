@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AudienceFilterService, FilterGroup } from '../common/audience-filter.service';
 import { MessagingService } from '../messaging/messaging.service';
+import { VouchersService } from '../vouchers/vouchers.service';
 import { CreateCampaignDto, PreviewCampaignDto } from './dto/campaign.dto';
 
 /**
@@ -21,6 +22,7 @@ export class CampaignsService {
     private prisma: PrismaService,
     private audienceFilter: AudienceFilterService,
     private messaging: MessagingService,
+    private vouchers: VouchersService,
   ) {}
 
   create(orgId: string, dto: CreateCampaignDto) {
@@ -112,7 +114,7 @@ export class CampaignsService {
       });
 
       let rewardRuleId: string | undefined;
-      if (campaign.incentiveType !== 'none') {
+      if (campaign.incentiveType !== 'none' && campaign.incentiveType !== 'coupon') {
         const incentiveValue = (campaign.incentiveValue as Record<string, number>) ?? {};
         const rule = await tx.rewardRule.create({
           data: {
@@ -146,6 +148,28 @@ export class CampaignsService {
     const channels = (campaign.channels as string[]) ?? [];
     const treatmentGroup = limited.filter((cId) => !controlGroupIds.has(cId));
     const sendResultsByChannel: Record<string, unknown> = {};
+
+    // Coupon-incentive = voucher-uitgifte, geen puntenregel. Vouchers
+    // gaan naar de treatment-groep, NIET naar de control-groep — dat is
+    // precies het punt van een control-groep (meten wat er gebeurt
+    // zonder de prikkel).
+    let vouchersIssued = 0;
+    if (campaign.incentiveType === 'coupon') {
+      const incentiveValue = (campaign.incentiveValue as Record<string, unknown>) ?? {};
+      const voucherTemplateId = incentiveValue.voucherTemplateId as string | undefined;
+      if (voucherTemplateId) {
+        for (const customerId of treatmentGroup) {
+          await this.vouchers
+            .issueVoucher(
+              orgId,
+              { customerId, voucherTemplateId, campaignId: id, issueSource: 'campaign', issueReason: `Campagne "${campaign.name}"` },
+              { actorType: 'campaign', actorId: id },
+            )
+            .then(() => { vouchersIssued += 1; })
+            .catch(() => undefined); // individuele mislukking mag de rest van de campagne niet blokkeren
+        }
+      }
+    }
 
     for (const channel of channels) {
       const sendResult = await this.messaging.send(orgId, {

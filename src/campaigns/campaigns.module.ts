@@ -3,9 +3,10 @@ import { CampaignsController } from './campaigns.controller';
 import { CampaignsService } from './campaigns.service';
 import { AudienceFilterService } from '../common/audience-filter.service';
 import { MessagingModule } from '../messaging/messaging.module';
+import { VouchersModule } from '../vouchers/vouchers.module';
 
 @Module({
-  imports: [MessagingModule],
+  imports: [MessagingModule, VouchersModule],
   controllers: [CampaignsController],
   providers: [CampaignsService, AudienceFilterService],
   exports: [AudienceFilterService, CampaignsService],

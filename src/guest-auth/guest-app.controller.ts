@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { WalletPassService } from '../wallet/wallet-pass.service';
 import { LoyaltyCardsService } from '../loyalty-cards/loyalty-cards.service';
 import { GiftCardsService } from '../gift-cards/gift-cards.service';
+import { VouchersService } from '../vouchers/vouchers.service';
 import { MailgunService } from '../common/mailgun.service';
 
 class RequestCodeDto {
@@ -105,6 +106,7 @@ export class GuestAppController {
     private walletPass: WalletPassService,
     private loyaltyCards: LoyaltyCardsService,
     private giftCards: GiftCardsService,
+    private vouchers: VouchersService,
     private mailgun: MailgunService,
   ) {}
 
@@ -250,6 +252,27 @@ export class GuestAppController {
   @UseGuards(GuestSessionGuard)
   async getGiftCardViewToken(@Param('giftCardId') giftCardId: string, @Param('orgId') orgId: string, @Req() req: { guestCustomer: { id: string } }) {
     return this.giftCards.rotateAndGetViewToken(orgId, giftCardId, req.guestCustomer.id);
+  }
+
+  // -- Vouchers — bewust een APARTE reward, nooit samengevoegd met
+  // tegoed/punten of cadeaukaartsaldo hierboven. -------------------------
+
+  @Get('me/vouchers')
+  @UseGuards(GuestSessionGuard)
+  async getMyVouchers(@Param('orgId') orgId: string, @Req() req: { guestCustomer: { id: string } }) {
+    return this.vouchers.listForCustomer(orgId, req.guestCustomer.id);
+  }
+
+  @Get('me/vouchers/:voucherId')
+  @UseGuards(GuestSessionGuard)
+  async getMyVoucherDetail(@Param('orgId') orgId: string, @Param('voucherId') voucherId: string, @Req() req: { guestCustomer: { id: string } }) {
+    return this.vouchers.getVoucherDetail(orgId, req.guestCustomer.id, voucherId);
+  }
+
+  @Post('me/vouchers/:voucherId/display-token')
+  @UseGuards(GuestSessionGuard)
+  async getVoucherDisplayToken(@Param('orgId') orgId: string, @Param('voucherId') voucherId: string, @Req() req: { guestCustomer: { id: string } }) {
+    return this.vouchers.requestDisplayToken(orgId, req.guestCustomer.id, voucherId);
   }
 
   // -- Eén samengevoegde tijdlijn voor de UI — puur een leesweergave die

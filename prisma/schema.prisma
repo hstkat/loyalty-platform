@@ -43,6 +43,8 @@ model Organization {
   customerCustomFields CustomerCustomField[]
   auditLogs           AuditLog[]
   staffUsers          StaffUser[]
+  voucherTemplates    VoucherTemplate[]
+  customerVouchers    CustomerVoucher[]
 
   @@map("organizations")
 }
@@ -270,6 +272,7 @@ model Customer {
   // Cadeaukaarten — apart van loyaltytegoed
   giftCardsPurchased GiftCard[] @relation("GiftCardPurchaser")
   giftCardsReceived  GiftCard[] @relation("GiftCardRecipient")
+  vouchers           CustomerVoucher[]
 
   // Klantportal-QR (Mijn Tegoed)
   qrTokens CustomerQrToken[]
@@ -1389,6 +1392,113 @@ model RewardCatalogItem {
 
   @@index([organizationId, isActive])
   @@map("reward_catalog_items")
+}
+
+// ============================================================================
+// Voucher-module — een voucher is BEWUST een aparte reward, nooit
+// samengevoegd met Beach Credit/punten (WalletLedgerEntry) of
+// cadeaukaartsaldo (GiftCard). Zelfde architecturale scheiding als
+// tussen GiftCard en Wallet elders in dit schema: aparte tabellen, geen
+// gedeeld saldo-veld, geen impliciete conversie tussen de twee.
+//
+// VoucherTemplate = het "sjabloon" dat een beheerder aanmaakt (bijv.
+// "Gratis cocktail"). CustomerVoucher = een concrete, aan één klant
+// gekoppelde UITGIFTE van dat sjabloon, met een eigen geldigheidsperiode
+// en eigen secure token — twee klanten die dezelfde template krijgen,
+// krijgen allebei een eigen CustomerVoucher-rij.
+// ============================================================================
+
+model VoucherTemplate {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  description    String?
+  imageUrl       String?  @map("image_url")
+  benefit        String   // vrije tekst: "Gratis cocktail", "€10 korting bij lunch", "2x credit" — bewust geen apart bedragveld, want niet elke voucher is een geldbedrag
+  terms          String?  @map("terms") // voorwaarden, vrije tekst
+  isActive       Boolean  @default(true) @map("is_active")
+
+  // Geldigheidsregel — precies één van de twee patronen:
+  //  - relatief: validityDays gezet, validFrom/validUntil leeg
+  //    ("geldig gedurende N dagen na uitgifte")
+  //  - vast: validFrom + validUntil gezet, validityDays leeg
+  //    ("geldig tussen twee ingestelde datums", of alleen validUntil
+  //    voor een vaste einddatum ongeacht uitgiftemoment)
+  validityDays   Int?      @map("validity_days")
+  validFrom      DateTime? @map("valid_from")
+  validUntil     DateTime? @map("valid_until")
+
+  // Locatiescope: leeg/null array = organisatiebreed geldig. Gevuld =
+  // alleen geldig bij de genoemde locatie(s).
+  locationIds    String[]  @map("location_ids") @db.Uuid
+
+  // Instelbare reminder(s) vóór het verlopen — dagen-voor-afloop,
+  // bijv. [7, 3, 1]. Leeg = geen automatische verloopherinnering.
+  reminderDaysBeforeExpiry Int[] @default([]) @map("reminder_days_before_expiry")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerVouchers   CustomerVoucher[]
+
+  @@index([organizationId, isActive])
+  @@map("voucher_templates")
+}
+
+model CustomerVoucher {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  customerId        String    @map("customer_id") @db.Uuid
+  voucherTemplateId String    @map("voucher_template_id") @db.Uuid
+  campaignId        String?   @map("campaign_id") @db.Uuid
+  journeyId         String?   @map("journey_id") @db.Uuid
+
+  // 'scheduled' (validFrom ligt nog in de toekomst) | 'active' |
+  // 'redeemed' | 'expired' | 'cancelled'. Bewust WEL expliciet
+  // opgeslagen (i.p.v. altijd puur uit data af te leiden) zodat
+  // redemption/cancellation onomkeerbaar vastligt — de status wordt bij
+  // het OPHALEN nog wel "opgewaardeerd" naar 'expired' als de datum
+  // inmiddels is verstreken en de status nog 'scheduled'/'active' was,
+  // zie VouchersService.deriveEffectiveStatus.
+  status            String    @default("scheduled")
+
+  validFrom         DateTime  @map("valid_from")
+  validUntil        DateTime  @map("valid_until")
+  issuedAt          DateTime  @default(now()) @map("issued_at")
+
+  redeemedAt        DateTime? @map("redeemed_at")
+  transactionId     String?   @map("transaction_id") @db.Uuid
+  locationId        String?   @map("location_id") @db.Uuid // locatie waar ingewisseld
+  redeemedByStaffId String?   @map("redeemed_by_staff_id") @db.Uuid
+
+  // Reden/bron van uitgifte — vrije tekst voor weergave in Klantprofiel
+  // en analytics (bijv. "Birthday Journey", "Handmatig door Henny").
+  issueReason       String?   @map("issue_reason")
+  issueSource       String    @default("manual") @map("issue_source") // manual | campaign | journey | reward_engine | api
+
+  // Welke reminder-dagen (uit VoucherTemplate.reminderDaysBeforeExpiry)
+  // al zijn verstuurd voor DEZE voucher — voorkomt dat de "nog 3 dagen
+  // geldig"-melding twee keer verstuurd wordt als de reminder-job vaker
+  // dan één keer per dag draait.
+  remindersSentDays Int[]     @default([]) @map("reminders_sent_days")
+
+  // Nooit de ruwe voucher-code opslaan — zelfde beveiligingsprincipe als
+  // GiftCard.publicTokenHash: de QR/code bevat alleen dit token, nooit
+  // klantgegevens, en is niet te raden (crypto-random, gehasht in de DB).
+  secureTokenHash   String    @unique @map("secure_token_hash")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  voucherTemplate VoucherTemplate @relation(fields: [voucherTemplateId], references: [id])
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, status])
+  @@index([voucherTemplateId])
+  @@map("customer_vouchers")
 }
 
 // ============================================================================

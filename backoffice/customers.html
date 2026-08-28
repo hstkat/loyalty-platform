@@ -149,6 +149,7 @@
     instellingen: 'admin.read',
     medewerkers: 'admin.read',
     'gift-cards': 'gift_card.read',
+    vouchers: 'voucher.read',
   };
 
   // Alle tabbladen staan standaard op display:none via CSS (zie de
@@ -271,6 +272,7 @@
         <a href="instellingen.html" data-page="instellingen">Instellingen</a>
         <a href="medewerkers.html" data-page="medewerkers">Medewerkers</a>
         <a href="gift-cards.html" data-page="gift-cards">Gift Cards</a>
+        <a href="vouchers.html" data-page="vouchers">Vouchers</a>
       </nav>
       <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
     </div>
@@ -358,6 +360,18 @@
     return res.json();
   }
 
+  async function apiPost(path, body) {
+    const { apiBase } = getConfig();
+    const res = await fetch(apiBase + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getStaffToken() },
+      body: JSON.stringify(body || {}),
+    });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
+    if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.message || 'API-fout: ' + res.status); }
+    return res.json();
+  }
+
   let allCustomers = [];
   let selectedId = null;
 
@@ -413,10 +427,11 @@
 
     try {
       const { orgId } = getConfig();
-      const [customer, wallet, ledger] = await Promise.all([
+      const [customer, wallet, ledger, vouchers] = await Promise.all([
         apiGet('/organizations/' + orgId + '/customers/' + id),
         apiGet('/organizations/' + orgId + '/customers/' + id + '/wallet').catch(() => null),
         apiGet('/organizations/' + orgId + '/customers/' + id + '/wallet/ledger').catch(() => []),
+        apiGet('/organizations/' + orgId + '/vouchers/customer/' + id).catch(() => []),
       ]);
 
       const name = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || '(naam onbekend)';
@@ -434,6 +449,21 @@
               <div class="meta">${formatDate(entry.occurredAt)}${entry.reason ? ' · ' + entry.reason : ''}</div>
             </div>
             <div class="amount ${cls}">${sign}${Math.round(entry.amount)} pt</div>
+          </div>`;
+        })
+        .join('');
+
+      const VOUCHER_STATUS_LABELS = { active: 'Actief', scheduled: 'Binnenkort geldig', redeemed: 'Ingewisseld', expired: 'Verlopen', cancelled: 'Ingetrokken' };
+      const voucherRows = (Array.isArray(vouchers) ? vouchers : [])
+        .map((v) => {
+          const canCancel = v.status === 'active' || v.status === 'scheduled';
+          const badge = '<span class="action-badge ' + (v.status === 'redeemed' ? 'update' : (v.status === 'cancelled' || v.status === 'expired' ? 'delete' : '')) + '">' + (VOUCHER_STATUS_LABELS[v.status] || v.status) + '</span>';
+          return `<div class="ledger-row">
+            <div>
+              <div class="type">${v.templateName} ${badge}</div>
+              <div class="meta">Geldig ${formatDate(v.validFrom)} t/m ${formatDate(v.validUntil)}${v.issueReason ? ' · ' + v.issueReason : ''}</div>
+            </div>
+            ${canCancel ? `<button class="btn-secondary" data-cancel-voucher="${v.id}" style="font-size:12px;padding:6px 10px;">Intrekken</button>` : ''}
           </div>`;
         })
         .join('');
@@ -458,9 +488,24 @@
           <div class="tile"><div class="label">Geboortedatum</div><div class="value">${customer.dateOfBirth ? formatDate(customer.dateOfBirth) : '—'}</div></div>
         </div>
 
+        <h3 class="section-title">Vouchers</h3>
+        ${voucherRows || '<div class="empty-note">Nog geen vouchers.</div>'}
+
         <h3 class="section-title">Recente mutaties</h3>
         ${ledgerRows || '<div class="empty-note">Nog geen mutaties.</div>'}
       `;
+
+      els.detailPanel.querySelectorAll('[data-cancel-voucher]').forEach((btn) => {
+        btn.addEventListener('click', async () => {
+          if (!confirm('Deze voucher intrekken? Dit kan niet ongedaan worden gemaakt.')) return;
+          try {
+            await apiPost('/organizations/' + orgId + '/vouchers/' + btn.getAttribute('data-cancel-voucher') + '/cancel', { reason: 'Handmatig ingetrokken vanuit klantprofiel' });
+            selectCustomer(id);
+          } catch (err) {
+            alert('Intrekken mislukt: ' + err.message);
+          }
+        });
+      });
     } catch (err) {
       els.detailPanel.innerHTML = '<div class="detail-empty">Kon profiel niet laden: ' + err.message + '</div>';
     }

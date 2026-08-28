@@ -118,6 +118,7 @@ export class CustomerPortalController {
   <nav class="tabbar" id="dashboard-tabbar" style="display:none;">
     <button class="tab-btn active" data-tab="overview">Overzicht</button>
     <button class="tab-btn" data-tab="rewards">Cadeaus</button>
+    <button class="tab-btn" data-tab="vouchers">Vouchers</button>
     <button class="tab-btn" data-tab="history">Historie</button>
     <button class="tab-btn" data-tab="profile">Profiel</button>
   </nav>
@@ -230,6 +231,18 @@ export class CustomerPortalController {
         <div id="db-rewards"></div>
       </div>
 
+      <div id="tab-vouchers" style="display:none;">
+        <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Een voucher is een aparte beloning, los van je tegoed en punten.</p>
+        <div class="section-title" style="margin-top:0;">Beschikbaar</div>
+        <div id="db-vouchers-available"></div>
+        <div class="section-title" id="vouchers-upcoming-title" style="display:none;">Binnenkort geldig</div>
+        <div id="db-vouchers-upcoming"></div>
+        <div class="section-title" id="vouchers-used-title" style="display:none;">Gebruikt</div>
+        <div id="db-vouchers-used"></div>
+        <div class="section-title" id="vouchers-expired-title" style="display:none;">Verlopen</div>
+        <div id="db-vouchers-expired"></div>
+      </div>
+
       <div id="tab-history" style="display:none;">
         <div class="section-title" style="margin-top:0;">Recente historie</div>
         <div id="db-history"></div>
@@ -251,6 +264,17 @@ export class CustomerPortalController {
     </div>
 
   </main>
+</div>
+
+<div id="voucher-detail-overlay" style="display:none;position:fixed;inset:0;background:rgba(14,28,42,0.55);z-index:9999;align-items:center;justify-content:center;padding:20px;">
+  <div style="width:100%;max-width:340px;background:var(--white);border-radius:18px;padding:26px 22px;text-align:center;">
+    <div id="voucher-detail-name" style="font-family:Georgia,serif;font-size:20px;color:var(--navy);margin-bottom:4px;"></div>
+    <div id="voucher-detail-benefit" style="font-size:14px;color:var(--accent-dark);font-weight:600;margin-bottom:10px;"></div>
+    <div id="voucher-detail-terms" style="font-size:12px;color:var(--muted);margin-bottom:14px;"></div>
+    <div id="voucher-detail-qr" style="margin:0 auto 12px;width:180px;height:180px;background:var(--cream);border-radius:10px;display:flex;align-items:center;justify-content:center;"></div>
+    <div id="voucher-detail-validity" style="font-size:12px;color:var(--muted);margin-bottom:16px;"></div>
+    <button class="btn-text" id="voucher-detail-close-btn">Sluiten</button>
+  </div>
 </div>
 
 <script>
@@ -487,6 +511,7 @@ export class CustomerPortalController {
         apiGet('/me/activity', token),
         apiGet('/me/qr-token', token),
         apiGet('/redemption-rates', token),
+        apiGet('/me/vouchers', token),
       ]);
       const me = results[0];
       const giftCards = results[1];
@@ -494,6 +519,7 @@ export class CustomerPortalController {
       const activity = results[3];
       const qr = results[4];
       const rates = results[5];
+      const vouchers = results[6];
 
       document.getElementById('db-name').textContent = [me.firstName, me.lastName].filter(Boolean).join(' ') || 'Gast';
       document.getElementById('db-credit-label').textContent = CREDIT_LABEL;
@@ -568,6 +594,37 @@ export class CustomerPortalController {
         }).join('');
       }
 
+      // -- Vouchers — eigen sectie, los van cadeaus/tegoed hierboven ---------
+      function renderVoucherList(elId, list, emptyText) {
+        const el = document.getElementById(elId);
+        if (!list || list.length === 0) {
+          el.innerHTML = '<div class="empty-note">' + emptyText + '</div>';
+          return;
+        }
+        el.innerHTML = list.map(function (v) {
+          const validUntilLabel = new Date(v.validUntil).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
+          const daysLine = (v.status === 'active' && typeof v.daysLeft === 'number')
+            ? '<div class="item-meta" style="margin-top:2px;font-weight:600;color:var(--accent-dark);">' + (v.daysLeft === 0 ? 'Vandaag laatste dag' : 'Nog ' + v.daysLeft + ' dag' + (v.daysLeft === 1 ? '' : 'en') + ' geldig') + '</div>'
+            : '';
+          return '<div class="list-item voucher-item" data-voucher-id="' + v.id + '" style="cursor:pointer;">'
+            + '<div class="top-row"><span class="item-name">' + v.name + '</span></div>'
+            + '<div class="item-meta">Geldig t/m ' + validUntilLabel + '</div>'
+            + daysLine
+            + '</div>';
+        }).join('');
+        el.querySelectorAll('.voucher-item').forEach(function (item) {
+          item.addEventListener('click', function () { openVoucherDetail(item.dataset.voucherId); });
+        });
+      }
+
+      renderVoucherList('db-vouchers-available', vouchers.available, 'Nog geen beschikbare vouchers.');
+      document.getElementById('vouchers-upcoming-title').style.display = vouchers.upcoming.length ? 'block' : 'none';
+      renderVoucherList('db-vouchers-upcoming', vouchers.upcoming, '');
+      document.getElementById('vouchers-used-title').style.display = vouchers.used.length ? 'block' : 'none';
+      renderVoucherList('db-vouchers-used', vouchers.used, '');
+      document.getElementById('vouchers-expired-title').style.display = vouchers.expired.length ? 'block' : 'none';
+      renderVoucherList('db-vouchers-expired', vouchers.expired, '');
+
       const ENTRY_LABELS = { earn: 'Gespaard', redeem: 'Besteed', bonus: 'Bonus', migration_import: 'Overgezet saldo', transfer: 'Overgeboekt', correction: 'Correctie', sale: 'Cadeaukaart gekocht', top_up: 'Opgewaardeerd' };
 
       const historyEl = document.getElementById('db-history');
@@ -597,6 +654,54 @@ export class CustomerPortalController {
       showScreen('screen-email');
     }
   }
+
+  // -- Voucher-detailweergave: naam, voordeel, voorwaarden, geldigheid,
+  // en een kortlevende QR-code — nooit persoonsgegevens in de QR zelf,
+  // alleen een token dat de kassa server-side opzoekt. -------------------
+  async function openVoucherDetail(voucherId) {
+    const overlay = document.getElementById('voucher-detail-overlay');
+    overlay.style.display = 'flex';
+    document.getElementById('voucher-detail-name').textContent = 'Laden…';
+    document.getElementById('voucher-detail-benefit').textContent = '';
+    document.getElementById('voucher-detail-terms').textContent = '';
+    document.getElementById('voucher-detail-qr').innerHTML = '';
+    document.getElementById('voucher-detail-validity').textContent = '';
+
+    try {
+      const detail = await fetch(API_BASE + '/guest-app/organizations/' + ORG_ID + '/me/vouchers/' + voucherId, {
+        headers: { Authorization: 'Bearer ' + currentSessionToken },
+      }).then(function (r) { return r.json(); });
+
+      document.getElementById('voucher-detail-name').textContent = detail.name;
+      document.getElementById('voucher-detail-benefit').textContent = detail.benefit;
+      document.getElementById('voucher-detail-terms').textContent = detail.terms || '';
+      const validFromLabel = new Date(detail.validFrom).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
+      const validUntilLabel = new Date(detail.validUntil).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
+      document.getElementById('voucher-detail-validity').textContent = 'Geldig ' + validFromLabel + ' t/m ' + validUntilLabel;
+
+      const qrArea = document.getElementById('voucher-detail-qr');
+      if (detail.status !== 'active') {
+        qrArea.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:16px;">Deze voucher is niet (meer) inwisselbaar.</div>';
+        return;
+      }
+
+      const tokenRes = await fetch(API_BASE + '/guest-app/organizations/' + ORG_ID + '/me/vouchers/' + voucherId + '/display-token', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + currentSessionToken },
+      }).then(function (r) { return r.json(); });
+      const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(tokenRes.token);
+      qrArea.innerHTML = '<img src="' + qrUrl + '" width="180" height="180" alt="Voucher-QR">';
+    } catch (err) {
+      document.getElementById('voucher-detail-name').textContent = 'Kon niet laden';
+      document.getElementById('voucher-detail-benefit').textContent = 'Probeer het opnieuw.';
+    }
+  }
+  document.getElementById('voucher-detail-close-btn').addEventListener('click', function () {
+    document.getElementById('voucher-detail-overlay').style.display = 'none';
+  });
+  document.getElementById('voucher-detail-overlay').addEventListener('click', function (e) {
+    if (e.target === this) this.style.display = 'none';
+  });
 
   document.getElementById('save-password-btn').addEventListener('click', async function () {
     const newPassword = document.getElementById('new-password-input').value;
@@ -630,7 +735,7 @@ export class CustomerPortalController {
     btn.addEventListener('click', function () {
       document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
       btn.classList.add('active');
-      ['overview', 'rewards', 'history', 'profile'].forEach(function (t) {
+      ['overview', 'rewards', 'vouchers', 'history', 'profile'].forEach(function (t) {
         document.getElementById('tab-' + t).style.display = t === btn.dataset.tab ? 'block' : 'none';
       });
       scrollToTop();

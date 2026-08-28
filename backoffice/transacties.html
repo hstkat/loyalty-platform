@@ -234,6 +234,7 @@
     instellingen: 'admin.read',
     medewerkers: 'admin.read',
     'gift-cards': 'gift_card.read',
+    vouchers: 'voucher.read',
   };
 
   // Alle tabbladen staan standaard op display:none via CSS (zie de
@@ -356,6 +357,7 @@
         <a href="instellingen.html" data-page="instellingen">Instellingen</a>
         <a href="medewerkers.html" data-page="medewerkers">Medewerkers</a>
         <a href="gift-cards.html" data-page="gift-cards">Gift Cards</a>
+        <a href="vouchers.html" data-page="vouchers">Vouchers</a>
       </nav>
       <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
     </div>
@@ -458,6 +460,17 @@
       <input type="number" id="gc-amount-input" placeholder="Te besteden bedrag (€)" min="0.01" step="0.01" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;" disabled>
       <button type="button" class="redeem-confirm-btn" id="gc-confirm-btn" disabled>Cadeaukaart-betaling bevestigen</button>
       <div class="redeem-result" id="gc-result"></div>
+    </div>
+
+    <!-- Voucher inwisselen — bewust GEEN bedrag/saldo hier, een voucher is
+         een op-zichzelfstaande beloning (bijv. "Gratis cocktail"), geen
+         geldbedrag zoals tegoed of cadeaukaartsaldo hierboven. -->
+    <div class="redeem-panel" id="voucher-panel" style="display:none;">
+      <div class="redeem-title">Voucher inwisselen</div>
+      <input type="text" id="vc-token-input" placeholder="Scan of typ de voucher-code…" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;">
+      <div id="vc-lookup-result" style="font-size:13px; color:var(--muted); margin-bottom:10px;"></div>
+      <button type="button" class="redeem-confirm-btn" id="vc-confirm-btn" disabled>Voucher inwisselen</button>
+      <div class="redeem-result" id="vc-result"></div>
     </div>
 
     <div class="error-card" id="error-card"></div>
@@ -841,6 +854,12 @@
       resetGiftCardPanel();
       document.getElementById('giftcard-panel').style.display = 'block';
 
+      // Voucher hoort ALTIJD bij een specifieke klant (in tegenstelling
+      // tot de anonieme cadeaukaart hierboven) — alleen tonen als er een
+      // klant gekoppeld is aan deze transactie.
+      resetVoucherPanel();
+      document.getElementById('voucher-panel').style.display = lastCustomerId ? 'block' : 'none';
+
       els.form.reset();
       els.customerHidden.value = '';
       els.selectedCustomer.classList.remove('show');
@@ -1083,6 +1102,73 @@
       gcEls.confirmBtn.disabled = false;
     } finally {
       gcEls.confirmBtn.textContent = 'Cadeaukaart-betaling bevestigen';
+    }
+  });
+
+  // -- Voucher inwisselen — losse lookup + directe inwissel-flow, geen
+  // bedrag nodig (een voucher is een op-zichzelfstaand voordeel, geen
+  // geldbedrag zoals tegoed/cadeaukaartsaldo hierboven). ------------------
+
+  const vcEls = {
+    tokenInput: document.getElementById('vc-token-input'),
+    lookupResult: document.getElementById('vc-lookup-result'),
+    confirmBtn: document.getElementById('vc-confirm-btn'),
+    resultDiv: document.getElementById('vc-result'),
+  };
+  let vcLookedUpToken = null;
+
+  function resetVoucherPanel() {
+    vcEls.tokenInput.value = '';
+    vcEls.lookupResult.textContent = '';
+    vcEls.confirmBtn.disabled = true;
+    vcEls.resultDiv.textContent = '';
+    vcLookedUpToken = null;
+  }
+
+  let vcLookupTimeout = null;
+  vcEls.tokenInput.addEventListener('input', () => {
+    clearTimeout(vcLookupTimeout);
+    const token = vcEls.tokenInput.value.trim();
+    vcEls.confirmBtn.disabled = true;
+    if (!token) { vcEls.lookupResult.textContent = ''; return; }
+    vcLookupTimeout = setTimeout(async () => {
+      vcEls.lookupResult.textContent = 'Voucher controleren…';
+      try {
+        const { orgId } = getConfig();
+        const voucher = await apiGet('/organizations/' + orgId + '/vouchers/lookup?token=' + encodeURIComponent(token));
+        const STATUS_LABELS = { active: 'geldig', scheduled: 'nog niet geldig', redeemed: 'al ingewisseld', expired: 'verlopen', cancelled: 'ingetrokken' };
+        if (voucher.status !== 'active') {
+          vcEls.lookupResult.innerHTML = '<span class="warn">' + voucher.templateName + ' (' + voucher.customerName + ') — ' + (STATUS_LABELS[voucher.status] || voucher.status) + ', kan niet ingewisseld worden.</span>';
+          return;
+        }
+        vcLookedUpToken = token;
+        vcEls.lookupResult.textContent = voucher.templateName + ' — ' + voucher.benefit + ' — voor ' + voucher.customerName;
+        vcEls.confirmBtn.disabled = false;
+      } catch {
+        vcEls.lookupResult.innerHTML = '<span class="warn">Voucher niet gevonden.</span>';
+      }
+    }, 300);
+  });
+
+  vcEls.confirmBtn.addEventListener('click', async () => {
+    if (!vcLookedUpToken) return;
+    vcEls.confirmBtn.disabled = true;
+    vcEls.confirmBtn.textContent = 'Bezig…';
+    try {
+      const { orgId, locationId } = getConfig();
+      const result = await apiPost('/organizations/' + orgId + '/vouchers/redeem', {
+        secureToken: vcLookedUpToken,
+        locationId,
+        transactionId: lastTransactionId,
+      });
+      vcEls.resultDiv.textContent = '✓ ' + result.templateName + ' (' + result.benefit + ') ingewisseld.';
+      vcEls.tokenInput.value = '';
+      vcLookedUpToken = null;
+    } catch (err) {
+      vcEls.resultDiv.innerHTML = '<span class="warn">Inwisselen mislukt: ' + err.message + '</span>';
+      vcEls.confirmBtn.disabled = false;
+    } finally {
+      vcEls.confirmBtn.textContent = 'Voucher inwisselen';
     }
   });
 </script>

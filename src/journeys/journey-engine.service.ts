@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { WalletService } from '../wallet/wallet.service';
+import { VouchersService } from '../vouchers/vouchers.service';
 
 /**
  * Implements Module 8's flow execution engine (design doc sections 1, 5,
@@ -9,11 +10,12 @@ import { WalletService } from '../wallet/wallet.service';
  * until a `wait` node pauses the enrollment (status -> 'waiting',
  * resumeAt set) or an `end` node completes it.
  *
- * SIMPLIFICATION vs. the design doc: `give_reward` and `webhook` nodes
- * are not implemented (logged as a no-op success). There's no real cron
- * — `runScheduler()` must be triggered externally (e.g. an actual
- * scheduled job in production, or manually via the API for this build
- * pass). See README.
+ * SIMPLIFICATION vs. the design doc: `webhook` nodes are not implemented
+ * (logged as a no-op success). `give_reward` now issues a voucher when
+ * configured with `voucherTemplateId` (see VouchersService) — other
+ * reward types remain a no-op. There's no real cron — `runScheduler()`
+ * must be triggered externally (e.g. an actual scheduled job in
+ * production, or manually via the API for this build pass). See README.
  */
 @Injectable()
 export class JourneyEngineService {
@@ -23,6 +25,7 @@ export class JourneyEngineService {
     private prisma: PrismaService,
     private messaging: MessagingService,
     private wallet: WalletService,
+    private vouchers: VouchersService,
   ) {}
 
   /**
@@ -199,7 +202,27 @@ export class JourneyEngineService {
             break;
           }
 
-          case 'give_reward':
+          case 'give_reward': {
+            // Nu geïmplementeerd voor vouchers (was voorheen een no-op —
+            // zie klasse-comment): geeft een voucher-template uit aan de
+            // klant in deze enrollment. Andere reward-types (bijv. iets
+            // uit de puntenwinkel) blijven een no-op tot dat apart
+            // gebouwd wordt.
+            const config = node.config as { voucherTemplateId?: string };
+            if (config.voucherTemplateId) {
+              const orgId = await this.getOrgId(enrollment.customerId);
+              const voucher = await this.vouchers.issueVoucher(
+                orgId,
+                { customerId: enrollment.customerId, voucherTemplateId: config.voucherTemplateId, journeyId: enrollment.journeyId, issueSource: 'journey', issueReason: `Journey (enrollment ${enrollmentId})` },
+                { actorType: 'journey', actorId: enrollment.journeyId },
+              );
+              await this.logExecution(enrollmentId, node.id, 'success', { voucherId: voucher.id });
+            } else {
+              await this.logExecution(enrollmentId, node.id, 'success', { note: 'geen voucherTemplateId geconfigureerd, overgeslagen' });
+            }
+            break;
+          }
+
           case 'webhook':
             // Not implemented in this build pass — see class-level note.
             await this.logExecution(enrollmentId, node.id, 'success', { note: 'not implemented, skipped' });

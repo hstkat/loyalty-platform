@@ -1,4 +1,4 @@
-import { IsArray, IsIn, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsIn, IsObject, IsOptional, IsString, IsUUID } from 'class-validator';
 
 const CHANNELS = ['push', 'wallet', 'email', 'sms', 'whatsapp'] as const;
 const CATEGORIES = ['transactional', 'marketing'] as const;
@@ -46,4 +46,13 @@ export class SendMessageDto {
 
   @IsIn(CHANNELS)
   channel!: (typeof CHANNELS)[number];
+
+  // Optioneel: extra {{variabelen}} bovenop de vaste basisset
+  // (first_name/credit_balance/favorite_location/tier) — voor modules
+  // die iets specifieks in het bericht willen zetten, bijv. de
+  // Voucher-module met {{voucher_name}}/{{days_left}}. Overschrijft
+  // nooit de basisset, alleen aanvullend.
+  @IsOptional()
+  @IsObject()
+  extraVariables?: Record<string, string | number>;
 }

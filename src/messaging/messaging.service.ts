@@ -40,7 +40,7 @@ export class MessagingService {
 
     const results = [];
     for (const customerId of dto.customerIds) {
-      const result = await this.sendToCustomer(orgId, sendRequest.id, customerId, dto.templateGroupKey, dto.channel);
+      const result = await this.sendToCustomer(orgId, sendRequest.id, customerId, dto.templateGroupKey, dto.channel, dto.extraVariables);
       results.push(result);
     }
 
@@ -53,6 +53,7 @@ export class MessagingService {
     customerId: string,
     templateGroupKey: string,
     channel: string,
+    extraVariables?: Record<string, string | number>,
   ) {
     const customer = await this.prisma.customer.findFirst({
       where: { id: customerId, organizationId: orgId },
@@ -142,6 +143,7 @@ export class MessagingService {
       credit_balance: customer.wallet ? `€${Number(customer.wallet.availableBalance).toFixed(2)}` : '€0,00',
       favorite_location: customer.favoriteLocation?.name ?? '',
       tier: customer.tierId ?? '',
+      ...(extraVariables ?? {}),
     };
     const renderedBody = renderTemplate(resolvedTemplate.body, {
       ...variables,

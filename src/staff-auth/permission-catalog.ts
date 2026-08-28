@@ -51,6 +51,10 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { key: 'loyalty_card.read', label: 'Spaarkaarten bekijken', group: 'Spaarkaarten' },
   { key: 'loyalty_card.write', label: 'Spaarkaarten uitgeven/blokkeren', group: 'Spaarkaarten' },
 
+  { key: 'voucher.read', label: 'Vouchers bekijken', group: 'Vouchers' },
+  { key: 'voucher.write', label: 'Vouchers uitgeven/intrekken/templates beheren', group: 'Vouchers' },
+  { key: 'voucher.redeem', label: 'Vouchers inwisselen bij de kassa', group: 'Vouchers' },
+
   { key: 'campaign.read', label: 'Campagnes bekijken', group: 'Campagnes' },
   { key: 'campaign.write', label: 'Campagnes aanmaken', group: 'Campagnes' },
   { key: 'campaign.launch', label: 'Campagnes starten', group: 'Campagnes' },
