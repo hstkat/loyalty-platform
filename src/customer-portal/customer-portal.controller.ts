@@ -219,6 +219,8 @@ export class CustomerPortalController {
 
         <div class="expiring-note" id="db-expiring" style="display:none;"></div>
 
+        <div id="db-vouchers-banner" style="display:none;"></div>
+
         <div class="section-title">Cadeaukaarten</div>
         <div id="db-giftcards"></div>
       </div>
@@ -627,6 +629,31 @@ export class CustomerPortalController {
       renderVoucherList('db-vouchers-used', vouchers.used, '');
       document.getElementById('vouchers-expired-title').style.display = vouchers.expired.length ? 'block' : 'none';
       renderVoucherList('db-vouchers-expired', vouchers.expired, '');
+
+      // Actieve vouchers zijn bewust een marketing-tool — die moeten
+      // meteen opvallen op het Overzicht, niet pas na een klik op het
+      // Vouchers-tabblad. Eén opvallende banner per actieve voucher.
+      const bannerEl = document.getElementById('db-vouchers-banner');
+      if (vouchers.available.length === 0) {
+        bannerEl.style.display = 'none';
+        bannerEl.innerHTML = '';
+      } else {
+        bannerEl.style.display = 'block';
+        bannerEl.innerHTML = vouchers.available.map(function (v) {
+          const daysLabel = typeof v.daysLeft === 'number'
+            ? (v.daysLeft === 0 ? 'Vandaag laatste dag' : 'Nog ' + v.daysLeft + ' dag' + (v.daysLeft === 1 ? '' : 'en') + ' geldig')
+            : '';
+          return '<div class="voucher-banner-item" data-voucher-id="' + v.id + '" style="cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-radius:14px;padding:16px 18px;margin-bottom:10px;color:#fff;">'
+            + '<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;margin-bottom:4px;">🎁 Voucher voor jou</div>'
+            + '<div style="font-family:Georgia,serif;font-size:18px;margin-bottom:2px;">' + v.name + '</div>'
+            + '<div style="font-size:13px;opacity:0.9;">' + v.benefit + '</div>'
+            + (daysLabel ? '<div style="font-size:12px;font-weight:600;margin-top:8px;">' + daysLabel + '</div>' : '')
+            + '</div>';
+        }).join('');
+        bannerEl.querySelectorAll('.voucher-banner-item').forEach(function (item) {
+          item.addEventListener('click', function () { openVoucherDetail(item.dataset.voucherId); });
+        });
+      }
 
       const ENTRY_LABELS = { earn: 'Gespaard', redeem: 'Besteed', bonus: 'Bonus', migration_import: 'Overgezet saldo', transfer: 'Overgeboekt', correction: 'Correctie', sale: 'Cadeaukaart gekocht', top_up: 'Opgewaardeerd' };
 
