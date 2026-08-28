@@ -588,10 +588,12 @@
   document.getElementById('tpl-cancel-edit-btn').addEventListener('click', resetTemplateForm);
 
   document.getElementById('tpl-save-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('tpl-save-btn');
     const errorEl = document.getElementById('tpl-form-error');
     const successEl = document.getElementById('tpl-form-success');
     errorEl.textContent = '';
     successEl.textContent = '';
+    if (btn.disabled) return;
     const { orgId } = getConfig();
 
     const name = document.getElementById('tpl-name').value.trim();
@@ -624,6 +626,9 @@
       payload.validUntil = until;
     }
 
+    const originalLabel = editingTemplateId ? 'Wijzigingen opslaan' : 'Template aanmaken';
+    btn.disabled = true;
+    btn.textContent = 'Bezig…';
     try {
       if (editingTemplateId) {
         await apiPatch('/organizations/' + orgId + '/vouchers/templates/' + editingTemplateId, payload);
@@ -636,6 +641,9 @@
       await loadTemplates();
     } catch (err) {
       errorEl.textContent = err.message;
+      btn.textContent = originalLabel;
+    } finally {
+      btn.disabled = false;
     }
   });
 
@@ -689,28 +697,36 @@
   });
 
   document.getElementById('issue-voucher-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('issue-voucher-btn');
     const errorEl = document.getElementById('issue-error');
     const successEl = document.getElementById('issue-success');
     errorEl.textContent = '';
     successEl.textContent = '';
+    if (btn.disabled) return; // extra vangnet tegen dubbelklikken tijdens het verzenden
     if (!selectedCustomerId) { errorEl.textContent = 'Klik eerst op een klant in de zoekresultaten om die te selecteren (je ziet dan een vinkje ✓ verschijnen).'; return; }
     const templateId = document.getElementById('issue-template-select').value;
     if (!templateId) { errorEl.textContent = 'Kies een voucher-template.'; return; }
 
     const { orgId } = getConfig();
+    btn.disabled = true;
+    btn.textContent = 'Bezig…';
     try {
       await apiPost('/organizations/' + orgId + '/vouchers/issue', {
         customerId: selectedCustomerId,
         voucherTemplateId: templateId,
         issueReason: document.getElementById('issue-reason').value.trim() || undefined,
       });
-      successEl.textContent = 'Voucher uitgegeven.';
+      successEl.innerHTML = '✓ Voucher uitgegeven.';
+      successEl.style.fontWeight = '600';
       selectedCustomerId = null;
       document.getElementById('issue-selected-customer').style.display = 'none';
       document.getElementById('issue-clear-customer-btn').style.display = 'none';
       document.getElementById('issue-reason').value = '';
     } catch (err) {
       errorEl.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Voucher uitgeven';
     }
   });
 
