@@ -8,6 +8,10 @@ export interface IssueGiftCardDto {
   recipientEmail?: string;
   senderName?: string;
   senderEmail?: string;
+  // Alleen relevant bij online aankoop (startOnlinePurchase) — welke
+  // website (Het Strand of Zomers) de koper vandaan kwam, zodat de
+  // bedankpagina na betaling naar de juiste site kan terugverwijzen.
+  brand?: string;
   personalMessage?: string;
   scheduledSendAt?: string;
   expiresAt?: string;

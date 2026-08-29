@@ -7,9 +7,11 @@ import { GiftCardsService } from './gift-cards.service';
 import { MollieService } from '../common/mollie.service';
 
 interface GiftCardBrandConfig {
+  slug: string;
   name: string;
   accent: string;
   accentDark: string;
+  websiteUrl: string;
 }
 
 // Zelfde merken/kleuren als de Mijn Tegoed-portal (customer-portal.controller.ts)
@@ -17,10 +19,10 @@ interface GiftCardBrandConfig {
 // controller kent geen afhankelijkheid op de portal-module en dit is
 // een kleine, stabiele config die zelden wijzigt.
 const GIFT_CARD_BRANDS: Record<string, GiftCardBrandConfig> = {
-  'het-strand': { name: 'Het Strand', accent: '#c47a45', accentDark: '#a1642f' },
-  zomers: { name: 'Zomers Beachclub & Brewery', accent: '#497a9d', accentDark: '#376079' },
+  'het-strand': { slug: 'het-strand', name: 'Het Strand', accent: '#c47a45', accentDark: '#a1642f', websiteUrl: 'https://hetstrand.nl' },
+  zomers: { slug: 'zomers', name: 'Zomers Beachclub & Brewery', accent: '#497a9d', accentDark: '#376079', websiteUrl: 'https://zomersbeachclub.nl' },
 };
-const DEFAULT_GIFT_CARD_BRAND: GiftCardBrandConfig = { name: 'Het Strand & Zomers', accent: '#e8604a', accentDark: '#c94d38' };
+const DEFAULT_GIFT_CARD_BRAND: GiftCardBrandConfig = { slug: '', name: 'Het Strand & Zomers', accent: '#e8604a', accentDark: '#c94d38', websiteUrl: 'https://hetstrand.nl' };
 
 /**
  * Publiek, niet-geauthenticeerd — net als bij de fysieke loyaltykaarten
@@ -52,7 +54,9 @@ export class GiftCardCheckoutController {
 
   @Get('thank-you/:giftCardId')
   @Header('Content-Type', 'text/html; charset=utf-8')
-  async thankYouPage(@Param('giftCardId') giftCardId: string, @Res() res: Response) {
+  async thankYouPage(@Param('giftCardId') giftCardId: string, @Query('brand') brandParam: string | undefined, @Res() res: Response) {
+    const brand = (brandParam && GIFT_CARD_BRANDS[brandParam]) || DEFAULT_GIFT_CARD_BRAND;
+    const brandLabel = brand.slug ? brand.name.toUpperCase() : 'HET STRAND &amp; ZOMERS';
     const giftCard = await this.prisma.giftCard.findUnique({
       where: { id: giftCardId },
       select: { status: true, giftCardNumber: true, currentBalance: true, recipientEmail: true, molliePaymentId: true },
@@ -68,6 +72,8 @@ export class GiftCardCheckoutController {
       p { font-size: 14px; color: rgba(240,244,247,0.8); line-height: 1.6; }
       a { color: var(--coral-light); }
       .btn { display: inline-block; margin-top: 12px; background: var(--coral); color: var(--white); text-decoration: none; padding: 12px 22px; border-radius: 8px; font-weight: 600; font-size: 14px; }
+      .redirect-note { margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 12.5px; color: var(--muted); }
+      .redirect-note a { color: var(--white); text-decoration: underline; }
     `;
 
     // De webhook kan iets later aankomen dan de terugkeer van de klant
@@ -80,25 +86,48 @@ export class GiftCardCheckoutController {
     // stond, in plaats van het zelf op te slaan.
     let body: string;
     if (!giftCard) {
-      body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Niet gevonden</h1><p>Deze bestelling kon niet worden gevonden.</p>`;
+      body = `<div class="brand">${brandLabel}</div><h1>Niet gevonden</h1><p>Deze bestelling kon niet worden gevonden.</p>`;
     } else if (giftCard.status === 'active') {
       if (giftCard.recipientEmail) {
-        body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${giftCard.recipientEmail}.</p>`;
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${giftCard.recipientEmail}.</p>`;
       } else {
         const rawToken = giftCard.molliePaymentId ? await this.recoverRawToken(giftCard.molliePaymentId) : null;
         const linkBlock = rawToken
           ? `<a class="btn" href="/g/${rawToken}">Bekijk mijn cadeaukaart</a><p style="margin-top:14px;font-size:12px;">Bewaar deze link — dit is je enige toegang tot de kaart.</p>`
           : `<p>Er ging iets mis bij het ophalen van je kaartlink. Neem contact op met de zaak, onder vermelding van kaartnummer ${giftCard.giftCardNumber}.</p>`;
-        body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}.</p>${linkBlock}`;
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}.</p>${linkBlock}`;
       }
     } else {
       const deliveryNote = giftCard.recipientEmail
         ? 'je ontvangt de cadeaukaart zo snel mogelijk per e-mail.'
         : 'ververs deze pagina over een moment — je krijgt dan een link naar je kaart.';
-      body = `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — ${deliveryNote}</p>`;
+      body = `<div class="brand">${brandLabel}</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — ${deliveryNote}</p>`;
     }
 
-    res.status(200).send(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Bedankt</title><style>${styles}</style></head><body><div class="card">${body}</div></body></html>`);
+    // Automatisch terug naar de website na 10 seconden — met zichtbare
+    // aftelling en een directe link als iemand niet wil wachten. Geen
+    // meta-refresh (die kan de countdown-tekst niet live bijwerken);
+    // gewoon JS, met de handmatige link als terugval voor het geval JS
+    // faalt of iemand 'm eerder wil gebruiken.
+    const redirectScript = `
+      <script>
+        (function () {
+          var seconds = 10;
+          var el = document.getElementById('redirect-countdown');
+          var timer = setInterval(function () {
+            seconds -= 1;
+            if (el) el.textContent = seconds;
+            if (seconds <= 0) {
+              clearInterval(timer);
+              window.location.href = ${JSON.stringify(brand.websiteUrl)};
+            }
+          }, 1000);
+        })();
+      </script>
+    `;
+    body += `<div class="redirect-note">Je wordt over <span id="redirect-countdown">10</span> seconden teruggestuurd naar de website. <a href="${brand.websiteUrl}">Ga nu direct terug</a></div>`;
+
+    res.status(200).send(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Bedankt</title><style>${styles}</style></head><body><div class="card">${body}</div>${redirectScript}</body></html>`);
   }
 
   @Get('buy/:orgId')
@@ -117,6 +146,7 @@ export class GiftCardCheckoutController {
     @Body()
     body: {
       originalValue: number;
+      brand?: string;
       recipientName?: string;
       recipientEmail?: string;
       senderName?: string;
@@ -296,6 +326,7 @@ export class GiftCardCheckoutController {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             originalValue: amount,
+            brand: ${JSON.stringify(brand.slug)},
             recipientName: document.getElementById('recipient-name').value || undefined,
             recipientEmail: recipientEmail || undefined,
             senderName: senderName,

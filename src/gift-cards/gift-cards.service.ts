@@ -289,7 +289,7 @@ export class GiftCardsService {
     const paymentResult = await this.mollie.createPayment({
       amount: dto.originalValue,
       description: `Cadeaukaart ${giftCardNumber} (€${dto.originalValue.toFixed(2)})`,
-      redirectUrl: `${publicAppUrl}/gift-cards/thank-you/${giftCard.id}`,
+      redirectUrl: `${publicAppUrl}/gift-cards/thank-you/${giftCard.id}${dto.brand ? '?brand=' + encodeURIComponent(dto.brand) : ''}`,
       webhookUrl: `${publicAppUrl}/gift-cards/mollie-webhook`,
       metadata: { giftCardId: giftCard.id, organizationId: orgId, rawToken: token },
     });
