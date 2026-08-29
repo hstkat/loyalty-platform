@@ -153,7 +153,7 @@ export class CustomerPortalController {
     <div class="screen active" id="screen-email">
       <div class="login-card">
         <h1>Mijn Tegoed</h1>
-        <p>Bekijk je Beach Credit, punten, cadeaukaarten en meer.</p>
+        <p id="email-screen-subtitle">Bekijk je Beach Credit, punten, cadeaukaarten en meer.</p>
         <input type="email" id="email-input" name="login-email" placeholder="E-mailadres" autocomplete="email">
         <button class="btn-primary" id="request-code-btn">Verstuur code</button>
         <div class="error-text" id="email-error"></div>
@@ -170,6 +170,7 @@ export class CustomerPortalController {
         <input type="password" id="pw-password-input" name="pwlogin-password" placeholder="Wachtwoord" autocomplete="current-password">
         <button class="btn-primary" id="password-login-btn">Inloggen</button>
         <div class="error-text" id="password-login-error"></div>
+        <button class="btn-text" id="forgot-password-btn">Wachtwoord vergeten?</button>
         <button class="btn-text" id="back-to-email-from-password-btn">Inloggen met code in plaats daarvan</button>
         <button class="btn-text" id="go-to-signup-btn">Nog geen account? Inschrijven</button>
       </div>
@@ -315,6 +316,13 @@ export class CustomerPortalController {
   let pendingEmail = '';
   let pendingRegistrationId = null;
   let pendingSignupProfile = null;
+  // Er is geen apart "wachtwoord vergeten"-e-mailtraject — de bestaande
+  // code-inlog werkt daar al functioneel voor (geen wachtwoord nodig).
+  // Deze vlag zorgt er alleen voor dat we iemand die expliciet op
+  // "Wachtwoord vergeten?" klikte, na het inloggen met de code meteen
+  // naar het nieuw-wachtwoord-veld brengen, i.p.v. gewoon op Overzicht
+  // te laten staan.
+  let passwordResetRequested = false;
 
   // -- Hoogte doorgeven aan de omringende pagina (bijv. een WordPress-
   // iframe-embed) — zodat de HELE pagina normaal scrolt in plaats van
@@ -393,7 +401,18 @@ export class CustomerPortalController {
     document.getElementById('pw-email-input').value = document.getElementById('email-input').value.trim();
     showScreen('screen-password');
   });
-  document.getElementById('back-to-email-from-password-btn').addEventListener('click', function () { showScreen('screen-email'); });
+  document.getElementById('back-to-email-from-password-btn').addEventListener('click', function () {
+    document.getElementById('email-screen-subtitle').textContent = 'Bekijk je Beach Credit, punten, cadeaukaarten en meer.';
+    passwordResetRequested = false;
+    showScreen('screen-email');
+  });
+  document.getElementById('forgot-password-btn').addEventListener('click', function () {
+    const typedEmail = document.getElementById('pw-email-input').value.trim();
+    if (typedEmail) document.getElementById('email-input').value = typedEmail;
+    document.getElementById('email-screen-subtitle').textContent = 'Geen probleem — log in met een eenmalige code, en stel daarna meteen een nieuw wachtwoord in.';
+    passwordResetRequested = true;
+    showScreen('screen-email');
+  });
 
   document.getElementById('go-to-signup-btn').addEventListener('click', function () {
     document.getElementById('su-email').value = document.getElementById('pw-email-input').value.trim();
@@ -493,7 +512,20 @@ export class CustomerPortalController {
         }
       } else {
         localStorage.setItem(STORAGE_KEY, result.token);
-        loadDashboard(result.token);
+        await loadDashboard(result.token);
+        if (passwordResetRequested) {
+          passwordResetRequested = false;
+          const profileTabBtn = document.querySelector('.tab-btn[data-tab="profile"]');
+          if (profileTabBtn) profileTabBtn.click();
+          const successEl = document.getElementById('password-save-success');
+          const newPasswordInput = document.getElementById('new-password-input');
+          if (successEl) successEl.textContent = 'Je bent ingelogd — stel hieronder je nieuwe wachtwoord in.';
+          if (newPasswordInput) {
+            newPasswordInput.focus();
+            newPasswordInput.style.borderColor = 'var(--accent)';
+            setTimeout(function () { newPasswordInput.style.borderColor = ''; }, 4000);
+          }
+        }
       }
     } catch (err) {
       errorEl.textContent = err.message;
