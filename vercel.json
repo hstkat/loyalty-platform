@@ -4,13 +4,11 @@
   "installCommand": "npm install",
   "functions": {
     "api/index.ts": {
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "backoffice/**"
     }
   },
-  "rewrites": [
-    { "source": "/backoffice/:path*", "destination": "/backoffice/:path*" },
-    { "source": "/(.*)", "destination": "/api" }
-  ],
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
   "crons": [
     {
       "path": "/cron/daily-closing",
