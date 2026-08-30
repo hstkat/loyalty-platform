@@ -738,12 +738,20 @@
    * sticker — alleen versleuteld in de QR — zodat iemand die de sticker
    * ziet 'm niet zomaar kan overtypen/doorgeven; scannen is de enige weg.
    */
+  /**
+   * Formaat exact afgestemd op de Brother QL-700 met 62×29mm-etiketten
+   * (de gangbare DK-11209-rol). @page zet het papierformaat zodat de
+   * printer/browser-printdialoog automatisch het juiste formaat
+   * aanstuurt — controleer bij het printen wel of in het printvenster
+   * zelf ook "62 x 29mm"/DK-11209 als mediaformaat geselecteerd staat,
+   * dat zet de browser niet altijd automatisch goed.
+   */
   function printGiftCardSticker(cardNumber, token) {
     const { apiBase } = getConfig();
     const viewUrl = apiBase + '/g/' + token;
-    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' + encodeURIComponent(viewUrl);
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(viewUrl);
 
-    const printWindow = window.open('', '_blank', 'width=420,height=560');
+    const printWindow = window.open('', '_blank', 'width=420,height=300');
     if (!printWindow) { alert('Pop-up geblokkeerd — sta pop-ups toe voor deze pagina om te kunnen printen.'); return; }
     printWindow.document.write(`<!DOCTYPE html>
 <html lang="nl">
@@ -751,20 +759,28 @@
 <meta charset="UTF-8">
 <title>Sticker ${cardNumber}</title>
 <style>
+  @page { size: 62mm 29mm; margin: 0; }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 24px; font-family: -apple-system, 'Inter', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }
-  img { width: 260px; height: 260px; }
-  .card-number { font-size: 20px; font-weight: 700; letter-spacing: 0.04em; margin-top: 14px; font-family: 'Courier New', monospace; }
-  .hint { font-size: 11px; color: #888; margin-top: 6px; }
-  button { margin-top: 24px; padding: 10px 20px; border-radius: 8px; border: none; background: #1b3a5c; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; }
-  @media print { button, .hint { display: none; } body { padding: 0; } }
+  html, body { margin: 0; padding: 0; }
+  body { width: 62mm; height: 29mm; font-family: -apple-system, 'Inter', sans-serif; display: flex; align-items: center; gap: 2mm; padding: 1.5mm; }
+  img { width: 24mm; height: 24mm; flex-shrink: 0; }
+  .text-block { display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+  .brand-label { font-size: 6.5px; letter-spacing: 0.06em; text-transform: uppercase; color: #555; margin-bottom: 1.5mm; }
+  .card-number { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; font-family: 'Courier New', monospace; line-height: 1.2; word-break: break-all; }
+  .hint { font-size: 5.5px; color: #888; margin-top: 1.5mm; }
+  button { padding: 8px 16px; border-radius: 6px; border: none; background: #1b3a5c; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
+  @media print { .print-controls { display: none; } }
+  @media screen { body { border: 1px dashed #ccc; margin: 20px auto; } }
 </style>
 </head>
 <body>
   <img src="${qrUrl}" alt="QR-code">
-  <div class="card-number">${cardNumber}</div>
-  <div class="hint">Scan om het kadobon-saldo te bekijken</div>
-  <button onclick="window.print()">Printen</button>
+  <div class="text-block">
+    <div class="brand-label">Kadobon</div>
+    <div class="card-number">${cardNumber}</div>
+    <div class="hint">Scan voor saldo</div>
+  </div>
+  <div class="print-controls" style="position:fixed;top:32mm;left:0;"><button onclick="window.print()">Printen</button></div>
 </body>
 </html>`);
     printWindow.document.close();
