@@ -29,7 +29,7 @@ export class AnalyticsService {
       vipCount,
     ] = await Promise.all([
       this.prisma.customer.count({ where: { organizationId: orgId, loyaltyStatus: 'active', deletedAt: null } }),
-      this.prisma.customer.count({ where: { organizationId: orgId, createdAt: { gte: monthStart } } }),
+      this.prisma.customer.count({ where: { organizationId: orgId, createdAt: { gte: monthStart }, deletedAt: null } }),
       this.prisma.transaction.findMany({
         where: { organizationId: orgId, status: 'completed', customerId: { not: null }, occurredAt: { gte: monthStart } },
         select: { totalAmount: true, customerId: true },
@@ -47,7 +47,7 @@ export class AnalyticsService {
         _sum: { remainingAmount: true },
       }),
       this.prisma.churnRiskScore.count({ where: { organizationId: orgId, isAtRisk: true } }),
-      this.prisma.customer.count({ where: { organizationId: orgId, tierId: { not: null } } }),
+      this.prisma.customer.count({ where: { organizationId: orgId, tierId: { not: null }, deletedAt: null } }),
     ]);
 
     const loyaltyRevenue = monthTransactions.reduce((sum, t) => sum + Number(t.totalAmount), 0);
