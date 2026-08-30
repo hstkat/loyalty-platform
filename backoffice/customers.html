@@ -293,6 +293,7 @@
     <span id="bulk-selection-count" style="font-size:13px;"></span>
     <div style="display:flex;gap:8px;">
       <button class="btn-secondary" id="bulk-voucher-btn" style="background:var(--white);">🎁 Voucher uitgeven</button>
+      <button class="btn-secondary" id="bulk-delete-btn" style="background:var(--white);color:var(--coral);">🗑️ Verwijderen</button>
       <button class="btn-text" id="bulk-clear-btn" style="color:var(--white);">Selectie wissen</button>
     </div>
   </div>
@@ -396,6 +397,17 @@
     if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
     if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.message || 'API-fout: ' + res.status); }
     return res.json();
+  }
+
+  async function apiDelete(path) {
+    const { apiBase } = getConfig();
+    const res = await fetch(apiBase + path, {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer ' + getStaffToken() },
+    });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
+    if (!res.ok) { const b = await res.json().catch(() => ({})); throw new Error(b.message || 'API-fout: ' + res.status); }
+    return res.json().catch(() => ({}));
   }
 
   let allCustomers = [];
@@ -589,6 +601,46 @@
     bulkSelectedIds.clear();
     updateBulkActionBar();
     renderList(els.searchBox.value);
+  });
+
+  document.getElementById('bulk-delete-btn').addEventListener('click', async () => {
+    const ids = Array.from(bulkSelectedIds);
+    const names = ids
+      .map((id) => {
+        const c = allCustomers.find((x) => x.id === id);
+        return c ? [c.firstName, c.lastName].filter(Boolean).join(' ') || '(naam onbekend)' : id;
+      })
+      .join(', ');
+    const confirmed = confirm(
+      `Weet je zeker dat je deze ${ids.length} klant(en) wilt verwijderen?\n\n${names}\n\nDit kan niet ongedaan worden gemaakt via deze pagina.`,
+    );
+    if (!confirmed) return;
+
+    const btn = document.getElementById('bulk-delete-btn');
+    btn.disabled = true;
+    btn.textContent = 'Bezig…';
+    const { orgId } = getConfig();
+    let succeeded = 0;
+    const failed = [];
+    for (const id of ids) {
+      try {
+        await apiDelete('/organizations/' + orgId + '/customers/' + id);
+        succeeded += 1;
+      } catch (err) {
+        failed.push(err.message);
+      }
+    }
+    btn.disabled = false;
+    btn.textContent = '🗑️ Verwijderen';
+
+    if (failed.length > 0) {
+      alert(`${succeeded} verwijderd, ${failed.length} mislukt:\n${failed.join('\n')}`);
+    }
+    bulkSelectedIds.clear();
+    updateBulkActionBar();
+    selectedId = null;
+    els.detailPanel.innerHTML = '<div class="detail-empty">Selecteer een klant om het profiel te bekijken.</div>';
+    loadCustomers();
   });
 
   let voucherTemplatesForBulk = [];
