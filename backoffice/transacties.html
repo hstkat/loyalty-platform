@@ -390,6 +390,20 @@
     </div>
   </div>
 
+  <!-- Losstaande, altijd toegankelijke ingang voor een kadobon-betaling —
+       een kadobon is anoniem bruikbaar en heeft dus GEEN klant-scan of
+       tegoed-transactie nodig. Dit toggelt hetzelfde giftcard-panel dat
+       hieronder ook automatisch verschijnt na het boeken van een
+       tegoed-transactie (voor het geval iemand punten spaart ÉN met een
+       kadobon betaalt op dezelfde rekening). -->
+  <div class="scan-panel" id="standalone-giftcard-entry" style="cursor:pointer;">
+    <div class="scan-label" style="display:flex;align-items:center;justify-content:space-between;">
+      <span>🎁 Kadobon afboeken</span>
+      <span id="standalone-giftcard-toggle-icon" style="font-size:18px;color:var(--muted);">▾</span>
+    </div>
+    <div class="camera-hint">Scan of typ direct de kadobon-token — geen klant nodig, ook los van een tegoed-transactie te gebruiken.</div>
+  </div>
+
   <div class="kassa-panel">
     <form id="tx-form">
       <div class="form-row">
@@ -1051,6 +1065,24 @@
     gcLookedUpToken = null;
     gcBalance = 0;
   }
+
+  // Losstaande, altijd-toegankelijke ingang — klaarzetten voor direct
+  // scannen, ongeacht of er al een klant/transactie gekozen is.
+  document.getElementById('standalone-giftcard-entry').addEventListener('click', () => {
+    const panel = document.getElementById('giftcard-panel');
+    const icon = document.getElementById('standalone-giftcard-toggle-icon');
+    const isOpen = panel.style.display === 'block';
+    if (isOpen) {
+      panel.style.display = 'none';
+      icon.textContent = '▾';
+      return;
+    }
+    resetGiftCardPanel();
+    panel.style.display = 'block';
+    icon.textContent = '▴';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => gcEls.tokenInput.focus(), 300);
+  });
 
   let gcLookupTimeout = null;
   gcEls.tokenInput.addEventListener('input', () => {
