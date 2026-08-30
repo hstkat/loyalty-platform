@@ -40,7 +40,7 @@ const FULL_PERMISSIONS = [
   'import.read', 'import.write',
   'credit_rules.read', 'credit_rules.write',
   'reward_rule.read', 'reward_rule.write', 'reward_calculation.read',
-  'admin.read', 'admin.write',
+  'admin.read', 'admin.write', 'finance.read',
 ];
 
 async function main() {

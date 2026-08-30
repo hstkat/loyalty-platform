@@ -2904,3 +2904,29 @@ model GuestRegistrationCode {
   @@index([organizationId, email])
   @@map("guest_registration_codes")
 }
+
+// ============================================================================
+// Financiële rapportagemodule (kantoor/administratie) — bewaart alleen de
+// RAPPORTPARAMETERS (periode, locatie, type, wie/wanneer), nooit het
+// bestand zelf of een cache van de berekende bedragen. Een rapport kan
+// altijd opnieuw met dezelfde parameters gegenereerd worden, en wordt dan
+// vers uit de ledgers herberekend — zie FinancialReportsService. Dit is
+// bewust GEEN tweede financiële administratie, puur een "geschiedenis van
+// aanvragen" zodat kantoor niet steeds handmatig dezelfde periode hoeft
+// in te stellen.
+// ============================================================================
+
+model FinancialReportHistory {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  reportType          String   @map("report_type") // 'today' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'quarter' | 'year' | 'custom'
+  periodStart         DateTime @map("period_start")
+  periodEnd           DateTime @map("period_end")
+  locationId          String?  @map("location_id") @db.Uuid // null = hele organisatie
+  format              String   // 'excel' | 'pdf' | 'view' (alleen bekeken, niet geëxporteerd)
+  generatedByStaffId  String?  @map("generated_by_staff_id") @db.Uuid
+  generatedAt         DateTime @default(now()) @map("generated_at")
+
+  @@index([organizationId, generatedAt])
+  @@map("financial_report_history")
+}

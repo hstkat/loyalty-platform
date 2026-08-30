@@ -83,6 +83,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
 
   { key: 'admin.read', label: 'Instellingen & auditlog bekijken', group: 'Beheer' },
   { key: 'admin.write', label: 'Medewerkers en instellingen beheren', group: 'Beheer' },
+  { key: 'finance.read', label: 'Financiële rapportages bekijken/exporteren', group: 'Financiën' },
 ];
 
 export const VALID_PERMISSION_KEYS = new Set(PERMISSION_CATALOG.map((p) => p.key));
