@@ -495,7 +495,8 @@
       });
 
       let resultHtml = `<div>Kadobon <strong>${result.giftCardNumber}</strong> aangemaakt — saldo €${amount.toFixed(2)}.</div>
-        <div class="warn" style="margin-top:8px;">Token (eenmalig zichtbaar): <code>${result.token}</code></div>`;
+        <div class="warn" style="margin-top:8px;">Token (eenmalig zichtbaar): <code>${result.token}</code></div>
+        <button type="button" class="btn-secondary print-sticker-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" style="margin-top:8px;">🖨️ QR + code printen (sticker)</button>`;
 
       if (recipientEmail) {
         try {
@@ -514,6 +515,10 @@
 
       els.issueResult.innerHTML = resultHtml;
       els.issueResult.classList.add('show');
+      const printBtn = els.issueResult.querySelector('.print-sticker-btn');
+      if (printBtn) {
+        printBtn.addEventListener('click', () => printGiftCardSticker(printBtn.dataset.cardNumber, printBtn.dataset.token));
+      }
 
       els.recipientNameInput.value = '';
       els.recipientEmailInput.value = '';
@@ -722,6 +727,47 @@
     const allChecked = document.getElementById('issue-loc-all')?.checked;
     if (allChecked === undefined || allChecked) return [];
     return Array.from(document.querySelectorAll('.issue-loc-checkbox:checked')).map((el) => el.value);
+  }
+
+  /**
+   * Opent een klein, print-klaar venster met een grote QR-code (die naar
+   * de kaartweergave-pagina /g/:token wijst — hetzelfde adres als in de
+   * e-mail aan de ontvanger) plus het kaartnummer in leesbare tekst.
+   * Bedoeld om direct op een sticker te printen en op een fysieke kaart
+   * te plakken. Het RUWE token staat bewust NIET los als tekst op de
+   * sticker — alleen versleuteld in de QR — zodat iemand die de sticker
+   * ziet 'm niet zomaar kan overtypen/doorgeven; scannen is de enige weg.
+   */
+  function printGiftCardSticker(cardNumber, token) {
+    const { apiBase } = getConfig();
+    const viewUrl = apiBase + '/g/' + token;
+    const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=400x400&data=' + encodeURIComponent(viewUrl);
+
+    const printWindow = window.open('', '_blank', 'width=420,height=560');
+    if (!printWindow) { alert('Pop-up geblokkeerd — sta pop-ups toe voor deze pagina om te kunnen printen.'); return; }
+    printWindow.document.write(`<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<title>Sticker ${cardNumber}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; font-family: -apple-system, 'Inter', sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; text-align: center; }
+  img { width: 260px; height: 260px; }
+  .card-number { font-size: 20px; font-weight: 700; letter-spacing: 0.04em; margin-top: 14px; font-family: 'Courier New', monospace; }
+  .hint { font-size: 11px; color: #888; margin-top: 6px; }
+  button { margin-top: 24px; padding: 10px 20px; border-radius: 8px; border: none; background: #1b3a5c; color: #fff; font-weight: 600; font-size: 14px; cursor: pointer; }
+  @media print { button, .hint { display: none; } body { padding: 0; } }
+</style>
+</head>
+<body>
+  <img src="${qrUrl}" alt="QR-code">
+  <div class="card-number">${cardNumber}</div>
+  <div class="hint">Scan om het kadobon-saldo te bekijken</div>
+  <button onclick="window.print()">Printen</button>
+</body>
+</html>`);
+    printWindow.document.close();
   }
 
   function bootAfterLogin() {
