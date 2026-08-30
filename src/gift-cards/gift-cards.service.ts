@@ -218,12 +218,13 @@ export class GiftCardsService {
     const amountText = '€' + Number(giftCard.originalValue).toFixed(2);
     const greeting = giftCard.recipientName ? `Beste ${giftCard.recipientName},` : 'Beste,';
     const messageBlock = giftCard.personalMessage ? `\n\n"${giftCard.personalMessage}"\n` : '';
+    const validityNote = 'Je kaart is te besteden bij zowel Het Strand als Zomers Beachclub & Brewery.';
 
     const result = await this.mailgun.sendEmail(
       giftCard.recipientEmail,
       `Je hebt een cadeaukaart ter waarde van ${amountText} ontvangen!`,
-      `${greeting}${messageBlock}\n\nJe hebt een cadeaukaart ontvangen ter waarde van ${amountText}.\n\nBekijk en gebruik je kaart via: ${qrUrl}\n\nVeel plezier!`,
-      `<p>${greeting}</p>${giftCard.personalMessage ? `<p><em>"${giftCard.personalMessage}"</em></p>` : ''}<p>Je hebt een cadeaukaart ontvangen ter waarde van <strong>${amountText}</strong>.</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
+      `${greeting}${messageBlock}\n\nJe hebt een cadeaukaart ontvangen ter waarde van ${amountText}.\n\n${validityNote}\n\nBekijk en gebruik je kaart via: ${qrUrl}\n\nVeel plezier!`,
+      `<p>${greeting}</p>${giftCard.personalMessage ? `<p><em>"${giftCard.personalMessage}"</em></p>` : ''}<p>Je hebt een cadeaukaart ontvangen ter waarde van <strong>${amountText}</strong>.</p><p>${validityNote}</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
     );
 
     if (!result.sent) throw new BadRequestException('Versturen mislukt: ' + (result.reason || 'onbekende fout'));
@@ -568,6 +569,8 @@ export class GiftCardsService {
         giftCard.personalMessage ? `Persoonlijke boodschap: "${giftCard.personalMessage}"` : undefined,
         `Ordernummer: ${giftCard.giftCardNumber}`,
         `Datum van aankoop: ${purchaseDate}`,
+        '',
+        'Te besteden bij zowel Het Strand als Zomers Beachclub & Brewery.',
       ].filter((line): line is string => line !== undefined);
     } else {
       const totalAmount = giftCards.reduce((sum, g) => sum + Number(g.originalValue), 0).toFixed(2).replace('.', ',');
@@ -586,6 +589,8 @@ export class GiftCardsService {
         }),
         '',
         `Datum van aankoop: ${purchaseDate}`,
+        '',
+        'Te besteden bij zowel Het Strand als Zomers Beachclub & Brewery.',
       ];
     }
 
