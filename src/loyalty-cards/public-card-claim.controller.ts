@@ -7,7 +7,7 @@ import { ClaimNewCustomerDto, ClaimLinkExistingDto } from './dto/loyalty-cards.d
  * Publiek, niet-geauthenticeerd — een gast heeft nog geen sessie
  * wanneer die voor het eerst een kaart scant. Veiligheid komt uit het
  * token zelf (96 bits entropie, gehasht opgeslagen) en uit het feit dat
- * deze pagina bewust NOOIT gevoelige klantgegevens toont zonder
+ * deze pagina bewust NOOIT gevoelige gastgegevens toont zonder
  * authenticatie (sectie 13) — alleen de status van de kaart.
  */
 @Controller('c')
@@ -78,7 +78,7 @@ export class PublicCardClaimController {
       <div id="step-choice" class="step active">
         <h1>Activeer je loyaltykaart</h1>
         <p>Je kunt met deze kaart sparen en je tegoed gebruiken bij een volgend bezoek.</p>
-        <button class="btn btn-primary" onclick="showStep('new')">Nieuwe klant</button>
+        <button class="btn btn-primary" onclick="showStep('new')">Nieuwe gast</button>
         <button class="btn btn-secondary" onclick="showStep('existing-email')">Ik heb al een account</button>
       </div>
 

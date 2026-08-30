@@ -19,7 +19,7 @@ const MAX_BATCH_QUANTITY = 5000; // serverloze functie-tijdslimiet — grotere o
  * QR TOKEN -> LOYALTY CARD -> CUSTOMER -> WALLET
  *
  * De belangrijkste architectuurregel: een kaart bezit nooit het
- * klantprofiel of saldo. Die blijven altijd bij de Customer/Wallet. Dat
+ * gastprofiel of saldo. Die blijven altijd bij de Customer/Wallet. Dat
  * maakt vervangen/blokkeren/opnieuw-koppelen altijd veilig, zonder ooit
  * saldo te hoeven verplaatsen of te kunnen verliezen.
  *
@@ -99,13 +99,13 @@ export class LoyaltyCardsService {
   }
 
   /**
-   * Geeft direct een nieuwe, al-actieve kaart uit aan een klant die al
+   * Geeft direct een nieuwe, al-actieve kaart uit aan een gast die al
    * ingelogd is (bijv. via de portal, "e-mail mijn QR om te printen") —
    * geen claimflow nodig, want de identiteit staat al vast door de
    * sessie zelf. Bewust géén poging om een eerder token te "hervinden"
    * (dat kan sowieso niet, we bewaren nooit het ruwe token) — elke klik
    * op "verstuur opnieuw" maakt gewoon een nieuwe, geldige kaart aan.
-   * Dat is onschuldig: meerdere geldige kaarten per klant is al een
+   * Dat is onschuldig: meerdere geldige kaarten per gast is al een
    * bewust ondersteund scenario in dit systeem.
    */
   async issueDirectToCustomer(orgId: string, customerId: string) {
@@ -131,7 +131,7 @@ export class LoyaltyCardsService {
       action: 'create',
       actor: { actorType: 'customer_self_service', actorId: customerId, ipAddress: null },
       afterState: { cardNumber, customerId },
-      reason: 'Zelf aangevraagd via klantportal (e-mail om te printen)',
+      reason: 'Zelf aangevraagd via gastportal (e-mail om te printen)',
     });
 
     return { cardNumber, token, qrUrl: `https://loyalty-platform-live.vercel.app/c/${token}` };
@@ -148,7 +148,7 @@ export class LoyaltyCardsService {
   // -- Admin: overzicht + detail ---------------------------------------------
 
   async listCards(orgId: string, filters: { status?: string; customerId?: string; search?: string }) {
-    // Zoeken op kaartnummer ÉN op de gekoppelde klant (naam/e-mail/
+    // Zoeken op kaartnummer ÉN op de gekoppelde gast (naam/e-mail/
     // telefoon) — anders moet je exact het kaartnummer weten om een
     // kaart terug te vinden, wat in de praktijk niet werkbaar is.
     let customerMatchIds: string[] = [];
@@ -340,14 +340,14 @@ export class LoyaltyCardsService {
     });
   }
 
-  // -- Admin: handmatig koppelen (bijv. voor Piggy-geïmporteerde klanten) ---
+  // -- Admin: handmatig koppelen (bijv. voor Piggy-geïmporteerde gasten) ---
 
   async adminLinkCard(orgId: string, ctx: RequestContext, dto: AdminLinkCardDto) {
     const card = await this.getUnclaimedCardOrThrow(dto.token);
     if (card.organizationId !== orgId) throw new NotFoundException('Kaart niet gevonden');
 
     const customer = await this.prisma.customer.findFirst({ where: { id: dto.customerId, organizationId: orgId } });
-    if (!customer) throw new NotFoundException('Klant niet gevonden');
+    if (!customer) throw new NotFoundException('Gast niet gevonden');
 
     await this.linkCardToCustomer(card, customer.id, ctx);
     return { linked: true, customerId: customer.id };
@@ -499,7 +499,7 @@ export class LoyaltyCardsService {
     const card = await this.prisma.loyaltyCard.findFirst({ where: { id: cardId, organizationId: orgId } });
     if (!card) throw new NotFoundException('Kaart niet gevonden');
     if (card.status !== 'unclaimed') {
-      throw new BadRequestException('Deze kaart is al gekoppeld — gebruik de normale kassaflow voor een gekoppelde klant');
+      throw new BadRequestException('Deze kaart is al gekoppeld — gebruik de normale kassaflow voor een gekoppelde gast');
     }
 
     await this.prisma.$transaction([

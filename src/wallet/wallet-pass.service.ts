@@ -18,11 +18,11 @@ export class WalletPassService {
   ) {}
 
   /**
-   * Geeft de "Voeg toe aan Google Wallet"-link terug voor deze klant —
+   * Geeft de "Voeg toe aan Google Wallet"-link terug voor deze gast —
    * maakt bij de eerste keer een WalletPass-record + bijbehorend
    * Google-object aan; bij een volgende aanroep wordt het bestaande
    * object gewoon bijgewerkt met de actuele stand (nooit een tweede
-   * pas voor dezelfde klant).
+   * pas voor dezelfde gast).
    */
   async getOrCreateGoogleWalletLink(orgId: string, customerId: string): Promise<{ saveUrl: string } | { saveUrl: null; reason: string }> {
     if (!this.googleWallet.isConfigured()) {
@@ -33,7 +33,7 @@ export class WalletPassService {
       where: { id: customerId, organizationId: orgId, deletedAt: null },
       include: { wallet: true, tier: true, organization: true },
     });
-    if (!customer) throw new NotFoundException('Klant niet gevonden');
+    if (!customer) throw new NotFoundException('Gast niet gevonden');
 
     let wallet = customer.wallet;
     if (!wallet) wallet = await this.prisma.wallet.create({ data: { organizationId: orgId, customerId } });
@@ -42,7 +42,7 @@ export class WalletPassService {
     if (!walletPass) {
       // Zelfde beveiligingsprincipe als de fysieke loyaltykaarten en
       // kadobonnen: een apart, willekeurig token — nooit het
-      // database-ID van de klant of de wallet zelf.
+      // database-ID van de gast of de wallet zelf.
       const serialNumber = randomBytes(16).toString('base64url');
       walletPass = await this.prisma.walletPass.create({
         data: { walletId: wallet.id, passType: 'google', serialNumber, status: 'not_installed' },

@@ -116,7 +116,7 @@ export class ImportService {
       }
       if (!row.email && !row.phone && !row.externalId) {
         errorCount++;
-        return this.buildRecord(job.id, row, rowHash, 'invalid', { errorMessage: 'Geen e-mail, telefoon of klant-ID — kan niet worden geïdentificeerd' });
+        return this.buildRecord(job.id, row, rowHash, 'invalid', { errorMessage: 'Geen e-mail, telefoon of gast-ID — kan niet worden geïdentificeerd' });
       }
       if (row.sourcePoints !== undefined && (isNaN(row.sourcePoints) || row.sourcePoints < 0)) {
         errorCount++;
@@ -146,7 +146,7 @@ export class ImportService {
         reviewCount++;
         return this.buildRecord(job.id, row, rowHash, 'review_required', {
           sourceBalance: sourcePoints,
-          errorMessage: 'Tegenstrijdige match: e-mail en telefoon wijzen naar verschillende bestaande klanten',
+          errorMessage: 'Tegenstrijdige match: e-mail en telefoon wijzen naar verschillende bestaande gasten',
         });
       }
 
@@ -223,7 +223,7 @@ export class ImportService {
     if (dto.resolution === 'match_existing') {
       if (!dto.customerId) throw new BadRequestException('customerId is verplicht bij match_existing');
       const customer = await this.prisma.customer.findFirst({ where: { id: dto.customerId, organizationId: orgId } });
-      if (!customer) throw new NotFoundException('Klant niet gevonden');
+      if (!customer) throw new NotFoundException('Gast niet gevonden');
       return this.prisma.importRecord.update({
         where: { id: record.id },
         data: { action: 'matched_customer', matchedCustomerId: customer.id, errorMessage: null },
@@ -319,7 +319,7 @@ export class ImportService {
       customerCreated = true;
     }
 
-    if (!customerId) throw new Error('Geen klant gekoppeld aan deze rij');
+    if (!customerId) throw new Error('Geen gast gekoppeld aan deze rij');
 
     let wallet = await this.prisma.wallet.findUnique({ where: { customerId } });
     if (!wallet) wallet = await this.prisma.wallet.create({ data: { organizationId: orgId, customerId } });

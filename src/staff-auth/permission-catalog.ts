@@ -21,14 +21,14 @@ export interface PermissionCatalogEntry {
 }
 
 export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
-  { key: 'customer.read', label: 'Klanten bekijken', group: 'Klanten' },
-  { key: 'customer.write', label: 'Klanten aanmaken/wijzigen (incl. labels & eigen velden)', group: 'Klanten' },
-  { key: 'customer.merge', label: 'Klanten samenvoegen', group: 'Klanten' },
-  { key: 'customer.notes.read', label: 'Interne notities bij klant bekijken', group: 'Klanten' },
-  { key: 'customer.notes.write', label: 'Interne notities bij klant toevoegen', group: 'Klanten' },
-  { key: 'customer.export', label: 'Klantgegevens exporteren (AVG)', group: 'Klanten' },
-  { key: 'customer.anonymize', label: 'Klantgegevens anonimiseren/verwijderen (AVG)', group: 'Klanten' },
-  { key: 'consent.write', label: 'Toestemmingen (marketing e.d.) wijzigen', group: 'Klanten' },
+  { key: 'customer.read', label: 'Gasten bekijken', group: 'Gasten' },
+  { key: 'customer.write', label: 'Gasten aanmaken/wijzigen (incl. labels & eigen velden)', group: 'Gasten' },
+  { key: 'customer.merge', label: 'Gasten samenvoegen', group: 'Gasten' },
+  { key: 'customer.notes.read', label: 'Interne notities bij gast bekijken', group: 'Gasten' },
+  { key: 'customer.notes.write', label: 'Interne notities bij gast toevoegen', group: 'Gasten' },
+  { key: 'customer.export', label: 'Gastgegevens exporteren (AVG)', group: 'Gasten' },
+  { key: 'customer.anonymize', label: 'Gastgegevens anonimiseren/verwijderen (AVG)', group: 'Gasten' },
+  { key: 'consent.write', label: 'Toestemmingen (marketing e.d.) wijzigen', group: 'Gasten' },
 
   { key: 'transaction.read', label: 'Transacties bekijken', group: 'Transacties' },
   { key: 'transaction.write', label: 'Transacties boeken (incl. kassakoppelingen)', group: 'Transacties' },
@@ -79,7 +79,7 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { key: 'ai_campaign_suggestion.approve', label: 'AI-campagnevoorstellen goedkeuren', group: 'Analytics' },
 
   { key: 'import.read', label: 'Import-geschiedenis bekijken', group: 'Import' },
-  { key: 'import.write', label: 'Klanten importeren', group: 'Import' },
+  { key: 'import.write', label: 'Gasten importeren', group: 'Import' },
 
   { key: 'admin.read', label: 'Instellingen & auditlog bekijken', group: 'Beheer' },
   { key: 'admin.write', label: 'Medewerkers en instellingen beheren', group: 'Beheer' },

@@ -152,7 +152,7 @@ export class VouchersService {
     if (!template.isActive) throw new BadRequestException('Deze voucher-template is niet actief');
 
     const customer = await this.prisma.customer.findFirst({ where: { id: dto.customerId, organizationId: orgId, deletedAt: null } });
-    if (!customer) throw new NotFoundException('Klant niet gevonden');
+    if (!customer) throw new NotFoundException('Gast niet gevonden');
 
     const issuedAt = new Date();
     const { validFrom, validUntil } = this.computeValidity(template, issuedAt, dto.validFromOverride, dto.validUntilOverride);
@@ -209,8 +209,8 @@ export class VouchersService {
   }
 
   /**
-   * Voor het "aanvinken in het klantenbestand"-scenario in de
-   * backoffice. Hergebruikt issueVoucher() per klant (dus dezelfde
+   * Voor het "aanvinken in het gastenbestand"-scenario in de
+   * backoffice. Hergebruikt issueVoucher() per gast (dus dezelfde
    * validatie, audit-log en messaging-melding als een losse uitgifte) —
    * één mislukking blokkeert de rest van de batch niet, maar wordt wel
    * teruggegeven zodat de beheerder ziet wat er misging.
@@ -218,7 +218,7 @@ export class VouchersService {
    * Bewust een harde limiet: dit endpoint verwerkt sequentieel (elke
    * uitgifte doet een paar databaseschrijvingen + een messaging-call),
    * en Vercel-functies hebben een tijdslimiet. Voor grotere doelgroepen
-   * (bijv. "alle klanten die in juli zijn geweest") is de Campaign
+   * (bijv. "alle gasten die in juli zijn geweest") is de Campaign
    * Manager het juiste gereedschap — die is al gebouwd voor grote
    * aantallen en draait de verzending asynchroon per ontvanger.
    */
@@ -227,10 +227,10 @@ export class VouchersService {
     dto: { customerIds: string[]; voucherTemplateId: string; issueReason?: string },
     actor: ActorContext,
   ): Promise<{ issued: number; failed: { customerId: string; error: string }[] }> {
-    if (!dto.customerIds || dto.customerIds.length === 0) throw new BadRequestException('Geen klanten geselecteerd');
+    if (!dto.customerIds || dto.customerIds.length === 0) throw new BadRequestException('Geen gasten geselecteerd');
     const MAX_BULK_RECIPIENTS = 150;
     if (dto.customerIds.length > MAX_BULK_RECIPIENTS) {
-      throw new BadRequestException(`Maximaal ${MAX_BULK_RECIPIENTS} klanten tegelijk — gebruik voor grotere groepen de Campaign Manager.`);
+      throw new BadRequestException(`Maximaal ${MAX_BULK_RECIPIENTS} gasten tegelijk — gebruik voor grotere groepen de Campaign Manager.`);
     }
 
     let issued = 0;
@@ -256,7 +256,7 @@ export class VouchersService {
     return 'system'; // manual, reward_engine, api — geen eigen enum-waarde in MessageSendRequest
   }
 
-  // -- Klantweergave (Mijn Tegoed) ---------------------------------------------
+  // -- Gastweergave (Mijn Tegoed) ---------------------------------------------
 
   /** Puur afgeleid, wijzigt nooit de database — de rij zelf verandert pas
    * echt van status bij redemption/cancellation of via de reminder-cron. */
@@ -316,7 +316,7 @@ export class VouchersService {
     // token moet stabiel blijven zolang de voucher niet is ingewisseld.
     // We geven daarom nooit het RUWE token terug (dat kennen we zelf ook
     // niet meer, we bewaren alleen de hash) — in plaats daarvan genereert
-    // de klant-portal de weergave-QR op basis van een kortlevend,
+    // de gast-portal de weergave-QR op basis van een kortlevend,
     // apart display-token (zelfde patroon als de kadobon "bekijk"-
     // flow), aangevraagd via requestDisplayToken hieronder.
     return {
@@ -336,9 +336,9 @@ export class VouchersService {
   /**
    * Genereert een VERS, kortlevend weergave-token en overschrijft de
    * opgeslagen hash daarmee — zelfde aanpak als de kadobon-QR-
-   * weergave: elke keer dat de klant de voucher opent, wordt het
+   * weergave: elke keer dat de gast de voucher opent, wordt het
    * geldende token vervangen. Dat betekent dat een eerder gescande/
-   * gedeelde QR-afbeelding vanzelf verloopt zodra de klant de voucher
+   * gedeelde QR-afbeelding vanzelf verloopt zodra de gast de voucher
    * opnieuw opent, en de QR zelf blijft zo altijd kortlevend en niet
    * herbruikbaar buiten de app om.
    */
@@ -357,7 +357,7 @@ export class VouchersService {
   // -- POS-inwisseling ----------------------------------------------------
 
   /** Server-side eligibility-lookup — vertrouwt NOOIT informatie uit de
-   * QR-code zelf buiten het token; alle overige gegevens (klant, geldigheid,
+   * QR-code zelf buiten het token; alle overige gegevens (gast, geldigheid,
    * locatie) komen vers uit de database op het moment van scannen. */
   async lookupForRedemption(orgId: string, secureToken: string) {
     const voucher = await this.prisma.customerVoucher.findFirst({
@@ -430,7 +430,7 @@ export class VouchersService {
     return { redeemed: true, templateName: voucher.voucherTemplate.name, benefit: voucher.voucherTemplate.benefit };
   }
 
-  // -- Admin: Klantprofiel-acties ---------------------------------------------
+  // -- Admin: Gastprofiel-acties ---------------------------------------------
 
   async listForCustomerAdmin(orgId: string, customerId: string) {
     const vouchers = await this.prisma.customerVoucher.findMany({

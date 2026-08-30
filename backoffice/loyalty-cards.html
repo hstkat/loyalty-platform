@@ -268,7 +268,7 @@
     <div>
       <nav>
         <a href="dashboard.html" data-page="dashboard">Overzicht</a>
-        <a href="customers.html" data-page="customers">Klanten</a>
+        <a href="customers.html" data-page="customers">Gasten</a>
         <a href="campaigns.html" data-page="campaigns">Campagnes</a>
         <a href="transacties.html" data-page="transacties">Spaarpunten</a>
         <a href="cadeaus.html" data-page="cadeaus">Beloningen</a>
@@ -330,10 +330,10 @@
     <div class="action-row" id="action-row"></div>
   </div>
 
-  <!-- Zoekvenster voor "koppelen aan bestaande klant" — vervangt een reeks losse prompt()'s -->
+  <!-- Zoekvenster voor "koppelen aan bestaande gast" — vervangt een reeks losse prompt()'s -->
   <div class="modal-overlay" id="link-modal-overlay">
     <div class="modal">
-      <h2>Klant zoeken om te koppelen</h2>
+      <h2>Gast zoeken om te koppelen</h2>
       <p class="sub">Zoek op naam, e-mailadres, telefoonnummer, of een ander kaartnummer.</p>
       <div class="autocomplete-field">
         <input type="text" id="link-search-input" placeholder="Typ om te zoeken…" autocomplete="off">
@@ -352,7 +352,7 @@
   </div>
 </main>
 
-<footer>Elke kaart is alleen een identifier — het saldo blijft altijd bij de gekoppelde klant, nooit bij de kaart zelf.</footer>
+<footer>Elke kaart is alleen een identifier — het saldo blijft altijd bij de gekoppelde gast, nooit bij de kaart zelf.</footer>
 
 <script>
   const DEFAULTS = { apiBase: 'https://loyalty-platform-live.vercel.app', orgId: 'ab51a93c-43a2-40cd-8635-f8522f68a8c8' };
@@ -521,7 +521,7 @@
 
     els.detailGrid.innerHTML = `
       <div class="detail-tile"><div class="label">Status</div><div class="value">${STATUS_LABELS[card.status] || card.status}</div></div>
-      <div class="detail-tile"><div class="label">Klant</div><div class="value">${customerName}</div></div>
+      <div class="detail-tile"><div class="label">Gast</div><div class="value">${customerName}</div></div>
       <div class="detail-tile"><div class="label">Batch</div><div class="value">${card.batch ? card.batch.name : '—'}</div></div>
       <div class="detail-tile"><div class="label">Geactiveerd op</div><div class="value">${claimedDate}</div></div>
       <div class="detail-tile"><div class="label">Laatst gebruikt</div><div class="value">${lastUsedDate}</div></div>
@@ -539,7 +539,7 @@
       actions += `<button class="btn-secondary" id="action-replace">Vervangen door nieuwe kaart</button>`;
     }
     if (card.status === 'unclaimed') {
-      actions += `<button class="btn-primary" id="action-link">Koppelen aan bestaande klant</button>`;
+      actions += `<button class="btn-primary" id="action-link">Koppelen aan bestaande gast</button>`;
     }
     els.actionRow.innerHTML = actions;
 
@@ -580,7 +580,7 @@
     }
   }
 
-  // -- Klant koppelen: zoek-en-selecteer i.p.v. losse prompt()'s -------------
+  // -- Gast koppelen: zoek-en-selecteer i.p.v. losse prompt()'s -------------
 
   let linkSelectedCustomer = null;
   let linkSearchTimeout = null;
@@ -637,11 +637,11 @@
   function renderLinkAutocomplete() {
     linkHighlightedIndex = -1;
     if (linkSearchResults.length === 0) {
-      linkEls.autocompleteList.innerHTML = '<div class="no-match">Geen klanten gevonden</div>';
+      linkEls.autocompleteList.innerHTML = '<div class="no-match">Geen gasten gevonden</div>';
       linkEls.autocompleteList.classList.add('open');
       return;
     }
-    // Toon genoeg gegevens om klanten met dezelfde naam te onderscheiden:
+    // Toon genoeg gegevens om gasten met dezelfde naam te onderscheiden:
     // volledige naam, e-mail, telefoon, en (indien bekend) geboortedatum.
     linkEls.autocompleteList.innerHTML = linkSearchResults.map((c, idx) => {
       const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '(naam onbekend)';

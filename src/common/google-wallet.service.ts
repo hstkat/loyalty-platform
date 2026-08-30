@@ -39,7 +39,7 @@ export interface LoyaltyCardData {
  *
  * QR-beveiliging: het barcode-veld bevat uitsluitend WalletPass.serialNumber
  * (een 96-bits willekeurige token, hetzelfde principe als de fysieke
- * loyaltykaarten) — nooit een klant-ID, saldo of naam. Een gefotografeerde
+ * loyaltykaarten) — nooit een gast-ID, saldo of naam. Een gefotografeerde
  * QR-code geeft dus nooit meer dan identificatie; alle actuele gegevens
  * (saldo, tier) worden altijd server-side opgehaald bij het scannen.
  */
@@ -138,7 +138,7 @@ export class GoogleWalletService {
   }
 
   /**
-   * Maakt of werkt het per-klant "object" bij — de daadwerkelijke pasgegevens.
+   * Maakt of werkt het per-gast "object" bij — de daadwerkelijke pasgegevens.
    * Wordt aangeroepen bij het eerste keer toevoegen én bij elke latere
    * saldowijziging (zie de aanroep vanuit WalletService).
    */

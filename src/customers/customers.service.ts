@@ -110,8 +110,8 @@ export class CustomersService {
     const pageSize = query.pageSize && query.pageSize > 0 ? Math.min(query.pageSize, 100) : 25;
 
     // Kaartnummer-matching: als de zoekterm (deels) overeenkomt met een
-    // loyaltykaart-nummer, tellen we de gekoppelde klant ook mee. Dit
-    // maakt "zoek een klant om een kaart aan te koppelen" (backoffice)
+    // loyaltykaart-nummer, tellen we de gekoppelde gast ook mee. Dit
+    // maakt "zoek een gast om een kaart aan te koppelen" (backoffice)
     // mogelijk zonder een los, tweede zoek-endpoint te introduceren.
     let cardMatchCustomerIds: string[] = [];
     if (query.search) {

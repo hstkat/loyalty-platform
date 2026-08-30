@@ -76,11 +76,11 @@ export class GiftCardCheckoutController {
       .redirect-note a { color: var(--white); text-decoration: underline; }
     `;
 
-    // De webhook kan iets later aankomen dan de terugkeer van de klant
+    // De webhook kan iets later aankomen dan de terugkeer van de gast
     // vanuit Mollie zelf — toon daarom een neutrale, geruststellende
     // boodschap, nooit een harde "mislukt" als de status nog 'draft' is.
     // En: nooit een e-mail beloven als er geen ontvanger-adres is
-    // opgegeven. In dat geval is dít de ENIGE plek waar de klant ooit
+    // opgegeven. In dat geval is dít de ENIGE plek waar de gast ooit
     // bij zijn eigen token kan komen — we halen het daarom (alleen hier,
     // alleen nu) opnieuw op uit Mollie's metadata, waar het al veilig
     // stond, in plaats van het zelf op te slaan.

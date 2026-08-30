@@ -347,7 +347,7 @@
     <div>
       <nav>
         <a href="dashboard.html" data-page="dashboard">Overzicht</a>
-        <a href="customers.html" data-page="customers">Klanten</a>
+        <a href="customers.html" data-page="customers">Gasten</a>
         <a href="campaigns.html" data-page="campaigns">Campagnes</a>
         <a href="#" class="active" aria-current="page" data-page="transacties">Spaarpunten</a>
         <a href="cadeaus.html" data-page="cadeaus">Beloningen</a>
@@ -373,16 +373,16 @@
 </div>
 
 <main>
-  <p class="status-line" id="status-line">Klanten laden…</p>
+  <p class="status-line" id="status-line">Gasten laden…</p>
 
   <div class="scan-panel">
-    <div class="scan-label">Klant identificeren</div>
+    <div class="scan-label">Gast identificeren</div>
     <div class="scan-row">
       <input type="text" id="scan-input" placeholder="Scan het QR-pasje (of gebruik een fysieke scanner)…" autofocus>
       <button type="button" id="camera-btn">Camera gebruiken</button>
     </div>
     <video id="scan-video" autoplay muted playsinline></video>
-    <div class="camera-hint" id="camera-hint">Een fysieke barcodescanner werkt direct in dit veld — richt 'm op de QR-code en de klant wordt automatisch herkend.</div>
+    <div class="camera-hint" id="camera-hint">Een fysieke barcodescanner werkt direct in dit veld — richt 'm op de QR-code en de gast wordt automatisch herkend.</div>
 
     <div class="selected-customer" id="selected-customer">
       <span id="selected-customer-name">—</span>
@@ -391,7 +391,7 @@
   </div>
 
   <!-- Losstaande, altijd toegankelijke ingang voor een kadobon-betaling —
-       een kadobon is anoniem bruikbaar en heeft dus GEEN klant-scan of
+       een kadobon is anoniem bruikbaar en heeft dus GEEN gast-scan of
        tegoed-transactie nodig. Dit toggelt hetzelfde giftcard-panel dat
        hieronder ook automatisch verschijnt na het boeken van een
        tegoed-transactie (voor het geval iemand punten spaart ÉN met een
@@ -401,7 +401,7 @@
       <span>🎁 Kadobon afboeken</span>
       <span id="standalone-giftcard-toggle-icon" style="font-size:18px;color:var(--muted);">▾</span>
     </div>
-    <div class="camera-hint">Scan of typ direct de kadobon-token — geen klant nodig, ook los van een tegoed-transactie te gebruiken.</div>
+    <div class="camera-hint">Scan of typ direct de kadobon-token — geen gast nodig, ook los van een tegoed-transactie te gebruiken.</div>
   </div>
 
   <div class="kassa-panel">
@@ -491,7 +491,7 @@
   </div>
 </main>
 
-<footer>Elke transactie wordt direct doorgerekend door de Reward Engine — het puntenaantal hierboven is precies wat de klant nu bijgeschreven krijgt.</footer>
+<footer>Elke transactie wordt direct doorgerekend door de Reward Engine — het puntenaantal hierboven is precies wat de gast nu bijgeschreven krijgt.</footer>
 
 <script>
   const DEFAULTS = {
@@ -583,7 +583,7 @@
   function selectCustomerById(customerId) {
     const customer = allCustomers.find((c) => c.id === customerId);
     if (!customer) {
-      els.statusLine.textContent = 'Onbekend pasje — deze klant is niet gevonden.';
+      els.statusLine.textContent = 'Onbekend pasje — deze gast is niet gevonden.';
       els.statusLine.classList.add('error');
       return false;
     }
@@ -593,7 +593,7 @@
     els.customerSearch.value = '';
     els.autocompleteList.classList.remove('open');
     els.amountInput.focus();
-    els.statusLine.textContent = 'Klant herkend — vul het bedrag in.';
+    els.statusLine.textContent = 'Gast herkend — vul het bedrag in.';
     els.statusLine.classList.remove('error');
     return true;
   }
@@ -656,7 +656,7 @@
         return;
       }
       // Rechtstreeks uit het lookup-antwoord vullen i.p.v. via de lokaal
-      // ingeladen klantenlijst — die kan een zojuist geclaimde kaart nog
+      // ingeladen gastenlijst — die kan een zojuist geclaimde kaart nog
       // niet bevatten (voorkomt "onbekend pasje" bij een verse koppeling).
       els.customerHidden.value = result.customerId;
       els.selectedCustomerName.textContent = result.customerName || '(naam onbekend)';
@@ -724,15 +724,15 @@
   }
 
   async function loadCustomers() {
-    els.statusLine.textContent = 'Klanten laden…';
+    els.statusLine.textContent = 'Gasten laden…';
     els.statusLine.classList.remove('error');
     try {
       const { orgId } = getConfig();
       const result = await apiGet('/organizations/' + orgId + '/customers');
       allCustomers = result.items || [];
-      els.statusLine.textContent = allCustomers.length + ' klanten geladen — klaar om te boeken';
+      els.statusLine.textContent = allCustomers.length + ' gasten geladen — klaar om te boeken';
     } catch (err) {
-      els.statusLine.textContent = 'Kon klanten niet laden: ' + err.message;
+      els.statusLine.textContent = 'Kon gasten niet laden: ' + err.message;
       els.statusLine.classList.add('error');
     }
   }
@@ -753,7 +753,7 @@
     highlightedIndex = -1;
 
     if (matches.length === 0) {
-      els.autocompleteList.innerHTML = '<div class="no-match">Geen klant gevonden.</div>';
+      els.autocompleteList.innerHTML = '<div class="no-match">Geen gast gevonden.</div>';
     } else {
       els.autocompleteList.innerHTML = matches.slice(0, 30).map((c, i) => `
         <div class="option" data-id="${c.id}" data-index="${i}">
@@ -822,7 +822,7 @@
       const customerId = els.customerHidden.value;
 
       if (els.customerSearch.value.trim() && !customerId) {
-        throw new Error('Kies een klant uit de lijst (of laat het veld leeg voor een anonieme transactie)');
+        throw new Error('Kies een gast uit de lijst (of laat het veld leeg voor een anonieme transactie)');
       }
 
       const result = await apiPost('/organizations/' + getConfig().orgId + '/transactions', {
@@ -841,7 +841,7 @@
           .join('<br>');
       } else {
         els.resultPoints.textContent = '0 pt';
-        els.resultTrace.textContent = customerId ? 'Geen actieve spaarregel van toepassing.' : 'Geen klant gekoppeld — geen punten toegekend.';
+        els.resultTrace.textContent = customerId ? 'Geen actieve spaarregel van toepassing.' : 'Geen gast gekoppeld — geen punten toegekend.';
       }
       els.resultCard.classList.add('show');
 
@@ -864,13 +864,13 @@
       }
 
       // Kadobon-betaling staat los van loyaltytegoed en werkt ook
-      // zonder gekoppelde klant (een kadobon is anoniem bruikbaar).
+      // zonder gekoppelde gast (een kadobon is anoniem bruikbaar).
       resetGiftCardPanel();
       document.getElementById('giftcard-panel').style.display = 'block';
 
-      // Voucher hoort ALTIJD bij een specifieke klant (in tegenstelling
+      // Voucher hoort ALTIJD bij een specifieke gast (in tegenstelling
       // tot de anonieme kadobon hierboven) — alleen tonen als er een
-      // klant gekoppeld is aan deze transactie.
+      // gast gekoppeld is aan deze transactie.
       resetVoucherPanel();
       document.getElementById('voucher-panel').style.display = lastCustomerId ? 'block' : 'none';
 
@@ -1067,7 +1067,7 @@
   }
 
   // Losstaande, altijd-toegankelijke ingang — klaarzetten voor direct
-  // scannen, ongeacht of er al een klant/transactie gekozen is.
+  // scannen, ongeacht of er al een gast/transactie gekozen is.
   document.getElementById('standalone-giftcard-entry').addEventListener('click', () => {
     const panel = document.getElementById('giftcard-panel');
     const icon = document.getElementById('standalone-giftcard-toggle-icon');

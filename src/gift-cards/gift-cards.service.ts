@@ -63,12 +63,12 @@ export class GiftCardsService {
   }
 
   /**
-   * Klant-e-mailadres heeft GEEN unieke-constraint in het datamodel — er
-   * kunnen dus meerdere klantrecords met hetzelfde e-mailadres bestaan
+   * Gast-e-mailadres heeft GEEN unieke-constraint in het datamodel — er
+   * kunnen dus meerdere gastrecords met hetzelfde e-mailadres bestaan
    * (bijv. één via Piggy-import, één handmatig aangemaakt, één via
    * portal-zelfregistratie). Een simpele findFirst() zou dan willekeurig
    * (databasevolgorde) het EERSTE record pakken — mogelijk niet het
-   * account waar de klant daadwerkelijk op inlogt.
+   * account waar de gast daadwerkelijk op inlogt.
    *
    * Voorkeur, in volgorde:
    *   1. Een record met een wachtwoord ingesteld (bewijs dat dit account
@@ -106,7 +106,7 @@ export class GiftCardsService {
     const giftCardNumber = 'GC-' + String(existingCount + 1).padStart(6, '0');
 
     // Als de medewerker alleen een vrij-tekst e-mailadres invulde (geen
-    // expliciet gekozen klant via recipientCustomerId), toch proberen te
+    // expliciet gekozen gast via recipientCustomerId), toch proberen te
     // koppelen aan een bestaand account met dat e-mailadres — zelfde
     // gedachte als bij de online koop-flow.
     const resolvedRecipientCustomerId =
@@ -155,10 +155,10 @@ export class GiftCardsService {
       afterState: { originalValue: dto.originalValue, giftCardNumber },
     });
 
-    // Kritiek: als de kaart direct aan een BEKENDE klant gekoppeld wordt
+    // Kritiek: als de kaart direct aan een BEKENDE gast gekoppeld wordt
     // (recipientCustomerId, i.p.v. een los recipientEmail-veld), is dit
     // token straks nergens anders meer terug te vinden — niet in de
-    // portal, niet ergens anders. Zonder deze e-mail zou de klant zijn
+    // portal, niet ergens anders. Zonder deze e-mail zou de gast zijn
     // eigen kaart dus nooit meer kunnen openen. Nooit een harde fout
     // laten optreden op de uitgifte zelf als het versturen mislukt —
     // de kaart is al geldig aangemaakt, dat mag niet teruggedraaid worden.
@@ -426,7 +426,7 @@ export class GiftCardsService {
 
     const activatedCardIds: string[] = [];
     for (const giftCard of draftCards) {
-      // Koppel de kaart automatisch aan een BESTAAND klantaccount met
+      // Koppel de kaart automatisch aan een BESTAAND gastaccount met
       // hetzelfde e-mailadres, zodat die 'm meteen ziet staan onder
       // "Kadobonnen" in Mijn Tegoed — zonder dat de koper of
       // ontvanger daar iets voor hoeft te doen. Bewust GEEN nieuw
@@ -603,7 +603,7 @@ export class GiftCardsService {
 
   /**
    * Koppelt bestaande, nog niet gekoppelde kadobonnen met.recipientEmail
-   * gelijk aan dit e-mailadres alsnog aan dit klantaccount — dekt precies
+   * gelijk aan dit e-mailadres alsnog aan dit gastaccount — dekt precies
    * de omgekeerde volgorde van de automatische koppeling in
    * confirmMolliePayment (die alleen koppelt als het account op het
    * moment van BETALEN al bestond). Als iemand pas ÁCHTERAF een account
@@ -949,7 +949,7 @@ export class GiftCardsService {
   }
 
   /**
-   * Voor de klantportal: de ingelogde klant wil zijn eigen kadobon
+   * Voor de gastportal: de ingelogde gast wil zijn eigen kadobon
    * bekijken (QR + leesbaar token). Omdat het ruwe token nooit wordt
    * opgeslagen, genereren we hier een VERS token en vervangen we de
    * opgeslagen hash — het oude token wordt daardoor automatisch
@@ -1072,13 +1072,13 @@ export class GiftCardsService {
   }
 
   /**
-   * Voor de portal: laat een klant zijn EIGEN gekoppelde kadobon
+   * Voor de portal: laat een gast zijn EIGEN gekoppelde kadobon
    * bekijken zonder in een e-mail te hoeven zoeken. Genereert een
    * VERS token voor dezelfde kaart (zelfde saldo, zelfde geschiedenis
    * — alleen een nieuw token) en slaat alleen de hash op, exact
    * hetzelfde principe als overal elders. Het vorige token wordt
    * daarmee ongeldig; onschadelijk, want dit is de enige legitieme
-   * manier waarop de klant zijn kaart alsnog kan bekijken.
+   * manier waarop de gast zijn kaart alsnog kan bekijken.
    */
   async regenerateTokenForCustomer(orgId: string, customerId: string, giftCardId: string) {
     const card = await this.prisma.giftCard.findFirst({

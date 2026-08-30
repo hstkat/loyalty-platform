@@ -243,7 +243,7 @@
     <div>
       <nav>
         <a href="dashboard.html" data-page="dashboard">Overzicht</a>
-        <a href="customers.html" data-page="customers">Klanten</a>
+        <a href="customers.html" data-page="customers">Gasten</a>
         <a href="campaigns.html" data-page="campaigns">Campagnes</a>
         <a href="transacties.html" data-page="transacties">Spaarpunten</a>
         <a href="cadeaus.html" data-page="cadeaus">Beloningen</a>
@@ -305,7 +305,7 @@
       </div>
       <div class="form-field checkbox-field">
         <input type="checkbox" id="s-transfers-allowed">
-        <label>Tegoed overdragen tussen klanten toestaan</label>
+        <label>Tegoed overdragen tussen gasten toestaan</label>
       </div>
     </div>
     <div style="margin-top: 20px;">
@@ -314,8 +314,8 @@
   </div>
 
   <div class="panel">
-    <h2>Klantenbeheer</h2>
-    <p class="sub">Zoek een klant om diens gegevens te verwijderen of te anonimiseren (bijv. bij een AVG-verzoek). Dit kan niet ongedaan worden gemaakt.</p>
+    <h2>Gastenbeheer</h2>
+    <p class="sub">Zoek een gast om diens gegevens te verwijderen of te anonimiseren (bijv. bij een AVG-verzoek). Dit kan niet ongedaan worden gemaakt.</p>
     <div class="autocomplete-field">
       <input type="text" id="customer-search-input" placeholder="Zoek op naam, e-mail, telefoon of kaartnummer…" autocomplete="off">
       <div class="autocomplete-list" id="customer-autocomplete-list"></div>
@@ -329,7 +329,7 @@
     <div class="audit-toolbar">
       <select id="audit-entity-filter">
         <option value="">Alle soorten</option>
-        <option value="customer">Klant</option>
+        <option value="customer">Gast</option>
         <option value="loyalty_card">Loyaltykaart</option>
         <option value="loyalty_card_batch">Kaartbatch</option>
       </select>
@@ -433,7 +433,7 @@
       els.overviewGrid.innerHTML = `
         <div class="overview-tile"><div class="label">Organisatie</div><div class="value">${overview.organization?.name || '—'}</div></div>
         <div class="overview-tile"><div class="label">Organisatie-ID</div><div class="value" style="font-size:11px;">${overview.organization?.id || orgId}</div></div>
-        <div class="overview-tile"><div class="label">Aantal klanten</div><div class="value">${overview.customerCount ?? '—'}</div></div>
+        <div class="overview-tile"><div class="label">Aantal gasten</div><div class="value">${overview.customerCount ?? '—'}</div></div>
         <div class="overview-tile"><div class="label">Actieve loyaltykaarten</div><div class="value">${overview.activeCardCount ?? '—'}</div></div>
       `;
       els.statusLine.textContent = 'Geladen.';
@@ -479,7 +479,7 @@
     }
   });
 
-  // -- Klantenbeheer: zoeken + verwijderen/anonimiseren -----------------------
+  // -- Gastenbeheer: zoeken + verwijderen/anonimiseren -----------------------
 
   let selectedCustomer = null;
   let customerSearchTimeout = null;
@@ -507,7 +507,7 @@
 
   function renderCustomerAutocomplete(results) {
     if (results.length === 0) {
-      els.customerAutocompleteList.innerHTML = '<div class="no-match">Geen klanten gevonden</div>';
+      els.customerAutocompleteList.innerHTML = '<div class="no-match">Geen gasten gevonden</div>';
       els.customerAutocompleteList.classList.add('open');
       return;
     }
@@ -544,7 +544,7 @@
       try {
         const { orgId } = getConfig();
         await apiPost('/organizations/' + orgId + '/customers/' + selectedCustomer.id + '/anonymize');
-        alert('Klant geanonimiseerd.');
+        alert('Gast geanonimiseerd.');
         els.selectedCustomerBox.classList.remove('show');
         els.customerSearchInput.value = '';
         loadAuditLog();
@@ -556,7 +556,7 @@
       try {
         const { orgId } = getConfig();
         await apiDelete('/organizations/' + orgId + '/customers/' + selectedCustomer.id);
-        alert('Klant verwijderd.');
+        alert('Gast verwijderd.');
         els.selectedCustomerBox.classList.remove('show');
         els.customerSearchInput.value = '';
         loadAuditLog();
@@ -567,7 +567,7 @@
   // -- Audit-log ---------------------------------------------------------------
 
   const ACTION_LABELS = { create: 'Aangemaakt', update: 'Gewijzigd', delete: 'Verwijderd', merge: 'Samengevoegd', anonymize: 'Geanonimiseerd', export: 'Geëxporteerd' };
-  const ENTITY_LABELS = { customer: 'Klant', loyalty_card: 'Loyaltykaart', loyalty_card_batch: 'Kaartbatch', import_job: 'Import', import_record: 'Import-rij' };
+  const ENTITY_LABELS = { customer: 'Gast', loyalty_card: 'Loyaltykaart', loyalty_card_batch: 'Kaartbatch', import_job: 'Import', import_record: 'Import-rij' };
 
   async function loadAuditLog() {
     try {

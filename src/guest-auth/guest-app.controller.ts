@@ -144,7 +144,7 @@ export class GuestAppController {
   // vaste QR-code bij de tablet: eenmalig met een code inloggen en
   // meteen (of later via het Profiel-tabblad) een wachtwoord instellen,
   // zodat een volgend bezoek niet steeds een nieuwe code hoeft te
-  // wachten. Een klant die nooit een wachtwoord instelt kan dit
+  // wachten. Een gast die nooit een wachtwoord instelt kan dit
   // endpoint gewoon niet gebruiken en blijft de codeflow gebruiken.
   @Throttle({ default: { limit: 10, ttl: 300000 } })
   @Post('auth/login-password')
@@ -216,7 +216,7 @@ export class GuestAppController {
     });
   }
 
-  // -- Kadobonnen van deze klant — bewust een apart endpoint, apart
+  // -- Kadobonnen van deze gast — bewust een apart endpoint, apart
   // saldo, nooit samengevoegd met het loyaltytegoed hierboven. --------
 
   @Get('me/wallet-pass/google')
@@ -340,7 +340,7 @@ export class GuestAppController {
    * onbruikbaar voor iets wat op papier in een portemonnee belandt).
    * In plaats daarvan wordt een echte, nooit-verlopende fysieke-
    * loyaltykaart uitgegeven — hetzelfde, al bewezen systeem als de
-   * vooraf gedrukte kaarten, alleen nu direct aan de al-ingelogde klant.
+   * vooraf gedrukte kaarten, alleen nu direct aan de al-ingelogde gast.
    */
   @Post('me/email-qr-card')
   @UseGuards(GuestSessionGuard)

@@ -102,7 +102,7 @@ export class GuestAuthService {
 
       // Zelfde vangnet als bij nieuwe registraties: als er ondertussen
       // (bijv. vóór deze koppel-logica bestond, of door de eerder
-      // gevonden duplicate-klant-ambiguïteit) nog een niet-gekoppelde
+      // gevonden duplicate-gast-ambiguïteit) nog een niet-gekoppelde
       // kadobon voor dit e-mailadres klaarstaat, alsnog koppelen.
       await this.giftCards.linkUnclaimedGiftCardsToCustomer(orgId, customer.id, email).catch(() => undefined);
 
@@ -110,8 +110,8 @@ export class GuestAuthService {
       return { ...session, requiresRegistration: false as const };
     }
 
-    // Geen bestaande klant — probeer de registratiecode. Nooit een
-    // ander soort foutmelding tonen dan bij een bestaande klant (zelfde
+    // Geen bestaande gast — probeer de registratiecode. Nooit een
+    // ander soort foutmelding tonen dan bij een bestaande gast (zelfde
     // anti-enumeratie-principe als bij requestCode hierboven).
     const regCode = await this.prisma.guestRegistrationCode.findFirst({
       where: { organizationId: orgId, email, usedAt: null, expiresAt: { gte: new Date() } },
@@ -134,7 +134,7 @@ export class GuestAuthService {
 
   /**
    * Rondt de registratie af ná een succesvolle e-mailverificatie
-   * hierboven. Controleert bewust ALSNOG op een bestaande klant (op
+   * hierboven. Controleert bewust ALSNOG op een bestaande gast (op
    * e-mail én genormaliseerd telefoonnummer) — voorkomt dubbele
    * profielen als iemand tussen verificatie en dit moment via een
    * andere weg (POS, fysieke kaart, Piggy-import) al is aangemaakt.
@@ -201,7 +201,7 @@ export class GuestAuthService {
 
   /**
    * Uitgetrokken uit verifyCode zodat andere flows (zoals het claimen
-   * van een fysieke loyaltykaart als nieuwe klant, waarbij de gast net
+   * van een fysieke loyaltykaart als nieuwe gast, waarbij de gast net
    * verse contactgegevens heeft opgegeven) ook direct een sessie kunnen
    * uitgeven, zonder de e-mailcode-stap te dupliceren.
    */
@@ -238,7 +238,7 @@ export class GuestAuthService {
   }
 
   // -- Wachtwoord-login: EXTRA optie naast de e-mailcode-flow, nooit een
-  // vervanging. Een klant die nooit een wachtwoord instelt, blijft
+  // vervanging. Een gast die nooit een wachtwoord instelt, blijft
   // gewoon de codeflow gebruiken (passwordHash blijft dan null). ------
 
   private readonly GENERIC_PASSWORD_ERROR = 'E-mailadres of wachtwoord onjuist';
@@ -248,7 +248,7 @@ export class GuestAuthService {
       where: { organizationId: orgId, email, deletedAt: null },
     });
 
-    // Zelfde generieke foutmelding of de klant nu wel/niet bestaat, nog
+    // Zelfde generieke foutmelding of de gast nu wel/niet bestaat, nog
     // geen wachtwoord heeft ingesteld, of een fout wachtwoord invoerde —
     // voorkomt dat een aanvaller e-mailadressen kan "raden" op basis van
     // het verschil in foutmelding (zelfde principe als bij de codeflow).

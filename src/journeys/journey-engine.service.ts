@@ -205,7 +205,7 @@ export class JourneyEngineService {
           case 'give_reward': {
             // Nu geïmplementeerd voor vouchers (was voorheen een no-op —
             // zie klasse-comment): geeft een voucher-template uit aan de
-            // klant in deze enrollment. Andere reward-types (bijv. iets
+            // gast in deze enrollment. Andere reward-types (bijv. iets
             // uit de puntenwinkel) blijven een no-op tot dat apart
             // gebouwd wordt.
             const config = node.config as { voucherTemplateId?: string };

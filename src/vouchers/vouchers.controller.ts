@@ -128,7 +128,7 @@ export class VouchersController {
     return this.vouchers.updateTemplate(orgId, templateId, dto);
   }
 
-  // -- Uitgifte & klantprofiel-acties -------------------------------------
+  // -- Uitgifte & gastprofiel-acties -------------------------------------
 
   @Post('issue')
   @RequirePermissions('voucher.write')

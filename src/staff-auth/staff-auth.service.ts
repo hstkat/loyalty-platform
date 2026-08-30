@@ -13,7 +13,7 @@ const BCRYPT_ROUNDS = 12;
  * Vervangt de vorige "auth-stub" (organizationId/permissions/actorId
  * zomaar overgenomen uit x-organization-id / x-permissions / x-actor-id
  * headers, zonder enige verificatie — zie security-audit). Zelfde
- * bewezen patroon als de klantportal: bcrypt-wachtwoorden, alleen een
+ * bewezen patroon als de gastportal: bcrypt-wachtwoorden, alleen een
  * GEHASHTE sessietoken in de database (nooit de ruwe token zelf), en
  * brute-force-lockout.
  *
@@ -39,7 +39,7 @@ export class StaffAuthService {
     // Generieke foutmelding ongeacht of het account bestaat, inactief
     // is, of het wachtwoord fout is — voorkomt dat een aanvaller kan
     // afleiden welke e-mailadressen wel/niet een backoffice-account
-    // hebben (zelfde anti-enumeratie-principe als de klantportal-login).
+    // hebben (zelfde anti-enumeratie-principe als de gastportal-login).
     if (!staffUser) throw new UnauthorizedException(this.GENERIC_LOGIN_ERROR);
 
     if (staffUser.lockedUntil && staffUser.lockedUntil > new Date()) {

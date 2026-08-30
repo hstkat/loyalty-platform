@@ -99,13 +99,13 @@ export class AiAssistantService {
 
       responseText =
         `Opportunity detected: lunch occupancy ${forecastPct}% (huidige boekingen: ${occupancyNow.occupancyPercentage ?? '?'}%). ` +
-        `Aanbevolen doelgroep: ${audience.count} klanten (geen bezoek laatste 21 dagen, marketing-consent). ` +
+        `Aanbevolen doelgroep: ${audience.count} gasten (geen bezoek laatste 21 dagen, marketing-consent). ` +
         `Aanbevolen incentive: ${multiplier}x Strand tegoed. Geschatte max. exposure: ${estimatedMaxExposure} punten.`;
     } else {
       responseText =
         forecastPct >= 45
           ? `Geen opportunity: geschatte bezetting ${forecastPct}% ligt boven de drempel van 45%.`
-          : `Opportunity gedetecteerd (${forecastPct}%), maar geen geschikte doelgroep gevonden (0 klanten voldoen aan de criteria).`;
+          : `Opportunity gedetecteerd (${forecastPct}%), maar geen geschikte doelgroep gevonden (0 gasten voldoen aan de criteria).`;
     }
 
     const assistantMessage = await this.prisma.aiAssistantMessage.create({
