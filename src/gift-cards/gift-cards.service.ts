@@ -20,6 +20,13 @@ import {
 
 const MAX_BATCH_QUANTITY = 5000;
 const MIN_GIFT_CARD_VALUE = 10; // onder dit bedrag wegen de vaste transactiekosten (Mollie e.d.) niet meer op tegen de waarde
+const DEFAULT_GIFT_CARD_VALIDITY_YEARS = 5; // wettelijke/gangbare geldigheidstermijn — kan per kaart overschreven worden via dto.expiresAt
+
+function defaultGiftCardExpiry(from: Date = new Date()): Date {
+  const expiry = new Date(from);
+  expiry.setUTCFullYear(expiry.getUTCFullYear() + DEFAULT_GIFT_CARD_VALIDITY_YEARS);
+  return expiry;
+}
 
 // Simpele formaatcheck — geen poging om elk technisch geldig e-mailadres
 // te dekken, maar voldoende om overduidelijke tikfouten (geen @, geen
@@ -129,7 +136,7 @@ export class GiftCardsService {
         senderEmail: dto.senderEmail,
         personalMessage: dto.personalMessage,
         scheduledSendAt: dto.scheduledSendAt ? new Date(dto.scheduledSendAt) : undefined,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : undefined,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : defaultGiftCardExpiry(),
         activatedAt: new Date(),
       },
     });
@@ -463,6 +470,7 @@ export class GiftCardsService {
             status: 'active',
             currentBalance: giftCard.originalValue,
             activatedAt: new Date(),
+            expiresAt: defaultGiftCardExpiry(),
             recipientCustomerId,
             ...(freshRecipientToken ? { publicTokenHash: this.hashToken(freshRecipientToken) } : {}),
           },
@@ -686,6 +694,7 @@ export class GiftCardsService {
           originalValue: dto.originalValue,
           currentBalance: dto.originalValue,
           activatedAt: new Date(),
+          expiresAt: defaultGiftCardExpiry(),
           purchaserCustomerId: dto.purchaserCustomerId,
           recipientCustomerId: dto.recipientCustomerId,
         },
@@ -726,6 +735,9 @@ export class GiftCardsService {
     if (giftCard.organizationId !== orgId) throw new NotFoundException('Kadobon niet gevonden');
     if (giftCard.status !== 'active' && giftCard.status !== 'partially_redeemed') {
       throw new ConflictException(`Deze kaart heeft status "${giftCard.status}" en kan niet worden ingewisseld`);
+    }
+    if (giftCard.expiresAt && giftCard.expiresAt < new Date()) {
+      throw new ConflictException(`Deze kaart is verlopen op ${giftCard.expiresAt.toLocaleDateString('nl-NL')} en kan niet meer worden ingewisseld`);
     }
     // Locatiescope daadwerkelijk afdwingen — leeg array = organisatiebreed
     // (bruikbaar bij zowel Het Strand als Zomers), gevuld array beperkt
@@ -1099,5 +1111,60 @@ export class GiftCardsService {
     const card = await this.prisma.giftCard.findFirst({ where: { id: giftCardId, organizationId: orgId } });
     if (!card) throw new NotFoundException('Kadobon niet gevonden');
     return card;
+  }
+
+  /**
+   * Draait dagelijks via de cron (zie gift-card-expiry-cron.controller.ts):
+   * zet elke kaart die zijn vervaldatum is gepasseerd op status 'expired'
+   * en boekt het resterende saldo af met een 'expiration'-ledgerboeking —
+   * dezelfde entryType die de financiële rapportagemodule al gebruikt om
+   * "verlopen" te tonen. Alleen 'active'/'partially_redeemed' kaarten met
+   * saldo komen in aanmerking; een kaart op €0 hoeft niet apart als
+   * "verlopen" geboekt te worden (er staat toch niets meer open), maar
+   * krijgt de statuswijziging zelf uiteraard wel.
+   */
+  async processExpiredGiftCards(orgId: string): Promise<{ expiredCount: number; expiredValue: number }> {
+    const now = new Date();
+    const expiredCards = await this.prisma.giftCard.findMany({
+      where: {
+        organizationId: orgId,
+        status: { in: ['active', 'partially_redeemed'] },
+        expiresAt: { lt: now },
+      },
+    });
+
+    let expiredValue = 0;
+    for (const card of expiredCards) {
+      const balance = Number(card.currentBalance);
+      await this.prisma.$transaction(async (tx) => {
+        // Atomair — zelfde bescherming tegen een race met een
+        // gelijktijdige inwisseling als elders in deze service: de
+        // where-clause herhaalt status IN (...) in de UPDATE zelf.
+        const claim = await tx.giftCard.updateMany({
+          where: { id: card.id, status: { in: ['active', 'partially_redeemed'] } },
+          data: { status: 'expired', currentBalance: 0 },
+        });
+        if (claim.count === 0) return;
+
+        if (balance > 0) {
+          await tx.giftCardLedgerEntry.create({
+            data: {
+              giftCardId: card.id,
+              organizationId: orgId,
+              entryType: 'expiration',
+              amount: balance * -1,
+              reason: `Automatisch verlopen op ${card.expiresAt?.toLocaleDateString('nl-NL')} (5 jaar geldigheid)`,
+            },
+          });
+          expiredValue += balance;
+        }
+      });
+    }
+
+    if (expiredCards.length > 0) {
+      this.logger.log(`${expiredCards.length} kadobon(nen) automatisch verlopen voor organisatie ${orgId}, totaal €${expiredValue.toFixed(2)} afgeboekt`);
+    }
+
+    return { expiredCount: expiredCards.length, expiredValue };
   }
 }
