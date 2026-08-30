@@ -312,7 +312,7 @@ export class GiftCardCheckoutController {
     </div>
 
     <div id="bulk-toggle-row" style="text-align:center;margin-bottom:12px;">
-      <a href="#" id="switch-to-bulk-link" style="color:var(--accent-dark);font-size:12.5px;font-weight:600;text-decoration:underline;">Meerdere cadeaukaarten voor verschillende mensen kopen?</a>
+      <a href="#" id="switch-to-bulk-link" style="color:var(--white);font-size:12.5px;font-weight:600;text-decoration:underline;">Meerdere cadeaukaarten voor verschillende mensen kopen?</a>
     </div>
 
     <div class="panel" id="single-amount-panel">
@@ -368,7 +368,7 @@ export class GiftCardCheckoutController {
     </div>
     <div id="bulk-mode-footer" style="display:none;">
       <button id="bulk-pay-btn">Doorgaan naar betalen</button>
-      <div style="text-align:center;margin-top:8px;"><a href="#" id="switch-to-single-link" style="color:var(--muted);font-size:12px;text-decoration:underline;">← Terug naar één cadeaukaart</a></div>
+      <div style="text-align:center;margin-top:8px;"><a href="#" id="switch-to-single-link" style="color:var(--white);opacity:0.85;font-size:12px;text-decoration:underline;">← Terug naar één cadeaukaart</a></div>
     </div>
     <div class="error" id="error"></div>
   </div>
