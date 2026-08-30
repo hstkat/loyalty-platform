@@ -60,3 +60,20 @@ export interface RefundGiftCardDto {
   ledgerEntryId: string;
   reason?: string;
 }
+
+// -- Bulk online aankoop: één Mollie-betaling, meerdere cadeaukaarten met
+// elk hun eigen ontvanger/bedrag ------------------------------------------
+
+export interface BulkGiftCardItemDto {
+  originalValue: number;
+  recipientName?: string;
+  recipientEmail?: string;
+  personalMessage?: string;
+}
+
+export interface BulkPurchaseDto {
+  senderName: string;
+  senderEmail: string;
+  brand?: string;
+  items: BulkGiftCardItemDto[];
+}

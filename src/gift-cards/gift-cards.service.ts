@@ -15,6 +15,7 @@ import {
   ReplaceGiftCardDto,
   AdjustGiftCardDto,
   RefundGiftCardDto,
+  BulkPurchaseDto,
 } from './dto/gift-cards.dto';
 
 const MAX_BATCH_QUANTITY = 5000;
@@ -180,7 +181,7 @@ export class GiftCardsService {
 
     let senderConfirmationSent: boolean | undefined;
     if (dto.senderEmail) {
-      senderConfirmationSent = await this.sendPurchaseConfirmationToSender(orgId, giftCard.id)
+      senderConfirmationSent = await this.sendPurchaseConfirmationToSender(orgId, [giftCard.id])
         .then(() => true)
         .catch((err) => {
           this.logger.error(
@@ -309,19 +310,113 @@ export class GiftCardsService {
   }
 
   /**
+   * Zelfde als startOnlinePurchase, maar voor MEERDERE cadeaukaarten in
+   * één keer (elk met een eigen bedrag/ontvanger, gedeelde afzender) —
+   * bijv. voor een bedrijf dat in één keer vijf cadeaukaarten voor
+   * verschillende collega's koopt. Eén Mollie-betaling voor het
+   * totaalbedrag; confirmMolliePayment activeert bij bevestiging alle
+   * kaarten die bij deze betaling horen.
+   */
+  async startBulkOnlinePurchase(
+    orgId: string,
+    dto: BulkPurchaseDto,
+    publicAppUrl: string,
+  ): Promise<{ checkoutUrl: string } | { checkoutUrl: null; reason: string }> {
+    if (!this.mollie.isConfigured()) {
+      return { checkoutUrl: null, reason: 'Online betalen is nog niet ingesteld — neem contact op met de zaak.' };
+    }
+    if (!dto.items || dto.items.length === 0) {
+      throw new BadRequestException('Geen cadeaukaarten opgegeven');
+    }
+    const MAX_BULK_ITEMS = 25; // ruim voldoende voor een zakelijke bestelling, voorkomt misbruik/timeouts
+    if (dto.items.length > MAX_BULK_ITEMS) {
+      throw new BadRequestException(`Maximaal ${MAX_BULK_ITEMS} cadeaukaarten per bestelling`);
+    }
+    if (!dto.senderName || !dto.senderName.trim()) {
+      throw new BadRequestException('Vul je naam in.');
+    }
+    if (!isValidEmail(dto.senderEmail)) {
+      throw new BadRequestException('Vul een geldig e-mailadres in (voor je aankoopbevestiging).');
+    }
+    for (const item of dto.items) {
+      if (item.originalValue < MIN_GIFT_CARD_VALUE) {
+        throw new BadRequestException(`Minimaal bedrag per kaart is €${MIN_GIFT_CARD_VALUE} (i.v.m. transactiekosten)`);
+      }
+      if (item.recipientEmail && !isValidEmail(item.recipientEmail)) {
+        throw new BadRequestException(`Het e-mailadres van ontvanger "${item.recipientName || item.recipientEmail}" lijkt niet geldig.`);
+      }
+    }
+
+    const existingCount = await this.prisma.giftCard.count({ where: { organizationId: orgId } });
+    const createdCards: { id: string; giftCardNumber: string }[] = [];
+    for (let i = 0; i < dto.items.length; i++) {
+      const item = dto.items[i];
+      const token = this.generateToken();
+      const giftCardNumber = 'GC-' + String(existingCount + 1 + i).padStart(6, '0');
+      const giftCard = await this.prisma.giftCard.create({
+        data: {
+          organizationId: orgId,
+          giftCardNumber,
+          publicTokenHash: this.hashToken(token),
+          status: 'draft',
+          originalValue: item.originalValue,
+          currentBalance: 0,
+          recipientName: item.recipientName,
+          recipientEmail: item.recipientEmail,
+          senderName: dto.senderName.trim(),
+          senderEmail: dto.senderEmail.trim(),
+          personalMessage: item.personalMessage,
+        },
+      });
+      createdCards.push({ id: giftCard.id, giftCardNumber: giftCard.giftCardNumber });
+    }
+
+    const totalAmount = dto.items.reduce((sum, item) => sum + item.originalValue, 0);
+    // Mollie kent de redirectUrl pas ná het aanmaken van de betaling nog
+    // niet het eigen payment-ID — we gebruiken daarom het ID van de
+    // EERSTE aangemaakte kaart als kenmerk in de URL. De bedankpagina
+    // zoekt die kaart op, leest daarvan molliePaymentId (dat hieronder,
+    // vóór de checkout-redirect, al gezet wordt) en haalt daarmee alle
+    // bijbehorende kaarten van dezelfde betaling op.
+    const paymentResult = await this.mollie.createPayment({
+      amount: totalAmount,
+      description: `${createdCards.length} cadeaukaarten (${createdCards.map((c) => c.giftCardNumber).join(', ')})`,
+      redirectUrl: `${publicAppUrl}/gift-cards/thank-you-bulk/${createdCards[0].id}${dto.brand ? '?brand=' + encodeURIComponent(dto.brand) : ''}`,
+      webhookUrl: `${publicAppUrl}/gift-cards/mollie-webhook`,
+      metadata: { organizationId: orgId, giftCardIds: createdCards.map((c) => c.id), bulk: true },
+    });
+
+    if (!paymentResult.created) {
+      await this.prisma.giftCard.updateMany({ where: { id: { in: createdCards.map((c) => c.id) } }, data: { status: 'cancelled' } });
+      return { checkoutUrl: null, reason: paymentResult.reason };
+    }
+
+    await this.prisma.giftCard.updateMany({ where: { id: { in: createdCards.map((c) => c.id) } }, data: { molliePaymentId: paymentResult.payment.id } });
+
+    const checkoutUrl = paymentResult.payment._links.checkout?.href;
+    if (!checkoutUrl) {
+      return { checkoutUrl: null, reason: 'Mollie gaf geen checkout-link terug' };
+    }
+    return { checkoutUrl };
+  }
+
+  /**
    * Wordt aangeroepen door de Mollie-webhook (alleen een `id`, geen
    * status — zie MollieService voor waarom). Haalt de ECHTE status vers
-   * op bij Mollie zelf, en activeert de kaart alleen als die status
+   * op bij Mollie zelf, en activeert de kaart(en) alleen als die status
    * daadwerkelijk 'paid' is. Idempotent: als de kaart al actief is
    * (bijv. Mollie roept de webhook twee keer aan), gebeurt er niets
-   * extra — voorkomt dubbele ledger-entries.
+   * extra — voorkomt dubbele ledger-entries. Verwerkt óók bulk-
+   * aankopen (meerdere kaarten per betaling) — zie startBulkOnlinePurchase.
    */
   async confirmMolliePayment(molliePaymentId: string): Promise<{ processed: boolean }> {
-    const giftCard = await this.prisma.giftCard.findUnique({ where: { molliePaymentId } });
-    if (!giftCard) return { processed: false }; // onbekende betaling — niets van ons, negeren
-
-    if (giftCard.status !== 'draft') {
-      return { processed: true }; // al verwerkt, of geannuleerd — idempotent, geen dubbele boeking
+    const draftCards = await this.prisma.giftCard.findMany({ where: { molliePaymentId, status: 'draft' } });
+    if (draftCards.length === 0) {
+      // Geen draft-kaarten (meer) voor deze betaling — ofwel een
+      // onbekende betaling (niets van ons), ofwel al eerder volledig
+      // verwerkt/geannuleerd (idempotent, geen dubbele boeking).
+      const anyCardForPayment = await this.prisma.giftCard.findFirst({ where: { molliePaymentId }, select: { id: true } });
+      return { processed: !!anyCardForPayment };
     }
 
     const payment = await this.mollie.getPayment(molliePaymentId);
@@ -329,106 +424,103 @@ export class GiftCardsService {
       return { processed: true }; // nog niet (of niet meer) betaald — nog niets te activeren
     }
 
-    // Koppel de kaart automatisch aan een BESTAAND klantaccount met
-    // hetzelfde e-mailadres, zodat die 'm meteen ziet staan onder
-    // "Cadeaukaarten" in Mijn Tegoed — zonder dat de koper of ontvanger
-    // daar iets voor hoeft te doen. Bewust GEEN nieuw account aanmaken
-    // als er nog geen match is: dat zou een account aanmaken zonder
-    // toestemming/verificatie van de ontvanger. In dat geval blijft de
-    // kaart gewoon bereikbaar via de e-mail met de losse kaartlink/QR,
-    // exact zoals nu al het geval is.
-    let recipientCustomerId: string | undefined;
-    if (giftCard.recipientEmail) {
-      const matchingCustomer = await this.findBestMatchingCustomer(giftCard.organizationId, giftCard.recipientEmail);
-      recipientCustomerId = matchingCustomer?.id;
-    }
+    const activatedCardIds: string[] = [];
+    for (const giftCard of draftCards) {
+      // Koppel de kaart automatisch aan een BESTAAND klantaccount met
+      // hetzelfde e-mailadres, zodat die 'm meteen ziet staan onder
+      // "Cadeaukaarten" in Mijn Tegoed — zonder dat de koper of
+      // ontvanger daar iets voor hoeft te doen. Bewust GEEN nieuw
+      // account aanmaken als er nog geen match is: dat zou een account
+      // aanmaken zonder toestemming/verificatie van de ontvanger. In
+      // dat geval blijft de kaart gewoon bereikbaar via de e-mail met
+      // de losse kaartlink/QR, exact zoals nu al het geval is.
+      let recipientCustomerId: string | undefined;
+      if (giftCard.recipientEmail) {
+        const matchingCustomer = await this.findBestMatchingCustomer(giftCard.organizationId, giftCard.recipientEmail);
+        recipientCustomerId = matchingCustomer?.id;
+      }
 
-    // Atomair CLAIMEN van de activering: de where-clause herhaalt de
-    // status='draft'-voorwaarde in de UPDATE zelf (niet alleen in de
-    // eerdere read hierboven), en de claim + ledger-entry zitten samen
-    // in één transactie. Mollie kan de webhook soms bijna gelijktijdig
-    // twee keer aanroepen — zonder deze extra check zouden beide
-    // requests de eerdere `giftCard.status !== 'draft'`-lezing allebei
-    // nog als 'draft' kunnen zien vóórdat de ander zijn write heeft
-    // voltooid (klassieke read-then-write-race), en dan alsnog dubbel
-    // activeren/mailen/boeken. Postgres serialiseert twee gelijktijdige
-    // UPDATE's op dezelfde rij vanzelf (rij-lock) — de tweede transactie
-    // ziet na de eerste committed heeft status niet meer 'draft' en
-    // matcht dus 0 rijen.
-    // Wanneer er een ontvanger-e-mailadres is, genereren we hier een
-    // VERS token in plaats van te vertrouwen op het teruglezen van het
-    // oorspronkelijke token uit Mollie's metadata — dat teruglezen bleek
-    // in de praktijk niet altijd betrouwbaar, en faalde daarbij volledig
-    // stil (geen log, geen foutmelding — de kaart werd dan gewoon nooit
-    // verstuurd). Dit nieuwe token is nooit eerder aan iemand getoond,
-    // dus vervangen is altijd veilig.
-    const freshRecipientToken = giftCard.recipientEmail ? this.generateToken() : undefined;
+      // Wanneer er een ontvanger-e-mailadres is, genereren we hier een
+      // VERS token in plaats van te vertrouwen op het teruglezen van
+      // het oorspronkelijke token uit Mollie's metadata — dat teruglezen
+      // bleek in de praktijk niet altijd betrouwbaar, en faalde daarbij
+      // volledig stil. Dit nieuwe token is nooit eerder aan iemand
+      // getoond, dus vervangen is altijd veilig.
+      const freshRecipientToken = giftCard.recipientEmail ? this.generateToken() : undefined;
 
-    const claimed = await this.prisma.$transaction(async (tx) => {
-      const claim = await tx.giftCard.updateMany({
-        where: { id: giftCard.id, status: 'draft' },
-        data: {
-          status: 'active',
-          currentBalance: giftCard.originalValue,
-          activatedAt: new Date(),
-          recipientCustomerId,
-          ...(freshRecipientToken ? { publicTokenHash: this.hashToken(freshRecipientToken) } : {}),
-        },
+      // Atomair CLAIMEN van de activering per kaart: de where-clause
+      // herhaalt de status='draft'-voorwaarde in de UPDATE zelf, en de
+      // claim + ledger-entry zitten samen in één transactie. Voorkomt
+      // dubbele activering/mailen/boeking bij (bijna-)gelijktijdige
+      // webhook-aanroepen — Postgres serialiseert dit vanzelf via de
+      // rij-lock. Eén mislukte kaart in de batch (zeldzaam, alleen bij
+      // een racende gelijktijdige aanroep) blokkeert de rest van de
+      // batch niet — we gaan gewoon door met de volgende kaart.
+      const claimed = await this.prisma.$transaction(async (tx) => {
+        const claim = await tx.giftCard.updateMany({
+          where: { id: giftCard.id, status: 'draft' },
+          data: {
+            status: 'active',
+            currentBalance: giftCard.originalValue,
+            activatedAt: new Date(),
+            recipientCustomerId,
+            ...(freshRecipientToken ? { publicTokenHash: this.hashToken(freshRecipientToken) } : {}),
+          },
+        });
+        if (claim.count === 0) return false;
+
+        await tx.giftCardLedgerEntry.create({
+          data: {
+            giftCardId: giftCard.id,
+            organizationId: giftCard.organizationId,
+            entryType: 'sale',
+            amount: giftCard.originalValue,
+            reason: 'Online verkocht via Mollie (' + molliePaymentId + ')',
+            metadata: { molliePaymentId },
+          },
+        });
+        return true;
       });
-      if (claim.count === 0) return false;
+      if (!claimed) continue; // de andere, gelijktijdige aanroep won de race voor DEZE kaart
 
-      await tx.giftCardLedgerEntry.create({
-        data: {
-          giftCardId: giftCard.id,
-          organizationId: giftCard.organizationId,
-          entryType: 'sale',
-          amount: giftCard.originalValue,
-          reason: 'Online verkocht via Mollie (' + molliePaymentId + ')',
-          metadata: { molliePaymentId },
-        },
+      await this.audit.record({
+        organizationId: giftCard.organizationId,
+        entityType: 'gift_card',
+        entityId: giftCard.id,
+        action: 'update',
+        actor: { actorType: 'system', actorId: null, ipAddress: null },
+        beforeState: { status: 'draft' },
+        afterState: { status: 'active' },
+        reason: `Online betaling bevestigd via Mollie — afzender ${giftCard.senderName ?? 'onbekend'} <${giftCard.senderEmail ?? 'onbekend'}>, ontvanger ${giftCard.recipientName ?? '(geen naam opgegeven)'} <${giftCard.recipientEmail ?? '(geen e-mail opgegeven)'}>`,
       });
-      return true;
-    });
-    if (!claimed) {
-      return { processed: true }; // de andere, gelijktijdige aanroep won de race — niets meer te doen hier
-    }
 
-    await this.audit.record({
-      organizationId: giftCard.organizationId,
-      entityType: 'gift_card',
-      entityId: giftCard.id,
-      action: 'update',
-      actor: { actorType: 'system', actorId: null, ipAddress: null },
-      beforeState: { status: 'draft' },
-      afterState: { status: 'active' },
-      reason: `Online betaling bevestigd via Mollie — afzender ${giftCard.senderName ?? 'onbekend'} <${giftCard.senderEmail ?? 'onbekend'}>, ontvanger ${giftCard.recipientName ?? '(geen naam opgegeven)'} <${giftCard.recipientEmail ?? '(geen e-mail opgegeven)'}>`,
-    });
-
-    if (giftCard.recipientEmail && freshRecipientToken) {
-      await this.sendDigitalCard(giftCard.organizationId, giftCard.id, freshRecipientToken).catch((err) => {
-        // Bewust geen harde fout hier — de betaling en activering zijn al
-        // veiliggesteld; een mislukte e-mail mag dat nooit terugdraaien.
-        // WEL duidelijk loggen (zichtbaar in Vercel → project → Logs),
-        // anders lijkt een online cadeaukaart-aankoop stil te verdwijnen
-        // zonder dat iemand het merkt.
+      if (giftCard.recipientEmail && freshRecipientToken) {
+        await this.sendDigitalCard(giftCard.organizationId, giftCard.id, freshRecipientToken).catch((err) => {
+          // Bewust geen harde fout hier — de betaling en activering zijn
+          // al veiliggesteld; een mislukte e-mail mag dat nooit
+          // terugdraaien. WEL duidelijk loggen (zichtbaar in Vercel →
+          // project → Logs), anders lijkt een online cadeaukaart-aankoop
+          // stil te verdwijnen zonder dat iemand het merkt.
+          this.logger.error(
+            `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar e-mail naar ${giftCard.recipientEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+          );
+        });
+      } else if (giftCard.recipientEmail && !freshRecipientToken) {
         this.logger.error(
-          `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar e-mail naar ${giftCard.recipientEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+          `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) heeft een ontvanger-e-mailadres (${giftCard.recipientEmail}) maar geen token om te versturen — niet verstuurd.`,
         );
-      });
-    } else if (giftCard.recipientEmail && !freshRecipientToken) {
-      // Zou nooit mogen gebeuren (freshRecipientToken wordt hierboven
-      // altijd gegenereerd zodra recipientEmail gezet is) — toch expliciet
-      // loggen in plaats van stil niets te doen, mocht er ooit een
-      // logicafout sluipen die dit combineert.
-      this.logger.error(
-        `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) heeft een ontvanger-e-mailadres (${giftCard.recipientEmail}) maar geen token om te versturen — niet verstuurd.`,
-      );
+      }
+
+      activatedCardIds.push(giftCard.id);
     }
 
-    if (giftCard.senderEmail) {
-      await this.sendPurchaseConfirmationToSender(giftCard.organizationId, giftCard.id).catch((err) => {
+    // ÉÉN gecombineerde bevestigingsmail aan de afzender voor de hele
+    // batch (bij een enkele aankoop dus gewoon 1 kaart) — nooit N losse
+    // mails bij een bulk-aankoop.
+    if (activatedCardIds.length > 0 && draftCards[0].senderEmail) {
+      await this.sendPurchaseConfirmationToSender(draftCards[0].organizationId, activatedCardIds).catch((err) => {
         this.logger.error(
-          `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar bevestigingsmail naar afzender ${giftCard.senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+          `${activatedCardIds.length} cadeaukaart(en) betaald (betaling ${molliePaymentId}), maar bevestigingsmail naar afzender ${draftCards[0].senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
         );
       });
     }
@@ -439,38 +531,70 @@ export class GiftCardsService {
   /**
    * Aparte bevestigingsmail aan de KOPER (afzender) zelf — bewust NOOIT
    * de kaart-token/QR of een bruikbare cadeaukaart-code hierin, alleen
-   * bevestiging + samenvatting. De daadwerkelijke kaart gaat uitsluitend
-   * naar de ontvanger via sendDigitalCard hierboven.
+   * bevestiging + samenvatting. De daadwerkelijke kaart(en) gaan
+   * uitsluitend naar de ontvanger(s) via sendDigitalCard hierboven.
+   *
+   * Accepteert een LIJST kaart-id's zodat één bulk-aankoop (meerdere
+   * ontvangers/bedragen, één betaling) ook één gecombineerde
+   * bevestiging oplevert in plaats van N losse mails — voor een enkele
+   * aankoop is dat gewoon een array met 1 element, exact hetzelfde
+   * gedrag als voorheen.
    */
-  private async sendPurchaseConfirmationToSender(orgId: string, giftCardId: string): Promise<void> {
-    const giftCard = await this.prisma.giftCard.findFirst({ where: { id: giftCardId, organizationId: orgId } });
-    if (!giftCard || !giftCard.senderEmail) return;
-    if (giftCard.senderConfirmationSentAt) return; // extra vangnet, los van de atomaire claim hierboven
+  private async sendPurchaseConfirmationToSender(orgId: string, giftCardIds: string[]): Promise<void> {
+    const giftCards = await this.prisma.giftCard.findMany({ where: { id: { in: giftCardIds }, organizationId: orgId } });
+    if (giftCards.length === 0) return;
+    const senderEmail = giftCards[0].senderEmail;
+    if (!senderEmail) return;
+    if (giftCards.every((g) => g.senderConfirmationSentAt)) return; // extra vangnet, los van de atomaire claim in confirmMolliePayment
 
-    const amount = Number(giftCard.originalValue).toFixed(2).replace('.', ',');
-    const purchaseDate = (giftCard.activatedAt ?? giftCard.issuedAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
-    const recipientLine = giftCard.recipientEmail
-      ? `Verstuurd naar: ${giftCard.recipientEmail}`
-      : 'Er is geen ontvanger-e-mailadres opgegeven — je vindt de kaart terug op de bedankpagina die je na de betaling zag.';
+    const purchaseDate = (giftCards[0].activatedAt ?? giftCards[0].issuedAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 
-    const lines = [
-      'Je cadeaukaart is succesvol verstuurd',
-      '',
-      `Bedrag: €${amount}`,
-      `Ontvanger: ${giftCard.recipientName || '(geen naam opgegeven)'}`,
-      recipientLine,
-      `Van: ${giftCard.senderName ?? ''}`,
-      giftCard.personalMessage ? `Persoonlijke boodschap: "${giftCard.personalMessage}"` : undefined,
-      `Ordernummer: ${giftCard.giftCardNumber}`,
-      `Datum van aankoop: ${purchaseDate}`,
-    ].filter((line): line is string => line !== undefined);
+    let subject: string;
+    let lines: string[];
+    if (giftCards.length === 1) {
+      const giftCard = giftCards[0];
+      const amount = Number(giftCard.originalValue).toFixed(2).replace('.', ',');
+      const recipientLine = giftCard.recipientEmail
+        ? `Verstuurd naar: ${giftCard.recipientEmail}`
+        : 'Er is geen ontvanger-e-mailadres opgegeven — je vindt de kaart terug op de bedankpagina die je na de betaling zag.';
+      subject = 'Je cadeaukaart is succesvol verstuurd';
+      lines = [
+        'Je cadeaukaart is succesvol verstuurd',
+        '',
+        `Bedrag: €${amount}`,
+        `Ontvanger: ${giftCard.recipientName || '(geen naam opgegeven)'}`,
+        recipientLine,
+        `Van: ${giftCard.senderName ?? ''}`,
+        giftCard.personalMessage ? `Persoonlijke boodschap: "${giftCard.personalMessage}"` : undefined,
+        `Ordernummer: ${giftCard.giftCardNumber}`,
+        `Datum van aankoop: ${purchaseDate}`,
+      ].filter((line): line is string => line !== undefined);
+    } else {
+      const totalAmount = giftCards.reduce((sum, g) => sum + Number(g.originalValue), 0).toFixed(2).replace('.', ',');
+      subject = `Je ${giftCards.length} cadeaukaarten zijn succesvol verstuurd`;
+      lines = [
+        `Je ${giftCards.length} cadeaukaarten zijn succesvol verstuurd`,
+        '',
+        `Totaalbedrag: €${totalAmount}`,
+        `Van: ${giftCards[0].senderName ?? ''}`,
+        '',
+        'Overzicht:',
+        ...giftCards.map((g) => {
+          const amount = Number(g.originalValue).toFixed(2).replace('.', ',');
+          const recipient = g.recipientEmail ? `${g.recipientName || '(geen naam)'} <${g.recipientEmail}>` : '(voor jezelf, geen ontvanger-e-mail opgegeven)';
+          return `- ${g.giftCardNumber}: €${amount} — ${recipient}`;
+        }),
+        '',
+        `Datum van aankoop: ${purchaseDate}`,
+      ];
+    }
 
-    const emailResult = await this.mailgun.sendEmail(giftCard.senderEmail, 'Je cadeaukaart is succesvol verstuurd', lines.join('\n'));
+    const emailResult = await this.mailgun.sendEmail(senderEmail, subject, lines.join('\n'));
     if (!emailResult.sent) {
       throw new Error(emailResult.reason || 'Mailgun gaf geen reden voor de mislukking');
     }
 
-    await this.prisma.giftCard.update({ where: { id: giftCard.id }, data: { senderConfirmationSentAt: new Date() } });
+    await this.prisma.giftCard.updateMany({ where: { id: { in: giftCardIds } }, data: { senderConfirmationSentAt: new Date() } });
   }
 
   /**

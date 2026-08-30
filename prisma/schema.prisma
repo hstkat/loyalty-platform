@@ -2804,7 +2804,7 @@ model GiftCard {
   // status 'draft' totdat de webhook een bevestigde betaling meldt; zie
   // MollieService voor de reden waarom nooit op de webhook-inhoud zelf
   // wordt vertrouwd, alleen op een verse statusopvraag bij Mollie.
-  molliePaymentId     String? @unique @map("mollie_payment_id")
+  molliePaymentId     String? @map("mollie_payment_id")
   personalMessage     String? @map("personal_message")
   scheduledSendAt     DateTime? @map("scheduled_send_at") // geplande verzending (bijv. verjaardag) — zie GiftCardsService voor het bewuste, gedocumenteerde verzendmechanisme
 
@@ -2830,6 +2830,7 @@ model GiftCard {
   @@index([organizationId, status])
   @@index([purchaserCustomerId])
   @@index([recipientCustomerId])
+  @@index([molliePaymentId])
   @@map("gift_cards")
 }
 

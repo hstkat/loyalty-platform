@@ -130,6 +130,82 @@ export class GiftCardCheckoutController {
     res.status(200).send(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Bedankt</title><style>${styles}</style></head><body><div class="card">${body}</div>${redirectScript}</body></html>`);
   }
 
+  /**
+   * Bulk-variant van thankYouPage: giftCardId in de URL is de EERSTE
+   * kaart van de batch (zie startBulkOnlinePurchase — Mollie kent zijn
+   * eigen payment-ID nog niet op het moment dat de redirectUrl wordt
+   * opgegeven). Zoekt via die kaart het molliePaymentId op en toont
+   * daarna ALLE kaarten die bij diezelfde betaling horen.
+   */
+  @Get('thank-you-bulk/:giftCardId')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  async thankYouBulkPage(@Param('giftCardId') giftCardId: string, @Query('brand') brandParam: string | undefined, @Res() res: Response) {
+    const brand = (brandParam && GIFT_CARD_BRANDS[brandParam]) || DEFAULT_GIFT_CARD_BRAND;
+    const brandLabel = brand.slug ? brand.name.toUpperCase() : 'HET STRAND &amp; ZOMERS';
+
+    const firstCard = await this.prisma.giftCard.findUnique({ where: { id: giftCardId }, select: { molliePaymentId: true } });
+
+    const styles = `
+      :root { --cream: #f6f3ec; --navy-dark: #0e1c2a; --white: #ffffff; --muted: rgba(240,244,247,0.6); --coral: #e8604a; --coral-light: #f08c78; }
+      * { box-sizing: border-box; }
+      body { margin: 0; min-height: 100vh; background: var(--cream); font-family: -apple-system, 'Inter', sans-serif; display: flex; align-items: center; justify-content: center; padding: 24px; }
+      .card { width: 100%; max-width: 420px; background: var(--navy-dark); border-radius: 24px; padding: 36px 28px; text-align: center; color: var(--white); }
+      .brand { font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+      h1 { font-family: Georgia, serif; font-size: 24px; font-weight: 500; margin: 0 0 16px; }
+      p { font-size: 14px; color: rgba(240,244,247,0.8); line-height: 1.6; }
+      .card-list { text-align: left; margin-top: 18px; border-top: 1px solid rgba(255,255,255,0.12); padding-top: 14px; }
+      .card-row { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .card-row .recipient { color: rgba(240,244,247,0.65); }
+      .redirect-note { margin-top: 22px; padding-top: 18px; border-top: 1px solid rgba(255,255,255,0.12); font-size: 12.5px; color: var(--muted); }
+      .redirect-note a { color: var(--white); text-decoration: underline; }
+    `;
+
+    let body: string;
+    if (!firstCard || !firstCard.molliePaymentId) {
+      body = `<div class="brand">${brandLabel}</div><h1>Niet gevonden</h1><p>Deze bestelling kon niet worden gevonden.</p>`;
+    } else {
+      const allCards = await this.prisma.giftCard.findMany({
+        where: { molliePaymentId: firstCard.molliePaymentId },
+        select: { giftCardNumber: true, currentBalance: true, originalValue: true, status: true, recipientName: true, recipientEmail: true },
+        orderBy: { giftCardNumber: 'asc' },
+      });
+      const anyActive = allCards.some((c) => c.status === 'active');
+      const totalAmount = allCards.reduce((sum, c) => sum + Number(c.originalValue), 0);
+
+      if (anyActive) {
+        const rows = allCards
+          .map((c) => {
+            const recipient = c.recipientEmail ? `${c.recipientName || '(geen naam)'} — ${c.recipientEmail}` : '(voor jezelf)';
+            return `<div class="card-row"><span>${c.giftCardNumber} — €${Number(c.originalValue).toFixed(2)}</span><span class="recipient">${recipient}</span></div>`;
+          })
+          .join('');
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>${allCards.length} cadeaukaarten — totaal €${totalAmount.toFixed(2)}. Ontvangers met een e-mailadres krijgen hun kaart per e-mail.</p><div class="card-list">${rows}</div>`;
+      } else {
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — je ontvangt je cadeaukaarten zo snel mogelijk per e-mail.</p>`;
+      }
+    }
+
+    const redirectScript = `
+      <script>
+        (function () {
+          var seconds = 10;
+          var el = document.getElementById('redirect-countdown');
+          var timer = setInterval(function () {
+            seconds -= 1;
+            if (el) el.textContent = seconds;
+            if (seconds <= 0) {
+              clearInterval(timer);
+              window.location.href = ${JSON.stringify(brand.websiteUrl)};
+            }
+          }, 1000);
+        })();
+      </script>
+    `;
+    body += `<div class="redirect-note">Je wordt over <span id="redirect-countdown">10</span> seconden teruggestuurd naar de website. <a href="${brand.websiteUrl}">Ga nu direct terug</a></div>`;
+
+    res.status(200).send(`<!DOCTYPE html><html lang="nl"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Bedankt</title><style>${styles}</style></head><body><div class="card">${body}</div>${redirectScript}</body></html>`);
+  }
+
   @Get('buy/:orgId')
   @Header('Content-Type', 'text/html; charset=utf-8')
   buyPage(@Param('orgId') orgId: string, @Query('brand') brandParam: string | undefined, @Res() res: Response) {
@@ -156,6 +232,24 @@ export class GiftCardCheckoutController {
   ) {
     const publicAppUrl = process.env.PUBLIC_APP_URL || 'https://loyalty-platform-live.vercel.app';
     return this.giftCards.startOnlinePurchase(orgId, body, publicAppUrl);
+  }
+
+  // Bulk-aankoop: meerdere ontvangers/bedragen, één betaling — zelfde
+  // spam-beperking als de losse aankoop.
+  @Throttle({ default: { limit: 10, ttl: 300000 } })
+  @Post('buy-bulk/:orgId')
+  async startBulkPurchase(
+    @Param('orgId') orgId: string,
+    @Body()
+    body: {
+      brand?: string;
+      senderName: string;
+      senderEmail: string;
+      items: { originalValue: number; recipientName?: string; recipientEmail?: string; personalMessage?: string }[];
+    },
+  ) {
+    const publicAppUrl = process.env.PUBLIC_APP_URL || 'https://loyalty-platform-live.vercel.app';
+    return this.giftCards.startBulkOnlinePurchase(orgId, body, publicAppUrl);
   }
 
   private async recoverRawToken(molliePaymentId: string): Promise<string | null> {
@@ -193,8 +287,12 @@ export class GiftCardCheckoutController {
       .toggle-switch input:checked + .toggle-slider { background: var(--accent); }
       .toggle-switch input:checked + .toggle-slider::before { transform: translateX(17px); }
       #message-field { display: none; }
-      button#pay-btn { width: 100%; padding: 15px; border-radius: 11px; border: none; background: var(--accent-dark); color: white; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 2px; }
-      button#pay-btn:disabled { opacity: 0.6; }
+      button#pay-btn, button#bulk-pay-btn { width: 100%; padding: 15px; border-radius: 11px; border: none; background: var(--accent-dark); color: white; font-weight: 700; font-size: 15px; cursor: pointer; margin-top: 2px; }
+      button#pay-btn:disabled, button#bulk-pay-btn:disabled { opacity: 0.6; }
+      .bulk-row { border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 10px; position: relative; }
+      .bulk-row .bulk-row-title { font-size: 12px; font-weight: 700; color: var(--navy); margin-bottom: 8px; }
+      .bulk-row input, .bulk-row textarea { margin-bottom: 8px; }
+      .bulk-row-remove { position: absolute; top: 10px; right: 10px; background: none; border: none; color: var(--muted); font-size: 18px; cursor: pointer; line-height: 1; padding: 2px 6px; }
       .error { color: var(--white); background: rgba(0,0,0,0.18); border-radius: 8px; padding: 0; font-size: 13px; margin-top: 10px; min-height: 0; text-align: center; }
       .error:not(:empty) { padding: 10px; }
     `;
@@ -213,7 +311,11 @@ export class GiftCardCheckoutController {
       <div class="banner-title">Cadeaukaart</div>
     </div>
 
-    <div class="panel">
+    <div id="bulk-toggle-row" style="text-align:center;margin-bottom:12px;">
+      <a href="#" id="switch-to-bulk-link" style="color:var(--accent-dark);font-size:12.5px;font-weight:600;text-decoration:underline;">Meerdere cadeaukaarten voor verschillende mensen kopen?</a>
+    </div>
+
+    <div class="panel" id="single-amount-panel">
       <div class="panel-title">Bedrag</div>
       <div class="panel-sub">Kies een bedrag of vul er zelf een in.</div>
       <div class="amounts" id="amounts">
@@ -234,7 +336,7 @@ export class GiftCardCheckoutController {
       <input type="email" id="sender-email" name="sender-email" placeholder="Voor je aankoopbevestiging" autocomplete="email">
     </div>
 
-    <div class="panel">
+    <div class="panel" id="single-recipient-panel">
       <div class="panel-title">Gegevens ontvanger</div>
       <div class="panel-sub">De ontvanger ontvangt een e-mail met de kaart. Voor jezelf? Laat leeg.</div>
       <label>Naam ontvanger (optioneel)</label>
@@ -243,7 +345,7 @@ export class GiftCardCheckoutController {
       <input type="email" id="recipient-email" name="recipient-email" placeholder="Waar mag de kaart heen?" autocomplete="off">
     </div>
 
-    <div class="panel">
+    <div class="panel" id="single-message-panel">
       <label class="toggle-row" id="message-toggle-row">
         <span class="toggle-switch"><input type="checkbox" id="message-toggle"><span class="toggle-slider"></span></span>
         <span class="label-text">Voeg een persoonlijk bericht toe</span>
@@ -253,7 +355,21 @@ export class GiftCardCheckoutController {
       </div>
     </div>
 
-    <button id="pay-btn">Doorgaan naar betalen</button>
+    <div class="panel" id="bulk-panel" style="display:none;">
+      <div class="panel-title">Meerdere cadeaukaarten</div>
+      <div class="panel-sub">Elke rij wordt een eigen cadeaukaart met eigen bedrag en ontvanger — allemaal in één betaling.</div>
+      <div id="bulk-rows"></div>
+      <button type="button" id="bulk-add-row-btn" style="width:100%;padding:10px;border-radius:9px;border:1px dashed var(--line);background:var(--cream);color:var(--navy);font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;">+ Nog een cadeaukaart toevoegen</button>
+      <div id="bulk-total" style="text-align:right;font-size:13px;color:var(--navy);font-weight:600;margin-top:10px;"></div>
+    </div>
+
+    <div id="single-mode-footer">
+      <button id="pay-btn">Doorgaan naar betalen</button>
+    </div>
+    <div id="bulk-mode-footer" style="display:none;">
+      <button id="bulk-pay-btn">Doorgaan naar betalen</button>
+      <div style="text-align:center;margin-top:8px;"><a href="#" id="switch-to-single-link" style="color:var(--muted);font-size:12px;text-decoration:underline;">← Terug naar één cadeaukaart</a></div>
+    </div>
     <div class="error" id="error"></div>
   </div>
   <script>
@@ -340,6 +456,126 @@ export class GiftCardCheckoutController {
           // dat kan (en mag) niet in de kleine widget-iframe, dus we
           // navigeren het HELE bovenliggende venster erheen (net als een
           // gewone "afrekenen"-link zou doen), niet alleen de iframe.
+          if (window.top) { window.top.location.href = data.checkoutUrl; } else { window.location.href = data.checkoutUrl; }
+        } else {
+          errorEl.textContent = data.reason || data.message || 'Kon geen betaling starten.';
+          btn.disabled = false;
+          btn.textContent = 'Doorgaan naar betalen';
+          setTimeout(reportHeight, 50);
+        }
+      } catch (err) {
+        errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+        btn.disabled = false;
+        btn.textContent = 'Doorgaan naar betalen';
+        setTimeout(reportHeight, 50);
+      }
+    });
+
+    // -- Bulk-modus: meerdere ontvangers/bedragen in één betaling ---------
+
+    let bulkRowCount = 0;
+    function addBulkRow() {
+      bulkRowCount += 1;
+      const rowId = bulkRowCount;
+      const wrap = document.createElement('div');
+      wrap.className = 'bulk-row';
+      wrap.dataset.rowId = rowId;
+      wrap.innerHTML =
+        '<button type="button" class="bulk-row-remove" title="Verwijderen">&times;</button>' +
+        '<div class="bulk-row-title">Cadeaukaart ' + rowId + '</div>' +
+        '<input type="number" class="bulk-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01">' +
+        '<input type="text" class="bulk-recipient-name" placeholder="Naam ontvanger (optioneel)" autocomplete="off">' +
+        '<input type="email" class="bulk-recipient-email" placeholder="E-mailadres ontvanger (optioneel)" autocomplete="off">' +
+        '<textarea class="bulk-message" placeholder="Persoonlijk bericht (optioneel)" style="min-height:44px;"></textarea>';
+      document.getElementById('bulk-rows').appendChild(wrap);
+      wrap.querySelector('.bulk-row-remove').addEventListener('click', () => {
+        // Minstens 1 rij moet overblijven — een lege bulk-bestelling kan niet.
+        if (document.querySelectorAll('.bulk-row').length <= 1) return;
+        wrap.remove();
+        updateBulkTotal();
+        setTimeout(reportHeight, 50);
+      });
+      wrap.querySelector('.bulk-amount').addEventListener('input', updateBulkTotal);
+      setTimeout(reportHeight, 50);
+    }
+
+    function updateBulkTotal() {
+      const total = Array.from(document.querySelectorAll('.bulk-amount'))
+        .reduce((sum, input) => sum + (parseFloat(input.value) || 0), 0);
+      document.getElementById('bulk-total').textContent = total > 0 ? 'Totaal: €' + total.toFixed(2) : '';
+    }
+
+    document.getElementById('bulk-add-row-btn').addEventListener('click', addBulkRow);
+
+    document.getElementById('switch-to-bulk-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('single-amount-panel').style.display = 'none';
+      document.getElementById('single-recipient-panel').style.display = 'none';
+      document.getElementById('single-message-panel').style.display = 'none';
+      document.getElementById('single-mode-footer').style.display = 'none';
+      document.getElementById('bulk-toggle-row').style.display = 'none';
+      document.getElementById('bulk-panel').style.display = 'block';
+      document.getElementById('bulk-mode-footer').style.display = 'block';
+      if (document.querySelectorAll('.bulk-row').length === 0) { addBulkRow(); addBulkRow(); }
+      document.getElementById('error').textContent = '';
+      setTimeout(reportHeight, 50);
+    });
+
+    document.getElementById('switch-to-single-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      document.getElementById('single-amount-panel').style.display = 'block';
+      document.getElementById('single-recipient-panel').style.display = 'block';
+      document.getElementById('single-message-panel').style.display = 'block';
+      document.getElementById('single-mode-footer').style.display = 'block';
+      document.getElementById('bulk-toggle-row').style.display = 'block';
+      document.getElementById('bulk-panel').style.display = 'none';
+      document.getElementById('bulk-mode-footer').style.display = 'none';
+      document.getElementById('error').textContent = '';
+      setTimeout(reportHeight, 50);
+    });
+
+    document.getElementById('bulk-pay-btn').addEventListener('click', async () => {
+      const errorEl = document.getElementById('error');
+      errorEl.textContent = '';
+
+      const senderName = document.getElementById('sender-name').value.trim();
+      const senderEmail = document.getElementById('sender-email').value.trim();
+      if (!senderName) { errorEl.textContent = 'Vul je naam in.'; setTimeout(reportHeight, 50); return; }
+      if (!isValidEmailFormat(senderEmail)) { errorEl.textContent = 'Vul een geldig e-mailadres in (voor je aankoopbevestiging).'; setTimeout(reportHeight, 50); return; }
+
+      const rows = Array.from(document.querySelectorAll('.bulk-row'));
+      const items = [];
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        const amount = parseFloat(row.querySelector('.bulk-amount').value);
+        if (!amount || amount < 10) { errorEl.textContent = 'Cadeaukaart ' + (i + 1) + ': minimaal bedrag is €10.'; setTimeout(reportHeight, 50); return; }
+        const recipientEmail = row.querySelector('.bulk-recipient-email').value.trim();
+        if (recipientEmail && !isValidEmailFormat(recipientEmail)) { errorEl.textContent = 'Cadeaukaart ' + (i + 1) + ': het e-mailadres van de ontvanger lijkt niet geldig.'; setTimeout(reportHeight, 50); return; }
+        items.push({
+          originalValue: amount,
+          recipientName: row.querySelector('.bulk-recipient-name').value.trim() || undefined,
+          recipientEmail: recipientEmail || undefined,
+          personalMessage: row.querySelector('.bulk-message').value.trim() || undefined,
+        });
+      }
+
+      const btn = document.getElementById('bulk-pay-btn');
+      btn.disabled = true;
+      btn.textContent = 'Bezig…';
+      try {
+        const bulkPath = window.location.pathname.replace('/buy/', '/buy-bulk/');
+        const res = await fetch(bulkPath, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            brand: ${JSON.stringify(brand.slug)},
+            senderName: senderName,
+            senderEmail: senderEmail,
+            items: items,
+          }),
+        });
+        const data = await res.json();
+        if (data.checkoutUrl) {
           if (window.top) { window.top.location.href = data.checkoutUrl; } else { window.location.href = data.checkoutUrl; }
         } else {
           errorEl.textContent = data.reason || data.message || 'Kon geen betaling starten.';
