@@ -289,16 +289,16 @@
 <main>
   <p class="status-line" id="status-line">Gasten laden…</p>
 
-  <div id="bulk-action-bar" style="display:none;background:var(--navy);color:var(--white);border-radius:12px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-    <span id="bulk-selection-count" style="font-size:13px;"></span>
-    <div style="display:flex;gap:8px;">
-      <button class="btn-secondary" id="bulk-voucher-btn" style="background:var(--white);">🎁 Voucher uitgeven</button>
-      <button class="btn-secondary" id="bulk-delete-btn" style="background:var(--white);color:var(--coral);">🗑️ Verwijderen</button>
-      <button class="btn-text" id="bulk-clear-btn" style="color:var(--white);">Selectie wissen</button>
+  <div id="bulk-action-bar" style="display:none;align-self:start;background:var(--navy);color:var(--white);border-radius:12px;padding:14px 16px;margin-bottom:12px;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+    <span id="bulk-selection-count" style="font-size:13px;font-weight:600;white-space:nowrap;"></span>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button id="bulk-voucher-btn" style="background:var(--coral);border:none;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">🎁 Voucher uitgeven</button>
+      <button id="bulk-delete-btn" style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.25);color:var(--coral-light);padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;">🗑️ Verwijderen</button>
+      <button id="bulk-clear-btn" style="background:transparent;border:1px solid rgba(255,255,255,0.3);color:rgba(255,255,255,0.85);padding:9px 14px;border-radius:8px;font-size:13px;font-weight:500;cursor:pointer;white-space:nowrap;">Selectie wissen</button>
     </div>
   </div>
 
-  <div id="bulk-voucher-panel" style="display:none;background:var(--white);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;">
+  <div id="bulk-voucher-panel" style="display:none;align-self:start;background:var(--white);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:12px;">
     <div style="font-family:'Fraunces',serif;color:var(--navy);font-size:15px;margin-bottom:8px;">Voucher uitgeven aan <span id="bulk-voucher-count"></span> gasten</div>
     <div class="form-field">
       <label>Voucher-template</label>
