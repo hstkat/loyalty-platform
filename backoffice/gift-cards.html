@@ -746,6 +746,19 @@
    * zelf ook "62 x 29mm"/DK-11209 als mediaformaat geselecteerd staat,
    * dat zet de browser niet altijd automatisch goed.
    */
+  /**
+   * Formaat exact afgestemd op de Brother QL-700 met 62×29mm-etiketten
+   * (de gangbare DK-11209-rol). @page zet het papierformaat zodat de
+   * printer/browser-printdialoog automatisch het juiste formaat
+   * aanstuurt — controleer bij het printen wel of in het printvenster
+   * zelf ook "62 x 29mm"/DK-11209 als mediaformaat geselecteerd staat,
+   * dat zet de browser niet altijd automatisch goed.
+   *
+   * Het token staat BEWUST ook als kleine, overtypbare tekst op de
+   * sticker — zonder die tekst is de kaart onbruikbaar zodra de QR
+   * een keer niet scant (bijv. door slijtage), want de kassa zoekt de
+   * kaart op via dit token, niet via het kaartnummer.
+   */
   function printGiftCardSticker(cardNumber, token) {
     const { apiBase } = getConfig();
     const viewUrl = apiBase + '/g/' + token;
@@ -763,11 +776,12 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
   body { width: 62mm; height: 29mm; font-family: -apple-system, 'Inter', sans-serif; display: flex; align-items: center; gap: 2mm; padding: 1.5mm; }
-  img { width: 24mm; height: 24mm; flex-shrink: 0; }
-  .text-block { display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
-  .brand-label { font-size: 6.5px; letter-spacing: 0.06em; text-transform: uppercase; color: #555; margin-bottom: 1.5mm; }
-  .card-number { font-size: 12px; font-weight: 700; letter-spacing: 0.02em; font-family: 'Courier New', monospace; line-height: 1.2; word-break: break-all; }
-  .hint { font-size: 5.5px; color: #888; margin-top: 1.5mm; }
+  img { width: 21mm; height: 21mm; flex-shrink: 0; }
+  .text-block { display: flex; flex-direction: column; justify-content: center; overflow: hidden; min-width: 0; }
+  .brand-label { font-size: 6px; letter-spacing: 0.06em; text-transform: uppercase; color: #555; margin-bottom: 1mm; }
+  .card-number { font-size: 11px; font-weight: 700; letter-spacing: 0.02em; font-family: 'Courier New', monospace; line-height: 1.15; word-break: break-all; }
+  .token { font-size: 7px; color: #333; font-family: 'Courier New', monospace; line-height: 1.15; margin-top: 1mm; word-break: break-all; }
+  .hint { font-size: 5px; color: #888; margin-top: 1mm; }
   button { padding: 8px 16px; border-radius: 6px; border: none; background: #1b3a5c; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
   @media print { .print-controls { display: none; } }
   @media screen { body { border: 1px dashed #ccc; margin: 20px auto; } }
@@ -778,7 +792,8 @@
   <div class="text-block">
     <div class="brand-label">Kadobon</div>
     <div class="card-number">${cardNumber}</div>
-    <div class="hint">Scan voor saldo</div>
+    <div class="token">${token}</div>
+    <div class="hint">Scan, of typ code als QR niet werkt</div>
   </div>
   <div class="print-controls" style="position:fixed;top:32mm;left:0;"><button onclick="window.print()">Printen</button></div>
 </body>
