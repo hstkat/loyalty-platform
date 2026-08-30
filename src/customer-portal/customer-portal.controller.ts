@@ -143,7 +143,7 @@ export class CustomerPortalController {
   <div class="accent-line"></div>
   <nav class="tabbar" id="dashboard-tabbar" style="display:none;">
     <button class="tab-btn active" data-tab="overview">Overzicht</button>
-    <button class="tab-btn" data-tab="rewards">Cadeaus</button>
+    <button class="tab-btn" data-tab="rewards">Beloningen</button>
     <button class="tab-btn" data-tab="vouchers">Vouchers</button>
     <button class="tab-btn" data-tab="history">Historie</button>
     <button class="tab-btn" data-tab="profile">Profiel</button>
@@ -153,7 +153,7 @@ export class CustomerPortalController {
     <div class="screen active" id="screen-email">
       <div class="login-card">
         <h1>Mijn Tegoed</h1>
-        <p id="email-screen-subtitle">Bekijk je Beach Credit, punten, cadeaukaarten en meer.</p>
+        <p id="email-screen-subtitle">Bekijk je Beach Credit, punten, kadobonnen en meer.</p>
         <input type="email" id="email-input" name="login-email" placeholder="E-mailadres" autocomplete="email">
         <button class="btn-primary" id="request-code-btn">Verstuur code</button>
         <div class="error-text" id="email-error"></div>
@@ -248,7 +248,7 @@ export class CustomerPortalController {
 
         <div id="db-vouchers-banner" style="display:none;"></div>
 
-        <div class="section-title">Cadeaukaarten</div>
+        <div class="section-title">Kadobonnen</div>
         <div id="db-giftcards"></div>
       </div>
 
@@ -256,7 +256,7 @@ export class CustomerPortalController {
         <p style="font-size:13px;color:var(--muted);margin:0 0 16px;">Vandaag beschikbaar — laat je pas scannen bij de kassa om in te wisselen.</p>
         <div class="section-title" style="margin-top:0;">Wat je tegoed waard is</div>
         <div id="db-rate-table"></div>
-        <div class="section-title">Cadeaus</div>
+        <div class="section-title">Beloningen</div>
         <div id="db-rewards"></div>
       </div>
 
@@ -402,7 +402,7 @@ export class CustomerPortalController {
     showScreen('screen-password');
   });
   document.getElementById('back-to-email-from-password-btn').addEventListener('click', function () {
-    document.getElementById('email-screen-subtitle').textContent = 'Bekijk je Beach Credit, punten, cadeaukaarten en meer.';
+    document.getElementById('email-screen-subtitle').textContent = 'Bekijk je Beach Credit, punten, kadobonnen en meer.';
     passwordResetRequested = false;
     showScreen('screen-email');
   });
@@ -595,11 +595,11 @@ export class CustomerPortalController {
 
       const giftCardsEl = document.getElementById('db-giftcards');
       if (giftCards.length === 0) {
-        giftCardsEl.innerHTML = '<div class="empty-note">Geen cadeaukaarten gekoppeld.</div>';
+        giftCardsEl.innerHTML = '<div class="empty-note">Geen kadobonnen gekoppeld.</div>';
       } else {
         giftCardsEl.innerHTML = giftCards.map(function (c) {
           return '<div class="list-item gc-item" data-gc-id="' + c.id + '" style="cursor:pointer;">'
-            + '<div class="top-row"><span class="item-name">Gift Card ' + c.maskedNumber + '</span><span class="item-value">€' + Number(c.currentBalance).toFixed(2) + '</span></div>'
+            + '<div class="top-row"><span class="item-name">Kadobon ' + c.maskedNumber + '</span><span class="item-value">€' + Number(c.currentBalance).toFixed(2) + '</span></div>'
             + '<div class="item-meta" style="margin-top:4px;">Tik om te bekijken en te gebruiken</div>'
             + '<div class="gc-qr-area" style="display:none;text-align:center;margin-top:14px;"></div>'
             + '</div>';
@@ -618,7 +618,7 @@ export class CustomerPortalController {
               });
               const data = await res.json();
               const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(data.token);
-              qrArea.innerHTML = '<div style="background:white;border-radius:12px;padding:10px;display:inline-block;"><img src="' + qrUrl + '" width="160" height="160" alt="Cadeaukaart-QR"></div>'
+              qrArea.innerHTML = '<div style="background:white;border-radius:12px;padding:10px;display:inline-block;"><img src="' + qrUrl + '" width="160" height="160" alt="Kadobon-QR"></div>'
                 + '<div style="font-family:monospace;font-size:13px;background:var(--cream);border-radius:6px;padding:8px;margin-top:10px;word-break:break-all;">' + data.token + '</div>'
                 + '<div style="font-size:11px;color:var(--muted);margin-top:6px;">Laat scannen bij de kassa</div>';
             } catch (err) {
@@ -647,15 +647,15 @@ export class CustomerPortalController {
 
       const rewardsEl = document.getElementById('db-rewards');
       if (rewards.length === 0) {
-        rewardsEl.innerHTML = '<div class="empty-note">Vandaag geen cadeaus beschikbaar.</div>';
+        rewardsEl.innerHTML = '<div class="empty-note">Vandaag geen beloningen beschikbaar.</div>';
       } else {
         rewardsEl.innerHTML = rewards.map(function (r) {
-          const locBadge = r.location ? '<div class="location-badge">Alleen geldig bij ' + r.location.name + '</div>' : '';
+          const locBadge = (r.locationNames && r.locationNames.length > 0) ? '<div class="location-badge">Alleen geldig bij ' + r.locationNames.join(' & ') + '</div>' : '';
           return '<div class="list-item"><div class="top-row"><span class="item-name">' + r.name + '</span><span class="item-value">' + r.pointsCost + ' pt</span></div>' + locBadge + '</div>';
         }).join('');
       }
 
-      // -- Vouchers — eigen sectie, los van cadeaus/tegoed hierboven ---------
+      // -- Vouchers — eigen sectie, los van beloningen/tegoed hierboven ---------
       function renderVoucherList(elId, list, emptyText) {
         const el = document.getElementById(elId);
         if (!list || list.length === 0) {
@@ -713,7 +713,7 @@ export class CustomerPortalController {
         });
       }
 
-      const ENTRY_LABELS = { earn: 'Gespaard', redeem: 'Besteed', bonus: 'Bonus', migration_import: 'Overgezet saldo', transfer: 'Overgeboekt', correction: 'Correctie', sale: 'Cadeaukaart gekocht', top_up: 'Opgewaardeerd' };
+      const ENTRY_LABELS = { earn: 'Gespaard', redeem: 'Besteed', bonus: 'Bonus', migration_import: 'Overgezet saldo', transfer: 'Overgeboekt', correction: 'Correctie', sale: 'Kadobon gekocht', top_up: 'Opgewaardeerd' };
 
       const historyEl = document.getElementById('db-history');
       if (activity.length === 0) {

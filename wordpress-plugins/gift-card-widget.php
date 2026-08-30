@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: Cadeaukaart Widget
- * Description: Zwevende knop die een cadeaukaart-koopformulier opent in een uitklappaneel (bedrag kiezen, ontvanger invullen, doorgaan naar Mollie) — geen aparte pagina nodig.
+ * Plugin Name: Kadobon Widget
+ * Description: Zwevende knop die een kadobon-koopformulier opent in een uitklappaneel (bedrag kiezen, ontvanger invullen, doorgaan naar Mollie) — geen aparte pagina nodig.
  * Version: 1.0.0
  * Author: Het Strand & Zomers
  * Text Domain: gift-card-widget
@@ -11,19 +11,19 @@
  * ============================================================================
  * 1. Zet dit bestand in: /wp-content/plugins/gift-card-widget.php
  *    (los bestand, geen map nodig — WordPress herkent dit automatisch)
- * 2. WordPress-admin → Plugins → activeer "Cadeaukaart Widget"
- * 3. WordPress-admin → Instellingen → "Cadeaukaart" → kies het juiste merk
+ * 2. WordPress-admin → Plugins → activeer "Kadobon Widget"
+ * 3. WordPress-admin → Instellingen → "Kadobon" → kies het juiste merk
  *    voor DEZE website en stel eventueel de positie bij
  *
  * Dezelfde pluginbestand kan op BEIDE websites (het-strand.nl en
  * zomersbeachclub.nl) geïnstalleerd worden — alleen de instelling "Merk"
  * hoeft per site anders te staan. Beide merken verkopen dezelfde
- * cadeaukaart (één gedeeld systeem, geen aparte kaarten per merk) — het
+ * kadobon (één gedeeld systeem, geen aparte kaarten per merk) — het
  * merk bepaalt alleen de kleuren/naam die de koper te zien krijgt.
  *
  * LET OP — POSITIONERING: staat er al een andere zwevende knop op de
  * site (bijv. de Mijn Tegoed-widget, of een oudere/losse
- * cadeaukaart-knop)? Stel dan bij "Positie" en "Verticale afstand" in
+ * kadobon-knop)? Stel dan bij "Positie" en "Verticale afstand" in
  * dat deze knop er niet overheen valt.
  * ============================================================================
  */
@@ -52,8 +52,8 @@ class GiftCardWidget
     public function registerSettingsPage(): void
     {
         add_options_page(
-            'Cadeaukaart Widget',
-            'Cadeaukaart',
+            'Kadobon Widget',
+            'Kadobon',
             'manage_options',
             'gift-card-widget',
             [$this, 'renderSettingsPage']
@@ -90,8 +90,8 @@ class GiftCardWidget
         $position = get_option(self::OPTION_POSITION, 'left');
         ?>
         <div class="wrap">
-            <h1>Cadeaukaart Widget</h1>
-            <p>Deze instelling bepaalt welk merk (huisstijl + naam) getoond wordt in de zwevende cadeaukaart-knop op déze website. Beide merken verkopen dezelfde cadeaukaart — dit verandert alleen de kleuren en naam die de koper ziet.</p>
+            <h1>Kadobon Widget</h1>
+            <p>Deze instelling bepaalt welk merk (huisstijl + naam) getoond wordt in de zwevende kadobon-knop op déze website. Beide merken verkopen dezelfde kadobon — dit verandert alleen de kleuren en naam die de koper ziet.</p>
             <form method="post" action="options.php">
                 <?php settings_fields('gift_card_widget_group'); ?>
                 <table class="form-table">
@@ -213,17 +213,17 @@ class GiftCardWidget
         </style>
 
         <button id="gcw-launcher" aria-haspopup="dialog" aria-controls="gcw-overlay">
-            <span>🎁 Cadeaukaart kopen</span>
+            <span>🎁 Kadobon kopen</span>
         </button>
 
-        <div id="gcw-overlay" role="dialog" aria-modal="true" aria-label="Cadeaukaart kopen">
+        <div id="gcw-overlay" role="dialog" aria-modal="true" aria-label="Kadobon kopen">
             <div id="gcw-panel">
                 <div id="gcw-panel-header">
-                    <span><?php echo esc_html($brandLabel); ?> — Cadeaukaart kopen</span>
+                    <span><?php echo esc_html($brandLabel); ?> — Kadobon kopen</span>
                     <button id="gcw-close-btn" aria-label="Sluiten">&times;</button>
                 </div>
                 <div id="gcw-iframe-wrap">
-                    <iframe id="gcw-iframe" src="about:blank" data-src="<?php echo esc_url($buyUrl); ?>" title="Cadeaukaart kopen" style="height:560px;"></iframe>
+                    <iframe id="gcw-iframe" src="about:blank" data-src="<?php echo esc_url($buyUrl); ?>" title="Kadobon kopen" style="height:560px;"></iframe>
                 </div>
             </div>
         </div>

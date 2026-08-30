@@ -216,7 +216,7 @@ export class GuestAppController {
     });
   }
 
-  // -- Cadeaukaarten van deze klant — bewust een apart endpoint, apart
+  // -- Kadobonnen van deze klant — bewust een apart endpoint, apart
   // saldo, nooit samengevoegd met het loyaltytegoed hierboven. --------
 
   @Get('me/wallet-pass/google')
@@ -255,7 +255,7 @@ export class GuestAppController {
   }
 
   // -- Vouchers — bewust een APARTE reward, nooit samengevoegd met
-  // tegoed/punten of cadeaukaartsaldo hierboven. -------------------------
+  // tegoed/punten of kadobonsaldo hierboven. -------------------------
 
   @Get('me/vouchers')
   @UseGuards(GuestSessionGuard)
@@ -368,29 +368,38 @@ export class GuestAppController {
   @Get('rewards')
   @UseGuards(GuestSessionGuard)
   async getAvailableRewards(@Param('orgId') orgId: string) {
-    const items = await this.prisma.rewardCatalogItem.findMany({
-      where: { organizationId: orgId, isActive: true },
-      orderBy: { pointsCost: 'asc' },
-      include: { location: { select: { name: true, slug: true } } },
-    });
+    const [items, locations] = await Promise.all([
+      this.prisma.rewardCatalogItem.findMany({
+        where: { organizationId: orgId, isActive: true },
+        orderBy: { pointsCost: 'asc' },
+      }),
+      this.prisma.location.findMany({ where: { organizationId: orgId }, select: { id: true, name: true } }),
+    ]);
+    const locationNameById = new Map(locations.map((l) => [l.id, l.name]));
+
     // Reuses the same day/date availability rule as the kassa —
     // duplicated here in a minimal form since RewardCatalogService's
     // check is private; a shared exported helper would be a reasonable
     // follow-up cleanup once this app is in real use.
     const now = new Date();
     const weekday = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][now.getUTCDay()];
-    return items.filter((item) => {
-      if (item.validFrom && now < item.validFrom) return false;
-      if (item.validUntil) {
-        const end = new Date(item.validUntil);
-        end.setUTCHours(23, 59, 59, 999);
-        if (now > end) return false;
-      }
-      if (item.availableDays && (item.availableDays as string[]).length > 0) {
-        if (!(item.availableDays as string[]).includes(weekday)) return false;
-      }
-      return true;
-    });
+    return items
+      .filter((item) => {
+        if (item.validFrom && now < item.validFrom) return false;
+        if (item.validUntil) {
+          const end = new Date(item.validUntil);
+          end.setUTCHours(23, 59, 59, 999);
+          if (now > end) return false;
+        }
+        if (item.availableDays && (item.availableDays as string[]).length > 0) {
+          if (!(item.availableDays as string[]).includes(weekday)) return false;
+        }
+        return true;
+      })
+      .map((item) => ({
+        ...item,
+        locationNames: item.locationIds.map((id) => locationNameById.get(id)).filter((name): name is string => !!name),
+      }));
   }
 
   // Publiek (geen sessietoken nodig) — puur informatief, geen persoonlijke

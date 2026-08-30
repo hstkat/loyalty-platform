@@ -24,7 +24,7 @@ export class RewardCatalogController {
       description?: string;
       pointsCost: number;
       euroValue: number;
-      locationId?: string;
+      locationIds?: string[];
       availableDays?: string[];
       validFrom?: string;
       validUntil?: string;
@@ -45,6 +45,7 @@ export class RewardCatalogController {
       pointsCost: number;
       euroValue: number;
       isActive: boolean;
+      locationIds: string[];
       availableDays: string[] | null;
       validFrom: string | null;
       validUntil: string | null;
@@ -81,8 +82,8 @@ export class RewardCatalogController {
   redeemCatalogItem(
     @Param('orgId') orgId: string,
     @Param('customerId') customerId: string,
-    @Body() dto: { catalogItemId: string; transactionId: string; idempotencyKey: string },
+    @Body() dto: { catalogItemId: string; transactionId: string; idempotencyKey: string; locationId?: string },
   ) {
-    return this.catalog.redeemCatalogItem(orgId, customerId, dto.catalogItemId, dto.transactionId, dto.idempotencyKey);
+    return this.catalog.redeemCatalogItem(orgId, customerId, dto.catalogItemId, dto.transactionId, dto.idempotencyKey, dto.locationId);
   }
 }

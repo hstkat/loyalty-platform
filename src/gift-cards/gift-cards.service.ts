@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -35,15 +35,15 @@ function isValidEmail(value: string | undefined): boolean {
 /**
  * GiftCard -> GiftCardLedgerEntry — een volledig aparte boekhouding van
  * het loyaltytegoed (Customer -> Wallet -> WalletLedgerEntry). Een
- * cadeaukaart heeft geen eigen Wallet; een Wallet heeft geen
- * cadeaukaart-saldo. Het saldo van een kaart is ALTIJD de som van zijn
+ * kadobon heeft geen eigen Wallet; een Wallet heeft geen
+ * kadobon-saldo. Het saldo van een kaart is ALTIJD de som van zijn
  * ledger — nooit rechtstreeks aangepast (getest: zie migratie-testlog).
  *
  * Bewuste architectuurkeuze tegen dubbele beloning: het VERKOPEN van een
- * cadeaukaart loopt hier, in deze service, en raakt daarom nooit
+ * kadobon loopt hier, in deze service, en raakt daarom nooit
  * /transactions of de reward engine — dat is de hele reden dat er geen
- * "geen loyalty bij cadeaukaart-aankoop"-uitzondering ergens diep in de
- * reward-engine-code nodig is. Het latere GEBRUIK van een cadeaukaart
+ * "geen loyalty bij kadobon-aankoop"-uitzondering ergens diep in de
+ * reward-engine-code nodig is. Het latere GEBRUIK van een kadobon
  * als betaalmiddel loopt via een normale transactie (net als contant of
  * pin) en verdient daardoor gewoon normaal loyaltytegoed.
  */
@@ -115,13 +115,12 @@ export class GiftCardsService {
     const giftCard = await this.prisma.giftCard.create({
       data: {
         organizationId: orgId,
-        locationId: dto.locationId,
         giftCardNumber,
         publicTokenHash: this.hashToken(token),
         status: 'active',
         originalValue: dto.originalValue,
         currentBalance: dto.originalValue,
-        isOrganizationWide: dto.isOrganizationWide ?? true,
+        locationIds: dto.locationIds ?? [],
         purchaserCustomerId: dto.purchaserCustomerId,
         recipientCustomerId: resolvedRecipientCustomerId,
         recipientName: dto.recipientName,
@@ -139,11 +138,11 @@ export class GiftCardsService {
       data: {
         giftCardId: giftCard.id,
         organizationId: orgId,
-        locationId: dto.locationId,
+        locationId: dto.locationIds?.[0],
         entryType: 'sale',
         amount: dto.originalValue,
         performedByUserId: ctx.actorId ?? undefined,
-        reason: 'Cadeaukaart uitgegeven',
+        reason: 'Kadobon uitgegeven',
       },
     });
 
@@ -172,7 +171,7 @@ export class GiftCardsService {
           .then(() => true)
           .catch((err) => {
             this.logger.error(
-              `Cadeaukaart ${giftCardNumber} (${giftCard.id}) uitgegeven, maar e-mail naar ${recipient.email} mislukt: ${err instanceof Error ? err.message : err}`,
+              `Kadobon ${giftCardNumber} (${giftCard.id}) uitgegeven, maar e-mail naar ${recipient.email} mislukt: ${err instanceof Error ? err.message : err}`,
             );
             return false;
           });
@@ -185,7 +184,7 @@ export class GiftCardsService {
         .then(() => true)
         .catch((err) => {
           this.logger.error(
-            `Cadeaukaart ${giftCardNumber} (${giftCard.id}) uitgegeven, maar bevestigingsmail naar afzender ${dto.senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+            `Kadobon ${giftCardNumber} (${giftCard.id}) uitgegeven, maar bevestigingsmail naar afzender ${dto.senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
           );
           return false;
         });
@@ -195,7 +194,7 @@ export class GiftCardsService {
   }
 
   /**
-   * Verstuurt de digitale cadeaukaart per e-mail — vereist het RUWE
+   * Verstuurt de digitale kadobon per e-mail — vereist het RUWE
    * token als parameter (net als bij batches: dat bestaat alleen op het
    * moment van uitgeven, wordt nooit opgeslagen). Bedoeld om direct na
    * `issue()` aangeroepen te worden, met het token uit dát antwoord.
@@ -222,9 +221,9 @@ export class GiftCardsService {
 
     const result = await this.mailgun.sendEmail(
       giftCard.recipientEmail,
-      `Je hebt een cadeaukaart ter waarde van ${amountText} ontvangen!`,
-      `${greeting}${messageBlock}\n\nJe hebt een cadeaukaart ontvangen ter waarde van ${amountText}.\n\n${validityNote}\n\nBekijk en gebruik je kaart via: ${qrUrl}\n\nVeel plezier!`,
-      `<p>${greeting}</p>${giftCard.personalMessage ? `<p><em>"${giftCard.personalMessage}"</em></p>` : ''}<p>Je hebt een cadeaukaart ontvangen ter waarde van <strong>${amountText}</strong>.</p><p>${validityNote}</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
+      `Je hebt een kadobon ter waarde van ${amountText} ontvangen!`,
+      `${greeting}${messageBlock}\n\nJe hebt een kadobon ontvangen ter waarde van ${amountText}.\n\n${validityNote}\n\nBekijk en gebruik je kaart via: ${qrUrl}\n\nVeel plezier!`,
+      `<p>${greeting}</p>${giftCard.personalMessage ? `<p><em>"${giftCard.personalMessage}"</em></p>` : ''}<p>Je hebt een kadobon ontvangen ter waarde van <strong>${amountText}</strong>.</p><p>${validityNote}</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
     );
 
     if (!result.sent) throw new BadRequestException('Versturen mislukt: ' + (result.reason || 'onbekende fout'));
@@ -234,7 +233,7 @@ export class GiftCardsService {
   // -- Online verkoop via Mollie (iDEAL e.d.) --------------------------------
 
   /**
-   * Start een online aankoop: maakt een cadeaukaart aan met status
+   * Start een online aankoop: maakt een kadobon aan met status
    * 'draft' (dus GEEN saldo, GEEN ledger-entry — de kaart telt pas mee
    * zodra de betaling écht bevestigd is) en een bijbehorende Mollie-
    * betaling. Het ruwe token gaat NIET de database in, maar wél mee in
@@ -290,7 +289,7 @@ export class GiftCardsService {
 
     const paymentResult = await this.mollie.createPayment({
       amount: dto.originalValue,
-      description: `Cadeaukaart ${giftCardNumber} (€${dto.originalValue.toFixed(2)})`,
+      description: `Kadobon ${giftCardNumber} (€${dto.originalValue.toFixed(2)})`,
       redirectUrl: `${publicAppUrl}/gift-cards/thank-you/${giftCard.id}${dto.brand ? '?brand=' + encodeURIComponent(dto.brand) : ''}`,
       webhookUrl: `${publicAppUrl}/gift-cards/mollie-webhook`,
       metadata: { giftCardId: giftCard.id, organizationId: orgId, rawToken: token },
@@ -311,9 +310,9 @@ export class GiftCardsService {
   }
 
   /**
-   * Zelfde als startOnlinePurchase, maar voor MEERDERE cadeaukaarten in
+   * Zelfde als startOnlinePurchase, maar voor MEERDERE kadobonnen in
    * één keer (elk met een eigen bedrag/ontvanger, gedeelde afzender) —
-   * bijv. voor een bedrijf dat in één keer vijf cadeaukaarten voor
+   * bijv. voor een bedrijf dat in één keer vijf kadobonnen voor
    * verschillende collega's koopt. Eén Mollie-betaling voor het
    * totaalbedrag; confirmMolliePayment activeert bij bevestiging alle
    * kaarten die bij deze betaling horen.
@@ -327,11 +326,11 @@ export class GiftCardsService {
       return { checkoutUrl: null, reason: 'Online betalen is nog niet ingesteld — neem contact op met de zaak.' };
     }
     if (!dto.items || dto.items.length === 0) {
-      throw new BadRequestException('Geen cadeaukaarten opgegeven');
+      throw new BadRequestException('Geen kadobonnen opgegeven');
     }
     const MAX_BULK_ITEMS = 25; // ruim voldoende voor een zakelijke bestelling, voorkomt misbruik/timeouts
     if (dto.items.length > MAX_BULK_ITEMS) {
-      throw new BadRequestException(`Maximaal ${MAX_BULK_ITEMS} cadeaukaarten per bestelling`);
+      throw new BadRequestException(`Maximaal ${MAX_BULK_ITEMS} kadobonnen per bestelling`);
     }
     if (!dto.senderName || !dto.senderName.trim()) {
       throw new BadRequestException('Vul je naam in.');
@@ -381,7 +380,7 @@ export class GiftCardsService {
     // bijbehorende kaarten van dezelfde betaling op.
     const paymentResult = await this.mollie.createPayment({
       amount: totalAmount,
-      description: `${createdCards.length} cadeaukaarten (${createdCards.map((c) => c.giftCardNumber).join(', ')})`,
+      description: `${createdCards.length} kadobonnen (${createdCards.map((c) => c.giftCardNumber).join(', ')})`,
       redirectUrl: `${publicAppUrl}/gift-cards/thank-you-bulk/${createdCards[0].id}${dto.brand ? '?brand=' + encodeURIComponent(dto.brand) : ''}`,
       webhookUrl: `${publicAppUrl}/gift-cards/mollie-webhook`,
       metadata: { organizationId: orgId, giftCardIds: createdCards.map((c) => c.id), bulk: true },
@@ -429,7 +428,7 @@ export class GiftCardsService {
     for (const giftCard of draftCards) {
       // Koppel de kaart automatisch aan een BESTAAND klantaccount met
       // hetzelfde e-mailadres, zodat die 'm meteen ziet staan onder
-      // "Cadeaukaarten" in Mijn Tegoed — zonder dat de koper of
+      // "Kadobonnen" in Mijn Tegoed — zonder dat de koper of
       // ontvanger daar iets voor hoeft te doen. Bewust GEEN nieuw
       // account aanmaken als er nog geen match is: dat zou een account
       // aanmaken zonder toestemming/verificatie van de ontvanger. In
@@ -500,15 +499,15 @@ export class GiftCardsService {
           // Bewust geen harde fout hier — de betaling en activering zijn
           // al veiliggesteld; een mislukte e-mail mag dat nooit
           // terugdraaien. WEL duidelijk loggen (zichtbaar in Vercel →
-          // project → Logs), anders lijkt een online cadeaukaart-aankoop
+          // project → Logs), anders lijkt een online kadobon-aankoop
           // stil te verdwijnen zonder dat iemand het merkt.
           this.logger.error(
-            `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar e-mail naar ${giftCard.recipientEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+            `Kadobon ${giftCard.giftCardNumber} (${giftCard.id}) betaald, maar e-mail naar ${giftCard.recipientEmail} mislukt: ${err instanceof Error ? err.message : err}`,
           );
         });
       } else if (giftCard.recipientEmail && !freshRecipientToken) {
         this.logger.error(
-          `Cadeaukaart ${giftCard.giftCardNumber} (${giftCard.id}) heeft een ontvanger-e-mailadres (${giftCard.recipientEmail}) maar geen token om te versturen — niet verstuurd.`,
+          `Kadobon ${giftCard.giftCardNumber} (${giftCard.id}) heeft een ontvanger-e-mailadres (${giftCard.recipientEmail}) maar geen token om te versturen — niet verstuurd.`,
         );
       }
 
@@ -521,7 +520,7 @@ export class GiftCardsService {
     if (activatedCardIds.length > 0 && draftCards[0].senderEmail) {
       await this.sendPurchaseConfirmationToSender(draftCards[0].organizationId, activatedCardIds).catch((err) => {
         this.logger.error(
-          `${activatedCardIds.length} cadeaukaart(en) betaald (betaling ${molliePaymentId}), maar bevestigingsmail naar afzender ${draftCards[0].senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
+          `${activatedCardIds.length} kadobon(en) betaald (betaling ${molliePaymentId}), maar bevestigingsmail naar afzender ${draftCards[0].senderEmail} mislukt: ${err instanceof Error ? err.message : err}`,
         );
       });
     }
@@ -531,7 +530,7 @@ export class GiftCardsService {
 
   /**
    * Aparte bevestigingsmail aan de KOPER (afzender) zelf — bewust NOOIT
-   * de kaart-token/QR of een bruikbare cadeaukaart-code hierin, alleen
+   * de kaart-token/QR of een bruikbare kadobon-code hierin, alleen
    * bevestiging + samenvatting. De daadwerkelijke kaart(en) gaan
    * uitsluitend naar de ontvanger(s) via sendDigitalCard hierboven.
    *
@@ -558,9 +557,9 @@ export class GiftCardsService {
       const recipientLine = giftCard.recipientEmail
         ? `Verstuurd naar: ${giftCard.recipientEmail}`
         : 'Er is geen ontvanger-e-mailadres opgegeven — je vindt de kaart terug op de bedankpagina die je na de betaling zag.';
-      subject = 'Je cadeaukaart is succesvol verstuurd';
+      subject = 'Je kadobon is succesvol verstuurd';
       lines = [
-        'Je cadeaukaart is succesvol verstuurd',
+        'Je kadobon is succesvol verstuurd',
         '',
         `Bedrag: €${amount}`,
         `Ontvanger: ${giftCard.recipientName || '(geen naam opgegeven)'}`,
@@ -574,9 +573,9 @@ export class GiftCardsService {
       ].filter((line): line is string => line !== undefined);
     } else {
       const totalAmount = giftCards.reduce((sum, g) => sum + Number(g.originalValue), 0).toFixed(2).replace('.', ',');
-      subject = `Je ${giftCards.length} cadeaukaarten zijn succesvol verstuurd`;
+      subject = `Je ${giftCards.length} kadobonnen zijn succesvol verstuurd`;
       lines = [
-        `Je ${giftCards.length} cadeaukaarten zijn succesvol verstuurd`,
+        `Je ${giftCards.length} kadobonnen zijn succesvol verstuurd`,
         '',
         `Totaalbedrag: €${totalAmount}`,
         `Van: ${giftCards[0].senderName ?? ''}`,
@@ -603,12 +602,12 @@ export class GiftCardsService {
   }
 
   /**
-   * Koppelt bestaande, nog niet gekoppelde cadeaukaarten met.recipientEmail
+   * Koppelt bestaande, nog niet gekoppelde kadobonnen met.recipientEmail
    * gelijk aan dit e-mailadres alsnog aan dit klantaccount — dekt precies
    * de omgekeerde volgorde van de automatische koppeling in
    * confirmMolliePayment (die alleen koppelt als het account op het
    * moment van BETALEN al bestond). Als iemand pas ÁCHTERAF een account
-   * aanmaakt met hetzelfde e-mailadres als waar een cadeaukaart eerder
+   * aanmaakt met hetzelfde e-mailadres als waar een kadobon eerder
    * naartoe gestuurd is, zag die de kaart tot nu toe niet staan in Mijn
    * Tegoed — dit repareert dat alsnog, op het moment van accountaanmaak.
    * Bewust alleen 'active' kaarten (nooit 'draft', die zijn nog niet
@@ -636,7 +635,8 @@ export class GiftCardsService {
     });
 
     const existingCount = await this.prisma.giftCard.count({ where: { organizationId: orgId } });
-    const cardsToInsert: { organizationId: string; locationId?: string; batchId: string; publicTokenHash: string; giftCardNumber: string; originalValue: number }[] = [];
+    const cardLocationIds = dto.locationId ? [dto.locationId] : [];
+    const cardsToInsert: { organizationId: string; locationIds: string[]; batchId: string; publicTokenHash: string; giftCardNumber: string; originalValue: number }[] = [];
     const exportRows: { giftCardNumber: string; token: string; qrUrl: string }[] = [];
 
     for (let i = 0; i < dto.quantity; i++) {
@@ -644,7 +644,7 @@ export class GiftCardsService {
       const giftCardNumber = 'GC-' + String(existingCount + i + 1).padStart(6, '0');
       cardsToInsert.push({
         organizationId: orgId,
-        locationId: dto.locationId,
+        locationIds: cardLocationIds,
         batchId: batch.id,
         publicTokenHash: this.hashToken(token),
         giftCardNumber,
@@ -674,8 +674,8 @@ export class GiftCardsService {
     if (dto.originalValue < MIN_GIFT_CARD_VALUE) throw new BadRequestException(`Minimaal bedrag is €${MIN_GIFT_CARD_VALUE} (i.v.m. transactiekosten)`);
 
     const giftCard = await this.prisma.giftCard.findUnique({ where: { publicTokenHash: this.hashToken(dto.token) } });
-    if (!giftCard) throw new NotFoundException('Cadeaukaart niet gevonden');
-    if (giftCard.organizationId !== orgId) throw new NotFoundException('Cadeaukaart niet gevonden');
+    if (!giftCard) throw new NotFoundException('Kadobon niet gevonden');
+    if (giftCard.organizationId !== orgId) throw new NotFoundException('Kadobon niet gevonden');
     if (giftCard.status !== 'draft') throw new ConflictException('Deze kaart is al geactiveerd of niet meer geldig');
 
     await this.prisma.$transaction([
@@ -722,10 +722,16 @@ export class GiftCardsService {
     if (dto.amount <= 0) throw new BadRequestException('Bedrag moet groter dan €0 zijn');
 
     const giftCard = await this.prisma.giftCard.findUnique({ where: { publicTokenHash: this.hashToken(dto.token) } });
-    if (!giftCard) throw new NotFoundException('Cadeaukaart niet gevonden');
-    if (giftCard.organizationId !== orgId) throw new NotFoundException('Cadeaukaart niet gevonden');
+    if (!giftCard) throw new NotFoundException('Kadobon niet gevonden');
+    if (giftCard.organizationId !== orgId) throw new NotFoundException('Kadobon niet gevonden');
     if (giftCard.status !== 'active' && giftCard.status !== 'partially_redeemed') {
       throw new ConflictException(`Deze kaart heeft status "${giftCard.status}" en kan niet worden ingewisseld`);
+    }
+    // Locatiescope daadwerkelijk afdwingen — leeg array = organisatiebreed
+    // (bruikbaar bij zowel Het Strand als Zomers), gevuld array beperkt
+    // tot precies die locatie(s). Zelfde controle als bij vouchers.
+    if (giftCard.locationIds.length > 0 && dto.locationId && !giftCard.locationIds.includes(dto.locationId)) {
+      throw new ForbiddenException('Deze kadobon is niet geldig op deze locatie');
     }
     const currentBalance = Number(giftCard.currentBalance);
     if (dto.amount > currentBalance) {
@@ -932,7 +938,7 @@ export class GiftCardsService {
     const giftCard = await this.prisma.giftCard.findFirst({
       where: { publicTokenHash: this.hashToken(token), organizationId: orgId },
     });
-    if (!giftCard) throw new NotFoundException('Cadeaukaart niet gevonden');
+    if (!giftCard) throw new NotFoundException('Kadobon niet gevonden');
     return {
       giftCardId: giftCard.id,
       giftCardNumber: giftCard.giftCardNumber,
@@ -943,7 +949,7 @@ export class GiftCardsService {
   }
 
   /**
-   * Voor de klantportal: de ingelogde klant wil zijn eigen cadeaukaart
+   * Voor de klantportal: de ingelogde klant wil zijn eigen kadobon
    * bekijken (QR + leesbaar token). Omdat het ruwe token nooit wordt
    * opgeslagen, genereren we hier een VERS token en vervangen we de
    * opgeslagen hash — het oude token wordt daardoor automatisch
@@ -956,7 +962,7 @@ export class GiftCardsService {
     const giftCard = await this.prisma.giftCard.findFirst({
       where: { id: giftCardId, organizationId: orgId, recipientCustomerId: customerId },
     });
-    if (!giftCard) throw new NotFoundException('Cadeaukaart niet gevonden');
+    if (!giftCard) throw new NotFoundException('Kadobon niet gevonden');
     if (giftCard.status !== 'active' && giftCard.status !== 'partially_redeemed') {
       throw new ConflictException(`Deze kaart heeft status "${giftCard.status}" en kan niet bekeken worden`);
     }
@@ -1027,7 +1033,7 @@ export class GiftCardsService {
         replacesGiftCard: { select: { id: true, giftCardNumber: true, status: true } },
       },
     });
-    if (!giftCard) throw new NotFoundException('Cadeaukaart niet gevonden');
+    if (!giftCard) throw new NotFoundException('Kadobon niet gevonden');
     return giftCard;
   }
 
@@ -1044,7 +1050,7 @@ export class GiftCardsService {
   async getReport(orgId: string) {
     const cards = await this.prisma.giftCard.findMany({
       where: { organizationId: orgId, status: { not: 'draft' } },
-      select: { originalValue: true, currentBalance: true, status: true, locationId: true },
+      select: { originalValue: true, currentBalance: true, status: true, locationIds: true },
     });
 
     const totalSold = cards.reduce((sum: number, c) => sum + Number(c.originalValue), 0);
@@ -1066,7 +1072,7 @@ export class GiftCardsService {
   }
 
   /**
-   * Voor de portal: laat een klant zijn EIGEN gekoppelde cadeaukaart
+   * Voor de portal: laat een klant zijn EIGEN gekoppelde kadobon
    * bekijken zonder in een e-mail te hoeven zoeken. Genereert een
    * VERS token voor dezelfde kaart (zelfde saldo, zelfde geschiedenis
    * — alleen een nieuw token) en slaat alleen de hash op, exact
@@ -1078,7 +1084,7 @@ export class GiftCardsService {
     const card = await this.prisma.giftCard.findFirst({
       where: { id: giftCardId, organizationId: orgId, recipientCustomerId: customerId },
     });
-    if (!card) throw new NotFoundException('Cadeaukaart niet gevonden of hoort niet bij jouw account');
+    if (!card) throw new NotFoundException('Kadobon niet gevonden of hoort niet bij jouw account');
     if (card.status !== 'active' && card.status !== 'partially_redeemed') {
       throw new ConflictException(`Deze kaart heeft status "${card.status}" en kan niet bekeken worden`);
     }
@@ -1091,7 +1097,7 @@ export class GiftCardsService {
 
   private async getCardOrThrow(orgId: string, giftCardId: string) {
     const card = await this.prisma.giftCard.findFirst({ where: { id: giftCardId, organizationId: orgId } });
-    if (!card) throw new NotFoundException('Cadeaukaart niet gevonden');
+    if (!card) throw new NotFoundException('Kadobon niet gevonden');
     return card;
   }
 }

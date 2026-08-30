@@ -44,9 +44,9 @@ export const PERMISSION_CATALOG: PermissionCatalogEntry[] = [
   { key: 'reward_rule.write', label: 'Beloningsregels wijzigen', group: 'Tegoed & punten' },
   { key: 'reward_calculation.read', label: 'Beloningsberekeningen bekijken', group: 'Tegoed & punten' },
 
-  { key: 'gift_card.read', label: 'Cadeaukaarten bekijken', group: 'Cadeaukaarten' },
-  { key: 'gift_card.write', label: 'Cadeaukaarten uitgeven/beheren', group: 'Cadeaukaarten' },
-  { key: 'gift_card.redeem', label: 'Cadeaukaarten inwisselen bij de kassa', group: 'Cadeaukaarten' },
+  { key: 'gift_card.read', label: 'Kadobonnen bekijken', group: 'Kadobonnen' },
+  { key: 'gift_card.write', label: 'Kadobonnen uitgeven/beheren', group: 'Kadobonnen' },
+  { key: 'gift_card.redeem', label: 'Kadobonnen inwisselen bij de kassa', group: 'Kadobonnen' },
 
   { key: 'loyalty_card.read', label: 'Spaarkaarten bekijken', group: 'Spaarkaarten' },
   { key: 'loyalty_card.write', label: 'Spaarkaarten uitgeven/blokkeren', group: 'Spaarkaarten' },

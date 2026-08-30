@@ -5,7 +5,7 @@ import { AppModule } from './app.module';
 import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 
 // Standaardset — de twee publieke websites (met en zonder www) die de
-// Mijn Tegoed-portal, de cadeaukaart-widget en de andere WordPress-
+// Mijn Tegoed-portal, de kadobon-widget en de andere WordPress-
 // widgets embedden. LET OP: als de backoffice-pagina's (dashboard.html
 // etc.) vanaf een ANDER domein worden geopend dan deze lijst, moet dat
 // domein ook worden toegevoegd — zie ALLOWED_ORIGINS hieronder.

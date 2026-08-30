@@ -350,13 +350,13 @@
         <a href="customers.html" data-page="customers">Klanten</a>
         <a href="campaigns.html" data-page="campaigns">Campagnes</a>
         <a href="#" class="active" aria-current="page" data-page="transacties">Spaarpunten</a>
-        <a href="cadeaus.html" data-page="cadeaus">Cadeaus</a>
+        <a href="cadeaus.html" data-page="cadeaus">Beloningen</a>
         <a href="inschrijven.html" data-page="inschrijven">Inschrijven</a>
         <a href="import.html" data-page="import">Import</a>
         <a href="loyalty-cards.html" data-page="loyalty-cards">Kaarten</a>
         <a href="instellingen.html" data-page="instellingen">Instellingen</a>
         <a href="medewerkers.html" data-page="medewerkers">Medewerkers</a>
-        <a href="gift-cards.html" data-page="gift-cards">Gift Cards</a>
+        <a href="gift-cards.html" data-page="gift-cards">Kadobonnen</a>
         <a href="vouchers.html" data-page="vouchers">Vouchers</a>
       </nav>
       <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
@@ -452,19 +452,19 @@
       <div class="redeem-result" id="redeem-result"></div>
     </div>
 
-    <!-- Cadeaukaart als betaalmiddel — losse boekhouding van het loyaltytegoed hierboven, maar samen te gebruiken op dezelfde rekening -->
+    <!-- Kadobon als betaalmiddel — losse boekhouding van het loyaltytegoed hierboven, maar samen te gebruiken op dezelfde rekening -->
     <div class="redeem-panel" id="giftcard-panel" style="display:none;">
-      <div class="redeem-title">Cadeaukaart gebruiken op deze rekening</div>
-      <input type="text" id="gc-token-input" placeholder="Scan of typ de cadeaukaart-token…" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;">
+      <div class="redeem-title">Kadobon gebruiken op deze rekening</div>
+      <input type="text" id="gc-token-input" placeholder="Scan of typ de kadobon-token…" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;">
       <div id="gc-lookup-result" style="font-size:13px; color:var(--muted); margin-bottom:10px;"></div>
       <input type="number" id="gc-amount-input" placeholder="Te besteden bedrag (€)" min="0.01" step="0.01" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;" disabled>
-      <button type="button" class="redeem-confirm-btn" id="gc-confirm-btn" disabled>Cadeaukaart-betaling bevestigen</button>
+      <button type="button" class="redeem-confirm-btn" id="gc-confirm-btn" disabled>Kadobon-betaling bevestigen</button>
       <div class="redeem-result" id="gc-result"></div>
     </div>
 
     <!-- Voucher inwisselen — bewust GEEN bedrag/saldo hier, een voucher is
          een op-zichzelfstaande beloning (bijv. "Gratis cocktail"), geen
-         geldbedrag zoals tegoed of cadeaukaartsaldo hierboven. -->
+         geldbedrag zoals tegoed of kadobonsaldo hierboven. -->
     <div class="redeem-panel" id="voucher-panel" style="display:none;">
       <div class="redeem-title">Voucher inwisselen</div>
       <input type="text" id="vc-token-input" placeholder="Scan of typ de voucher-code…" style="width:100%; padding:10px 12px; border-radius:8px; border:1px solid var(--line); background:var(--cream); font-family:'Inter',sans-serif; font-size:14px; margin-bottom:10px;">
@@ -849,13 +849,13 @@
         els.redeemPanel.classList.remove('show');
       }
 
-      // Cadeaukaart-betaling staat los van loyaltytegoed en werkt ook
-      // zonder gekoppelde klant (een cadeaukaart is anoniem bruikbaar).
+      // Kadobon-betaling staat los van loyaltytegoed en werkt ook
+      // zonder gekoppelde klant (een kadobon is anoniem bruikbaar).
       resetGiftCardPanel();
       document.getElementById('giftcard-panel').style.display = 'block';
 
       // Voucher hoort ALTIJD bij een specifieke klant (in tegenstelling
-      // tot de anonieme cadeaukaart hierboven) — alleen tonen als er een
+      // tot de anonieme kadobon hierboven) — alleen tonen als er een
       // klant gekoppeld is aan deze transactie.
       resetVoucherPanel();
       document.getElementById('voucher-panel').style.display = lastCustomerId ? 'block' : 'none';
@@ -905,14 +905,19 @@
 
   async function loadRedeemConfig() {
     try {
-      const { orgId } = getConfig();
+      const { orgId, locationId } = getConfig();
       const [blockResult, items, rate] = await Promise.all([
         apiGet('/organizations/' + orgId + '/redemption-block-size'),
         apiGet('/organizations/' + orgId + '/reward-catalog?activeOnly=true&currentlyAvailableOnly=true'),
         apiGet('/organizations/' + orgId + '/redemption-rate/today').catch(() => null),
       ]);
       blockSize = blockResult.blockSize;
-      catalogItems = items;
+      // Leeg locationIds-array = organisatiebreed geldig, anders alleen
+      // tonen als de kassa-locatie in de toegestane lijst voorkomt —
+      // voorkomt dat een medewerker een cadeau kiest dat hier toch niet
+      // geldig is (de server controleert dit ook, maar dit is duidelijker
+      // voor de kassa dan pas achteraf een foutmelding).
+      catalogItems = items.filter((item) => !item.locationIds || item.locationIds.length === 0 || item.locationIds.includes(locationId));
       pointsPerEuroToday = rate ? rate.pointsPerEuro : null;
       els.blockSizeLabel.textContent = blockSize || '—';
       refreshBlockDisplay();
@@ -928,7 +933,7 @@
     els.blockMinus.disabled = blockCount <= 1;
 
     if (!blockSize) {
-      els.redeemQuoteDiv.innerHTML = '<span class="warn">Geen blokgrootte ingesteld — zie het Cadeaus-scherm.</span>';
+      els.redeemQuoteDiv.innerHTML = '<span class="warn">Geen blokgrootte ingesteld — zie het Beloningen-scherm.</span>';
       return;
     }
 
@@ -952,7 +957,7 @@
 
   function renderCatalogPicker() {
     if (catalogItems.length === 0) {
-      els.catalogPicker.innerHTML = '<div class="catalog-empty">Nog geen cadeaus ingesteld — zie het Cadeaus-scherm.</div>';
+      els.catalogPicker.innerHTML = '<div class="catalog-empty">Nog geen beloningen ingesteld — zie het Beloningen-scherm.</div>';
       return;
     }
     els.catalogPicker.innerHTML = catalogItems.map((item) => `
@@ -1002,9 +1007,10 @@
         refreshBlockDisplay();
       } else {
         const item = catalogItems.find((i) => i.id === selectedCatalogItemId);
+        const { locationId } = getConfig();
         response = await apiPost(
           '/organizations/' + orgId + '/customers/' + lastCustomerId + '/wallet/redeem-catalog-item',
-          { catalogItemId: selectedCatalogItemId, transactionId: lastTransactionId, idempotencyKey },
+          { catalogItemId: selectedCatalogItemId, transactionId: lastTransactionId, idempotencyKey, locationId },
         );
         els.redeemResultDiv.textContent = `"${item.name}" (${item.pointsCost} pt) afgeboekt en bevestigd.`;
         selectedCatalogItemId = null;
@@ -1023,7 +1029,7 @@
     loadCustomers();
   }
 
-  // -- Cadeaukaart als betaalmiddel — losse token-opzoek + inwissel-flow ----
+  // -- Kadobon als betaalmiddel — losse token-opzoek + inwissel-flow ----
 
   const gcEls = {
     tokenInput: document.getElementById('gc-token-input'),
@@ -1085,12 +1091,13 @@
     gcEls.confirmBtn.disabled = true;
     gcEls.confirmBtn.textContent = 'Bezig…';
     try {
-      const { orgId } = getConfig();
+      const { orgId, locationId } = getConfig();
       const result = await apiPost('/organizations/' + orgId + '/gift-cards/redeem', {
         token: gcLookedUpToken,
         amount,
         transactionId: lastTransactionId,
         reason: 'Betaling aan kassa',
+        locationId,
       });
       gcEls.resultDiv.textContent = `€${amount.toFixed(2)} afgeboekt — resterend saldo: €${result.remainingBalance.toFixed(2)}.`;
       gcEls.amountInput.value = '';
@@ -1101,13 +1108,13 @@
       gcEls.resultDiv.innerHTML = '<span class="warn">Betaling mislukt: ' + err.message + '</span>';
       gcEls.confirmBtn.disabled = false;
     } finally {
-      gcEls.confirmBtn.textContent = 'Cadeaukaart-betaling bevestigen';
+      gcEls.confirmBtn.textContent = 'Kadobon-betaling bevestigen';
     }
   });
 
   // -- Voucher inwisselen — losse lookup + directe inwissel-flow, geen
   // bedrag nodig (een voucher is een op-zichzelfstaand voordeel, geen
-  // geldbedrag zoals tegoed/cadeaukaartsaldo hierboven). ------------------
+  // geldbedrag zoals tegoed/kadobonsaldo hierboven). ------------------
 
   const vcEls = {
     tokenInput: document.getElementById('vc-token-input'),

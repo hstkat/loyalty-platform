@@ -120,7 +120,9 @@ model Location {
   // Module 3 — Wallet & Credit
   creditRules CreditRule[]
   redemptionRateRules RedemptionRateRule[]
-  rewardCatalogItems RewardCatalogItem[]
+  // rewardCatalogItems verwijderd — RewardCatalogItem gebruikt nu
+  // locationIds: String[] (geen FK-relatie meer), zelfde patroon als
+  // VoucherTemplate.locationIds.
 
   // Module 9 — Reservations & Occupancy Booster
   capacitySettings       LocationCapacitySetting[]
@@ -1376,7 +1378,10 @@ model RedemptionRateRule {
 model RewardCatalogItem {
   id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String   @map("organization_id") @db.Uuid
-  locationId     String?  @map("location_id") @db.Uuid
+  // Leeg/null array = organisatiebreed geldig, gevuld = alleen geldig bij
+  // de genoemde locatie(s) — zelfde patroon als VoucherTemplate.locationIds
+  // hieronder, i.p.v. de vorige losse locationId-relatie (max. 1 locatie).
+  locationIds    String[] @default([]) @map("location_ids") @db.Uuid
   name           String
   description    String?
   pointsCost     Int      @map("points_cost")
@@ -1387,8 +1392,6 @@ model RewardCatalogItem {
   isActive       Boolean  @default(true) @map("is_active")
   createdAt      DateTime @default(now()) @map("created_at")
   updatedAt      DateTime @updatedAt @map("updated_at")
-
-  location Location? @relation(fields: [locationId], references: [id])
 
   @@index([organizationId, isActive])
   @@map("reward_catalog_items")
@@ -2778,7 +2781,6 @@ model GiftCardBatch {
 model GiftCard {
   id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String  @map("organization_id") @db.Uuid
-  locationId     String? @map("location_id") @db.Uuid
   batchId        String? @map("batch_id") @db.Uuid
 
   giftCardNumber  String @unique @map("gift_card_number") // bijv. "GC-000001" — administratief, nooit de beveiliging
@@ -2808,7 +2810,13 @@ model GiftCard {
   personalMessage     String? @map("personal_message")
   scheduledSendAt     DateTime? @map("scheduled_send_at") // geplande verzending (bijv. verjaardag) — zie GiftCardsService voor het bewuste, gedocumenteerde verzendmechanisme
 
-  isOrganizationWide Boolean @default(true) @map("is_organization_wide") // false = alleen geldig bij `locationId`
+  // Locatiescope — zelfde conventie als VoucherTemplate.locationIds: een
+  // leeg array betekent organisatiebreed geldig (bij zowel Het Strand
+  // als Zomers), een gevuld array beperkt de kaart tot precies die
+  // locatie(s). Vervangt het oudere `locationId` (enkelvoud) +
+  // `isOrganizationWide`-paar, dat overigens nooit daadwerkelijk werd
+  // afgedwongen bij inwisseling — zie GiftCardsService.redeem().
+  locationIds String[] @map("location_ids") @db.Uuid
 
   issuedAt          DateTime  @default(now()) @map("issued_at")
   activatedAt       DateTime? @map("activated_at")

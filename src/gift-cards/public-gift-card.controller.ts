@@ -89,17 +89,17 @@ export class GiftCardCheckoutController {
       body = `<div class="brand">${brandLabel}</div><h1>Niet gevonden</h1><p>Deze bestelling kon niet worden gevonden.</p>`;
     } else if (giftCard.status === 'active') {
       if (giftCard.recipientEmail) {
-        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${giftCard.recipientEmail}.</p>`;
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Kadobon ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${giftCard.recipientEmail}.</p>`;
       } else {
         const rawToken = giftCard.molliePaymentId ? await this.recoverRawToken(giftCard.molliePaymentId) : null;
         const linkBlock = rawToken
-          ? `<a class="btn" href="/g/${rawToken}">Bekijk mijn cadeaukaart</a><p style="margin-top:14px;font-size:12px;">Bewaar deze link — dit is je enige toegang tot de kaart.</p>`
+          ? `<a class="btn" href="/g/${rawToken}">Bekijk mijn kadobon</a><p style="margin-top:14px;font-size:12px;">Bewaar deze link — dit is je enige toegang tot de kaart.</p>`
           : `<p>Er ging iets mis bij het ophalen van je kaartlink. Neem contact op met de zaak, onder vermelding van kaartnummer ${giftCard.giftCardNumber}.</p>`;
-        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Cadeaukaart ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}.</p>${linkBlock}`;
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Kadobon ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}.</p>${linkBlock}`;
       }
     } else {
       const deliveryNote = giftCard.recipientEmail
-        ? 'je ontvangt de cadeaukaart zo snel mogelijk per e-mail.'
+        ? 'je ontvangt de kadobon zo snel mogelijk per e-mail.'
         : 'ververs deze pagina over een moment — je krijgt dan een link naar je kaart.';
       body = `<div class="brand">${brandLabel}</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — ${deliveryNote}</p>`;
     }
@@ -179,9 +179,9 @@ export class GiftCardCheckoutController {
             return `<div class="card-row"><span>${c.giftCardNumber} — €${Number(c.originalValue).toFixed(2)}</span><span class="recipient">${recipient}</span></div>`;
           })
           .join('');
-        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>${allCards.length} cadeaukaarten — totaal €${totalAmount.toFixed(2)}. Ontvangers met een e-mailadres krijgen hun kaart per e-mail.</p><div class="card-list">${rows}</div>`;
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>${allCards.length} kadobonnen — totaal €${totalAmount.toFixed(2)}. Ontvangers met een e-mailadres krijgen hun kaart per e-mail.</p><div class="card-list">${rows}</div>`;
       } else {
-        body = `<div class="brand">${brandLabel}</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — je ontvangt je cadeaukaarten zo snel mogelijk per e-mail.</p>`;
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt!</h1><p>We verwerken je betaling nog even — je ontvangt je kadobonnen zo snel mogelijk per e-mail.</p>`;
       }
     }
 
@@ -213,7 +213,7 @@ export class GiftCardCheckoutController {
     res.status(200).send(this.renderBuyPage(orgId, brand));
   }
 
-  // Voorkomt spam van lege concept-cadeaukaarten en herhaalde
+  // Voorkomt spam van lege concept-kadobonnen en herhaalde
   // Mollie-betaalverzoeken vanaf één bron.
   @Throttle({ default: { limit: 10, ttl: 300000 } })
   @Post('buy/:orgId')
@@ -301,18 +301,18 @@ export class GiftCardCheckoutController {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cadeaukaart kopen — ${brand.name}</title>
+<title>Kadobon kopen — ${brand.name}</title>
 <style>${styles}</style>
 </head>
 <body>
   <div class="frame">
     <div class="banner">
       <div class="banner-label">${brand.name}</div>
-      <div class="banner-title">Cadeaukaart</div>
+      <div class="banner-title">Kadobon</div>
     </div>
 
     <div id="bulk-toggle-row" style="text-align:center;margin-bottom:12px;">
-      <a href="#" id="switch-to-bulk-link" style="color:var(--white);font-size:12.5px;font-weight:600;text-decoration:underline;">Meerdere cadeaukaarten voor verschillende mensen kopen?</a>
+      <a href="#" id="switch-to-bulk-link" style="color:var(--white);font-size:12.5px;font-weight:600;text-decoration:underline;">Meerdere kadobonnen voor verschillende mensen kopen?</a>
     </div>
 
     <div class="panel" id="single-amount-panel">
@@ -356,10 +356,10 @@ export class GiftCardCheckoutController {
     </div>
 
     <div class="panel" id="bulk-panel" style="display:none;">
-      <div class="panel-title">Meerdere cadeaukaarten</div>
-      <div class="panel-sub">Elke rij wordt een eigen cadeaukaart met eigen bedrag en ontvanger — allemaal in één betaling.</div>
+      <div class="panel-title">Meerdere kadobonnen</div>
+      <div class="panel-sub">Elke rij wordt een eigen kadobon met eigen bedrag en ontvanger — allemaal in één betaling.</div>
       <div id="bulk-rows"></div>
-      <button type="button" id="bulk-add-row-btn" style="width:100%;padding:10px;border-radius:9px;border:1px dashed var(--line);background:var(--cream);color:var(--navy);font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;">+ Nog een cadeaukaart toevoegen</button>
+      <button type="button" id="bulk-add-row-btn" style="width:100%;padding:10px;border-radius:9px;border:1px dashed var(--line);background:var(--cream);color:var(--navy);font-size:13px;font-weight:600;cursor:pointer;margin-top:4px;">+ Nog een kadobon toevoegen</button>
       <div id="bulk-total" style="text-align:right;font-size:13px;color:var(--navy);font-weight:600;margin-top:10px;"></div>
     </div>
 
@@ -368,7 +368,7 @@ export class GiftCardCheckoutController {
     </div>
     <div id="bulk-mode-footer" style="display:none;">
       <button id="bulk-pay-btn">Doorgaan naar betalen</button>
-      <div style="text-align:center;margin-top:8px;"><a href="#" id="switch-to-single-link" style="color:var(--white);opacity:0.85;font-size:12px;text-decoration:underline;">← Terug naar één cadeaukaart</a></div>
+      <div style="text-align:center;margin-top:8px;"><a href="#" id="switch-to-single-link" style="color:var(--white);opacity:0.85;font-size:12px;text-decoration:underline;">← Terug naar één kadobon</a></div>
     </div>
     <div class="error" id="error"></div>
   </div>
@@ -452,7 +452,7 @@ export class GiftCardCheckoutController {
         });
         const data = await res.json();
         if (data.checkoutUrl) {
-          // Cadeaukaart-checkout gaat naar Mollie's eigen betaalpagina —
+          // Kadobon-checkout gaat naar Mollie's eigen betaalpagina —
           // dat kan (en mag) niet in de kleine widget-iframe, dus we
           // navigeren het HELE bovenliggende venster erheen (net als een
           // gewone "afrekenen"-link zou doen), niet alleen de iframe.
@@ -482,7 +482,7 @@ export class GiftCardCheckoutController {
       wrap.dataset.rowId = rowId;
       wrap.innerHTML =
         '<button type="button" class="bulk-row-remove" title="Verwijderen">&times;</button>' +
-        '<div class="bulk-row-title">Cadeaukaart ' + rowId + '</div>' +
+        '<div class="bulk-row-title">Kadobon ' + rowId + '</div>' +
         '<input type="number" class="bulk-amount" placeholder="Bedrag in € (min. €10)" min="10" step="0.01">' +
         '<input type="text" class="bulk-recipient-name" placeholder="Naam ontvanger (optioneel)" autocomplete="off">' +
         '<input type="email" class="bulk-recipient-email" placeholder="E-mailadres ontvanger (optioneel)" autocomplete="off">' +
@@ -548,9 +548,9 @@ export class GiftCardCheckoutController {
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         const amount = parseFloat(row.querySelector('.bulk-amount').value);
-        if (!amount || amount < 10) { errorEl.textContent = 'Cadeaukaart ' + (i + 1) + ': minimaal bedrag is €10.'; setTimeout(reportHeight, 50); return; }
+        if (!amount || amount < 10) { errorEl.textContent = 'Kadobon ' + (i + 1) + ': minimaal bedrag is €10.'; setTimeout(reportHeight, 50); return; }
         const recipientEmail = row.querySelector('.bulk-recipient-email').value.trim();
-        if (recipientEmail && !isValidEmailFormat(recipientEmail)) { errorEl.textContent = 'Cadeaukaart ' + (i + 1) + ': het e-mailadres van de ontvanger lijkt niet geldig.'; setTimeout(reportHeight, 50); return; }
+        if (recipientEmail && !isValidEmailFormat(recipientEmail)) { errorEl.textContent = 'Kadobon ' + (i + 1) + ': het e-mailadres van de ontvanger lijkt niet geldig.'; setTimeout(reportHeight, 50); return; }
         items.push({
           originalValue: amount,
           recipientName: row.querySelector('.bulk-recipient-name').value.trim() || undefined,
@@ -637,19 +637,19 @@ export class PublicGiftCardController {
     `;
 
     if (!card) {
-      return this.htmlShell(styles, `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Cadeaukaart niet gevonden</h1><p>Deze QR-code hoort niet bij een geldige cadeaukaart.</p>`);
+      return this.htmlShell(styles, `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Kadobon niet gevonden</h1><p>Deze QR-code hoort niet bij een geldige kadobon.</p>`);
     }
     if (card.status === 'draft') {
       return this.htmlShell(styles, `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Nog niet actief</h1><p>Deze fysieke kaart is nog niet geactiveerd — vraag dit bij de kassa aan.</p>`);
     }
     if (card.status === 'blocked' || card.status === 'expired' || card.status === 'cancelled') {
-      return this.htmlShell(styles, `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Niet meer geldig</h1><p>Deze cadeaukaart is niet langer bruikbaar. Neem contact op met de zaak bij vragen.</p>`);
+      return this.htmlShell(styles, `<div class="brand">HET STRAND &amp; ZOMERS</div><h1>Niet meer geldig</h1><p>Deze kadobon is niet langer bruikbaar. Neem contact op met de zaak bij vragen.</p>`);
     }
 
     // Codeert het ruwe token zelf (niet de hele weergavepagina-URL) —
-    // dat is precies wat de kassa's cadeaukaart-opzoekveld verwacht.
+    // dat is precies wat de kassa's kadobon-opzoekveld verwacht.
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(token)}`;
-    const greeting = card.recipientName ? `Voor ${card.recipientName}` : 'Cadeaukaart';
+    const greeting = card.recipientName ? `Voor ${card.recipientName}` : 'Kadobon';
     return this.htmlShell(
       styles,
       `<div class="brand">HET STRAND &amp; ZOMERS</div>
@@ -657,7 +657,7 @@ export class PublicGiftCardController {
        ${card.personalMessage ? `<div class="message">"${card.personalMessage}"</div>` : ''}
        <div class="balance-label">Beschikbaar saldo</div>
        <div class="balance">€${Number(card.currentBalance).toFixed(2)}</div>
-       <div class="qr-wrap"><img src="${qrUrl}" alt="Cadeaukaart-QR"></div>
+       <div class="qr-wrap"><img src="${qrUrl}" alt="Kadobon-QR"></div>
        <div class="token-hint">Werkt scannen niet? Geef deze code door aan de kassa:</div>
        <div class="token-text">${token}</div>
        <p>Toon deze pagina of de QR-code bij de kassa om te gebruiken.</p>`,
@@ -670,7 +670,7 @@ export class PublicGiftCardController {
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
-<title>Strand tegoed — Cadeaukaart</title>
+<title>Strand tegoed — Kadobon</title>
 <style>${styles}</style>
 </head>
 <body><div class="card">${bodyContent}</div></body>

@@ -41,7 +41,7 @@ export class WalletPassService {
     let walletPass = await this.prisma.walletPass.findFirst({ where: { walletId: wallet.id, passType: 'google' } });
     if (!walletPass) {
       // Zelfde beveiligingsprincipe als de fysieke loyaltykaarten en
-      // cadeaukaarten: een apart, willekeurig token — nooit het
+      // kadobonnen: een apart, willekeurig token — nooit het
       // database-ID van de klant of de wallet zelf.
       const serialNumber = randomBytes(16).toString('base64url');
       walletPass = await this.prisma.walletPass.create({

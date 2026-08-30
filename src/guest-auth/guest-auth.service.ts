@@ -103,7 +103,7 @@ export class GuestAuthService {
       // Zelfde vangnet als bij nieuwe registraties: als er ondertussen
       // (bijv. vóór deze koppel-logica bestond, of door de eerder
       // gevonden duplicate-klant-ambiguïteit) nog een niet-gekoppelde
-      // cadeaukaart voor dit e-mailadres klaarstaat, alsnog koppelen.
+      // kadobon voor dit e-mailadres klaarstaat, alsnog koppelen.
       await this.giftCards.linkUnclaimedGiftCardsToCustomer(orgId, customer.id, email).catch(() => undefined);
 
       const session = await this.issueSession(customer.id, deviceInfo);
@@ -189,7 +189,7 @@ export class GuestAuthService {
       await this.prisma.customer.update({ where: { id: customer.id }, data: { passwordHash } });
     }
 
-    // Cadeaukaarten die eerder naar dit e-mailadres verstuurd zijn (vóórdat
+    // Kadobonnen die eerder naar dit e-mailadres verstuurd zijn (vóórdat
     // er een account bestond) alsnog koppelen — anders blijven ze
     // onzichtbaar in Mijn Tegoed. Nooit de registratie laten mislukken als
     // dit om wat voor reden dan ook faalt.

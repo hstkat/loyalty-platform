@@ -1,7 +1,9 @@
 export interface IssueGiftCardDto {
   originalValue: number;
-  locationId?: string;
-  isOrganizationWide?: boolean;
+  // Locatiescope — leeg/onbepaald array = organisatiebreed geldig,
+  // gevuld = alleen geldig bij die locatie(s). Zelfde conventie als
+  // VoucherTemplate.locationIds.
+  locationIds?: string[];
   purchaserCustomerId?: string;
   recipientCustomerId?: string;
   recipientName?: string;
@@ -35,6 +37,9 @@ export interface RedeemGiftCardDto {
   amount: number;
   transactionId?: string;
   reason?: string;
+  // Locatie waar wordt ingewisseld — nodig om de locatiescope van de
+  // kaart (locationIds) te kunnen controleren.
+  locationId?: string;
 }
 
 export interface TopUpGiftCardDto {
@@ -61,7 +66,7 @@ export interface RefundGiftCardDto {
   reason?: string;
 }
 
-// -- Bulk online aankoop: één Mollie-betaling, meerdere cadeaukaarten met
+// -- Bulk online aankoop: één Mollie-betaling, meerdere kadobonnen met
 // elk hun eigen ontvanger/bedrag ------------------------------------------
 
 export interface BulkGiftCardItemDto {

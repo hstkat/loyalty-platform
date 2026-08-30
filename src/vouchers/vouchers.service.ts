@@ -13,7 +13,7 @@ export interface ActorContext {
 
 /**
  * Voucher-module — bewust een VOLLEDIG APARTE reward, nooit samengevoegd
- * met Beach Credit/punten (WalletService) of cadeaukaartsaldo
+ * met Beach Credit/punten (WalletService) of kadobonsaldo
  * (GiftCardsService). Zie het schema-commentaar bij VoucherTemplate/
  * CustomerVoucher voor de architecturale onderbouwing; dezelfde scheiding
  * die al bestond tussen GiftCard en Wallet is hier bewust herhaald.
@@ -311,13 +311,13 @@ export class VouchersService {
     if (!voucher) throw new NotFoundException('Voucher niet gevonden');
 
     // Token wordt hier NIET opnieuw gegenereerd (in tegenstelling tot bij
-    // cadeaukaarten, die eenmalig per e-mail verstuurd worden) — een
+    // kadobonnen, die eenmalig per e-mail verstuurd worden) — een
     // voucher wordt telkens opnieuw vanuit de portal geopend, dus het
     // token moet stabiel blijven zolang de voucher niet is ingewisseld.
     // We geven daarom nooit het RUWE token terug (dat kennen we zelf ook
     // niet meer, we bewaren alleen de hash) — in plaats daarvan genereert
     // de klant-portal de weergave-QR op basis van een kortlevend,
-    // apart display-token (zelfde patroon als de cadeaukaart "bekijk"-
+    // apart display-token (zelfde patroon als de kadobon "bekijk"-
     // flow), aangevraagd via requestDisplayToken hieronder.
     return {
       id: voucher.id,
@@ -335,7 +335,7 @@ export class VouchersService {
 
   /**
    * Genereert een VERS, kortlevend weergave-token en overschrijft de
-   * opgeslagen hash daarmee — zelfde aanpak als de cadeaukaart-QR-
+   * opgeslagen hash daarmee — zelfde aanpak als de kadobon-QR-
    * weergave: elke keer dat de klant de voucher opent, wordt het
    * geldende token vervangen. Dat betekent dat een eerder gescande/
    * gedeelde QR-afbeelding vanzelf verloopt zodra de klant de voucher
@@ -397,7 +397,7 @@ export class VouchersService {
       throw new ForbiddenException('Deze voucher is niet geldig op deze locatie');
     }
 
-    // Atomair CLAIMEN — zelfde patroon als bij cadeaukaarten/wallet-
+    // Atomair CLAIMEN — zelfde patroon als bij kadobonnen/wallet-
     // reserveringen: de where-clause herhaalt de statuscheck in de
     // UPDATE zelf, zodat twee (bijna-)gelijktijdige inwissel-pogingen
     // (bijv. twee keer scannen, of twee kassa's tegelijk) nooit allebei

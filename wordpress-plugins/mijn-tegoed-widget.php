@@ -21,7 +21,7 @@
  * "Merk" hoeft per site anders te staan.
  *
  * LET OP — POSITIONERING: op het-strand.nl staat al een andere,
- * bestaande zwevende knop linksonder (de cadeaukaart-widget). Deze
+ * bestaande zwevende knop linksonder (de kadobon-widget). Deze
  * nieuwe knop staat standaard er een stukje boven, zodat ze elkaar niet
  * overlappen — bij "Verticale afstand" in de instellingen kun je dit
  * fijn afstemmen als het nog niet helemaal goed uitlijnt.
@@ -98,7 +98,7 @@ class MijnTegoedWidget
                         <th scope="row"><label for="mijn_tegoed_offset">Verticale afstand vanaf onderkant (px)</label></th>
                         <td>
                             <input type="number" name="<?php echo esc_attr(self::OPTION_BOTTOM_OFFSET); ?>" id="mijn_tegoed_offset" value="<?php echo esc_attr($offset); ?>" min="0" step="10" style="width:100px;">
-                            <p class="description">Verhoog dit getal als de knop overlapt met een andere, al bestaande zwevende knop (bijv. de cadeaukaart-widget) linksonder op de site.</p>
+                            <p class="description">Verhoog dit getal als de knop overlapt met een andere, al bestaande zwevende knop (bijv. de kadobon-widget) linksonder op de site.</p>
                         </td>
                     </tr>
                 </table>

@@ -53,14 +53,14 @@ export class RewardCatalogService {
       description?: string;
       pointsCost: number;
       euroValue: number;
-      locationId?: string;
+      locationIds?: string[];
       availableDays?: string[];
       validFrom?: string;
       validUntil?: string;
     },
   ) {
     if (dto.euroValue === undefined || dto.euroValue === null || dto.euroValue < 0) {
-      throw new BadRequestException('euroValue is verplicht (de werkelijke kostprijs/waarde van dit cadeau, voor de boekhouding)');
+      throw new BadRequestException('euroValue is verplicht (de werkelijke kostprijs/waarde van deze beloning, voor de boekhouding)');
     }
     return this.prisma.rewardCatalogItem.create({
       data: {
@@ -69,7 +69,7 @@ export class RewardCatalogService {
         description: dto.description,
         pointsCost: dto.pointsCost,
         euroValue: dto.euroValue,
-        locationId: dto.locationId,
+        locationIds: dto.locationIds ?? [],
         availableDays: dto.availableDays as never,
         validFrom: dto.validFrom ? new Date(dto.validFrom) : undefined,
         validUntil: dto.validUntil ? new Date(dto.validUntil) : undefined,
@@ -86,6 +86,7 @@ export class RewardCatalogService {
       pointsCost: number;
       euroValue: number;
       isActive: boolean;
+      locationIds: string[];
       availableDays: string[] | null;
       validFrom: string | null;
       validUntil: string | null;
@@ -163,13 +164,20 @@ export class RewardCatalogService {
     catalogItemId: string,
     transactionId: string,
     idempotencyKey: string,
+    locationId?: string,
   ) {
     const item = await this.prisma.rewardCatalogItem.findFirst({
       where: { id: catalogItemId, organizationId: orgId, isActive: true },
     });
     if (!item) throw new NotFoundException('Cadeau niet gevonden of niet actief');
     if (!this.isCurrentlyAvailable(item)) {
-      throw new BadRequestException('Dit cadeau is vandaag niet beschikbaar (dag- of periodebeperking)');
+      throw new BadRequestException('Deze beloning is vandaag niet beschikbaar (dag- of periodebeperking)');
+    }
+    // Leeg locationIds-array = organisatiebreed geldig — anders moet de
+    // kassa-locatie in de toegestane lijst voorkomen. Zelfde
+    // locatiecontrole als bij voucher-inwisseling.
+    if (item.locationIds.length > 0 && locationId && !item.locationIds.includes(locationId)) {
+      throw new BadRequestException('Deze beloning is niet geldig op deze locatie');
     }
 
     const reservation = await this.wallet.reserveRedemption(orgId, customerId, {

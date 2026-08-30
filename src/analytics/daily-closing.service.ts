@@ -39,7 +39,7 @@ export class DailyClosingService {
       ``,
       `Punten gespaard vandaag:   ${closing.pointsIssued} pt`,
       `Punten ingewisseld:        ${closing.pointsRedeemed} pt  (≈ €${closing.redeemedEuroValue.toFixed(2)} bij koers ${closing.pointsPerEuroThatDay} pt/€ van vandaag)`,
-      `Waarvan cadeaus:           ${closing.catalogGiftsCount}x, totale kostprijs €${closing.catalogGiftsValue.toFixed(2)}`,
+      `Waarvan beloningen:        ${closing.catalogGiftsCount}x, totale kostprijs €${closing.catalogGiftsValue.toFixed(2)}`,
       `Punten verlopen:           ${closing.pointsExpired} pt`,
       ``,
       `Dit is een automatisch gegenereerd overzicht van Het Strand & Zomers — Strand tegoed platform.`,
