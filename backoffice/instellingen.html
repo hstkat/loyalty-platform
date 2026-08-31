@@ -548,8 +548,12 @@
     els.customerAutocompleteList.classList.remove('open');
     els.customerSearchInput.value = name;
 
-    document.getElementById('anonymize-customer-btn').addEventListener('click', async () => {
+    document.getElementById('anonymize-customer-btn').addEventListener('click', async (evt) => {
       if (!confirm(`Weet je zeker dat je "${name}" wil anonimiseren? Naam, e-mail, telefoon en geboortedatum worden onherstelbaar gewist. Het saldo en de historie blijven (geanonimiseerd) bestaan.`)) return;
+      const btn = evt.currentTarget;
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Bezig…';
       try {
         const { orgId } = getConfig();
         await apiPost('/organizations/' + orgId + '/customers/' + selectedCustomer.id + '/anonymize');
@@ -557,11 +561,19 @@
         els.selectedCustomerBox.classList.remove('show');
         els.customerSearchInput.value = '';
         loadAuditLog();
-      } catch (err) { alert('Anonimiseren mislukt: ' + err.message); }
+      } catch (err) {
+        alert('Anonimiseren mislukt: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
 
-    document.getElementById('delete-customer-btn').addEventListener('click', async () => {
+    document.getElementById('delete-customer-btn').addEventListener('click', async (evt) => {
       if (!confirm(`Weet je zeker dat je "${name}" wil verwijderen? Dit kan niet ongedaan worden gemaakt.`)) return;
+      const btn = evt.currentTarget;
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Bezig…';
       try {
         const { orgId } = getConfig();
         await apiDelete('/organizations/' + orgId + '/customers/' + selectedCustomer.id);
@@ -569,7 +581,11 @@
         els.selectedCustomerBox.classList.remove('show');
         els.customerSearchInput.value = '';
         loadAuditLog();
-      } catch (err) { alert('Verwijderen mislukt: ' + err.message); }
+      } catch (err) {
+        alert('Verwijderen mislukt: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
   }
 
