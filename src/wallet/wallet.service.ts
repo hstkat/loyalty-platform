@@ -27,7 +27,20 @@ export class WalletService {
     private exchangeRate: ExchangeRateService,
   ) {}
 
+  /**
+   * Haalt de wallet van een klant op (of maakt 'm aan) — controleert
+   * ALTIJD dat de bijbehorende klant daadwerkelijk bij `orgId` hoort.
+   * Zonder deze check zou een medewerker van organisatie A, door een
+   * customerId van organisatie B mee te geven, het tegoed van een klant
+   * van een ANDERE organisatie kunnen opvragen en muteren — customerId
+   * is uniek over het hele platform, niet per organisatie, dus een
+   * kale `findUnique({ where: { customerId } })` respecteert de
+   * organisatiegrens niet vanzelf.
+   */
   private async getOrCreateWallet(orgId: string, customerId: string) {
+    const customer = await this.prisma.customer.findFirst({ where: { id: customerId, organizationId: orgId }, select: { id: true } });
+    if (!customer) throw new NotFoundException('Gast niet gevonden');
+
     let wallet = await this.prisma.wallet.findUnique({ where: { customerId } });
     if (!wallet) {
       wallet = await this.prisma.wallet.create({
