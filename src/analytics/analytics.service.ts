@@ -116,17 +116,22 @@ export class AnalyticsService {
       where: { organizationId: orgId, status: { in: ['active', 'completed', 'paused'] } },
     });
 
-    const results = [];
-    for (const campaign of campaigns) {
-      const recipients = await this.prisma.campaignRecipient.count({ where: { campaignId: campaign.id } });
-      results.push({
-        campaignId: campaign.id,
-        name: campaign.name,
-        recipients,
-        currentRewardExposure: Number(campaign.currentRewardExposure),
-        currentRedemptionCost: Number(campaign.currentRedemptionCost),
-      });
-    }
+    // Eén query voor ALLE campagnes tegelijk i.p.v. één losse .count()
+    // per campagne — bij veel campagnes was dit een N+1-patroon.
+    const recipientCounts = await this.prisma.campaignRecipient.groupBy({
+      by: ['campaignId'],
+      where: { campaignId: { in: campaigns.map((c) => c.id) } },
+      _count: { _all: true },
+    });
+    const recipientCountMap = new Map(recipientCounts.map((r) => [r.campaignId, r._count._all]));
+
+    const results = campaigns.map((campaign) => ({
+      campaignId: campaign.id,
+      name: campaign.name,
+      recipients: recipientCountMap.get(campaign.id) ?? 0,
+      currentRewardExposure: Number(campaign.currentRewardExposure),
+      currentRedemptionCost: Number(campaign.currentRedemptionCost),
+    }));
     return results.sort((a, b) => b.recipients - a.recipients);
   }
 

@@ -543,12 +543,22 @@ export class CustomersService {
       _count: { phone: true },
     });
 
+    // Eén query voor ALLE telefoonnummers tegelijk i.p.v. één losse
+    // .findMany() per gevonden duplicaatgroep.
+    const phones = duplicatePhones.map((g) => g.phone).filter((p): p is string => p !== null);
+    const allMatchingCustomers = phones.length > 0
+      ? await this.prisma.customer.findMany({ where: { organizationId: orgId, phone: { in: phones }, deletedAt: null } })
+      : [];
+    const customersByPhone = new Map<string, typeof allMatchingCustomers>();
+    for (const c of allMatchingCustomers) {
+      if (!c.phone) continue;
+      if (!customersByPhone.has(c.phone)) customersByPhone.set(c.phone, []);
+      customersByPhone.get(c.phone)!.push(c);
+    }
+
     const results = [];
     for (const group of duplicatePhones) {
-      const customers = await this.prisma.customer.findMany({
-        where: { organizationId: orgId, phone: group.phone, deletedAt: null },
-      });
-      results.push({ matchedOn: 'phone', value: group.phone, customers });
+      results.push({ matchedOn: 'phone', value: group.phone, customers: group.phone ? (customersByPhone.get(group.phone) ?? []) : [] });
     }
     return results;
   }
