@@ -270,9 +270,19 @@ export class JourneyEngineService {
       where: { status: 'waiting', resumeAt: { lte: new Date() } },
     });
 
+    // Node- en edge-opzoekingen gebundeld i.p.v. per inschrijving apart —
+    // veel inschrijvingen wachten vaak bij dezelfde journey-stap, dus dit
+    // scheelt geregeld tientallen losse databaseaanroepen per cronrun.
+    const uniqueNodeIds = Array.from(new Set(due.map((e) => e.currentNodeId).filter((id): id is string => !!id)));
+    const nodes = uniqueNodeIds.length > 0 ? await this.prisma.journeyNode.findMany({ where: { id: { in: uniqueNodeIds } } }) : [];
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+    const edges = uniqueNodeIds.length > 0 ? await this.prisma.journeyEdge.findMany({ where: { fromNodeId: { in: uniqueNodeIds } } }) : [];
+    const edgeByFromNode = new Map(edges.map((e) => [e.fromNodeId, e]));
+
     for (const enrollment of due) {
-      const waitNode = await this.prisma.journeyNode.findUniqueOrThrow({ where: { id: enrollment.currentNodeId! } });
-      const nextEdge = await this.prisma.journeyEdge.findFirst({ where: { fromNodeId: waitNode.id } });
+      const waitNode = nodeMap.get(enrollment.currentNodeId!);
+      if (!waitNode) continue; // zou niet moeten gebeuren (verwijzing naar niet-bestaande node), maar nooit de hele run laten crashen op één kapotte inschrijving
+      const nextEdge = edgeByFromNode.get(waitNode.id);
       await this.prisma.journeyEnrollment.update({
         where: { id: enrollment.id },
         data: { status: 'executing' },
