@@ -20,12 +20,17 @@ import {
 
 const MAX_BATCH_QUANTITY = 5000;
 const MIN_GIFT_CARD_VALUE = 10; // onder dit bedrag wegen de vaste transactiekosten (Mollie e.d.) niet meer op tegen de waarde
-const DEFAULT_GIFT_CARD_VALIDITY_YEARS = 5; // wettelijke/gangbare geldigheidstermijn — kan per kaart overschreven worden via dto.expiresAt
+const DEFAULT_GIFT_CARD_VALIDITY_YEARS = 2; // wettelijke/gangbare geldigheidstermijn — kan per kaart overschreven worden via dto.expiresAt
 
 function defaultGiftCardExpiry(from: Date = new Date()): Date {
   const expiry = new Date(from);
   expiry.setUTCFullYear(expiry.getUTCFullYear() + DEFAULT_GIFT_CARD_VALIDITY_YEARS);
   return expiry;
+}
+
+/** Consistente NL-datumnotatie voor "Geldig tot" — overal hetzelfde formaat (sticker, e-mail, portal, admin). */
+function formatExpiryDateNL(date: Date): string {
+  return date.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 // Simpele formaatcheck — geen poging om elk technisch geldig e-mailadres
@@ -197,7 +202,7 @@ export class GiftCardsService {
         });
     }
 
-    return { giftCardId: giftCard.id, giftCardNumber, token, currentBalance: dto.originalValue, emailSent, senderConfirmationSent };
+    return { giftCardId: giftCard.id, giftCardNumber, token, currentBalance: dto.originalValue, emailSent, senderConfirmationSent, expiresAt: giftCard.expiresAt };
   }
 
   /**
@@ -225,12 +230,13 @@ export class GiftCardsService {
     const greeting = giftCard.recipientName ? `Beste ${giftCard.recipientName},` : 'Beste,';
     const messageBlock = giftCard.personalMessage ? `\n\n"${giftCard.personalMessage}"\n` : '';
     const validityNote = 'Je kaart is te besteden bij zowel Het Strand als Zomers Beachclub & Brewery.';
+    const expiryNote = giftCard.expiresAt ? `Geldig tot ${formatExpiryDateNL(giftCard.expiresAt)}.` : '';
 
     const result = await this.mailgun.sendEmail(
       giftCard.recipientEmail,
       `Je hebt een kadobon ter waarde van ${amountText} ontvangen!`,
-      `${greeting}${messageBlock}\n\nJe hebt een kadobon ontvangen ter waarde van ${amountText}.\n\n${validityNote}\n\nBekijk en gebruik je kaart via: ${qrUrl}\n\nVeel plezier!`,
-      `<p>${greeting}</p>${giftCard.personalMessage ? `<p><em>"${giftCard.personalMessage}"</em></p>` : ''}<p>Je hebt een kadobon ontvangen ter waarde van <strong>${amountText}</strong>.</p><p>${validityNote}</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
+      `${greeting}${messageBlock}\n\nJe hebt een kadobon ontvangen ter waarde van ${amountText}.\n\n${validityNote} ${expiryNote}\n\nBekijk en gebruik je kaart via: ${qrUrl}\n\nVeel plezier!`,
+      `<p>${greeting}</p>${giftCard.personalMessage ? `<p><em>"${giftCard.personalMessage}"</em></p>` : ''}<p>Je hebt een kadobon ontvangen ter waarde van <strong>${amountText}</strong>.</p><p>${validityNote} ${expiryNote}</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
     );
 
     if (!result.sent) throw new BadRequestException('Versturen mislukt: ' + (result.reason || 'onbekende fout'));
@@ -576,6 +582,7 @@ export class GiftCardsService {
         giftCard.personalMessage ? `Persoonlijke boodschap: "${giftCard.personalMessage}"` : undefined,
         `Ordernummer: ${giftCard.giftCardNumber}`,
         `Datum van aankoop: ${purchaseDate}`,
+        giftCard.expiresAt ? `Geldig tot: ${formatExpiryDateNL(giftCard.expiresAt)}` : undefined,
         '',
         'Te besteden bij zowel Het Strand als Zomers Beachclub & Brewery.',
       ].filter((line): line is string => line !== undefined);
@@ -592,7 +599,8 @@ export class GiftCardsService {
         ...giftCards.map((g) => {
           const amount = Number(g.originalValue).toFixed(2).replace('.', ',');
           const recipient = g.recipientEmail ? `${g.recipientName || '(geen naam)'} <${g.recipientEmail}>` : '(voor jezelf, geen ontvanger-e-mail opgegeven)';
-          return `- ${g.giftCardNumber}: €${amount} — ${recipient}`;
+          const expiry = g.expiresAt ? `, geldig tot ${formatExpiryDateNL(g.expiresAt)}` : '';
+          return `- ${g.giftCardNumber}: €${amount} — ${recipient}${expiry}`;
         }),
         '',
         `Datum van aankoop: ${purchaseDate}`,
@@ -1153,7 +1161,7 @@ export class GiftCardsService {
               organizationId: orgId,
               entryType: 'expiration',
               amount: balance * -1,
-              reason: `Automatisch verlopen op ${card.expiresAt?.toLocaleDateString('nl-NL')} (5 jaar geldigheid)`,
+              reason: `Automatisch verlopen op ${card.expiresAt?.toLocaleDateString('nl-NL')} (${DEFAULT_GIFT_CARD_VALIDITY_YEARS} jaar geldigheid)`,
             },
           });
           expiredValue += balance;
@@ -1166,5 +1174,58 @@ export class GiftCardsService {
     }
 
     return { expiredCount: expiredCards.length, expiredValue };
+  }
+
+  /**
+   * Draait dagelijks via de cron: mailt de ontvanger (of, als er geen
+   * ontvanger-e-mailadres bekend is, niemand — een kaart zonder
+   * ontvanger-e-mail is alleen bereikbaar via de link die de koper zelf
+   * bewaarde) exact 30 dagen vóór de vervaldatum. `expiryReminderSentAt`
+   * voorkomt dat dezelfde kaart twee keer gemaild wordt als de cron
+   * vaker draait of een dag gemist heeft — eenmaal verstuurd is genoeg.
+   */
+  async sendExpiryReminders(orgId: string): Promise<{ remindersSent: number }> {
+    const REMINDER_DAYS_BEFORE = 30;
+    const windowStart = new Date();
+    windowStart.setUTCDate(windowStart.getUTCDate() + REMINDER_DAYS_BEFORE);
+    windowStart.setUTCHours(0, 0, 0, 0);
+    const windowEnd = new Date(windowStart);
+    windowEnd.setUTCHours(23, 59, 59, 999);
+
+    const candidates = await this.prisma.giftCard.findMany({
+      where: {
+        organizationId: orgId,
+        status: { in: ['active', 'partially_redeemed'] },
+        expiresAt: { gte: windowStart, lte: windowEnd },
+        expiryReminderSentAt: null,
+        recipientEmail: { not: null },
+      },
+    });
+
+    let remindersSent = 0;
+    for (const card of candidates) {
+      const amountText = '€' + Number(card.currentBalance).toFixed(2);
+      const expiryText = formatExpiryDateNL(card.expiresAt!);
+      const greeting = card.recipientName ? `Beste ${card.recipientName},` : 'Beste,';
+
+      const result = await this.mailgun
+        .sendEmail(
+          card.recipientEmail!,
+          `Je kadobon verloopt over ${REMINDER_DAYS_BEFORE} dagen`,
+          `${greeting}\n\nJe kadobon (${card.giftCardNumber}) met een resterend saldo van ${amountText} verloopt op ${expiryText}. Gebruik 'm op tijd bij Het Strand of Zomers Beachclub & Brewery!\n\nGebruik de link of QR-code uit de e-mail die je bij ontvangst van de kaart kreeg om 'm te bekijken en te gebruiken. Kun je die niet meer vinden? Kom gerust langs — we zoeken je kaart dan op aan de hand van dit kaartnummer.`,
+          `<p>${greeting}</p><p>Je kadobon (${card.giftCardNumber}) met een resterend saldo van <strong>${amountText}</strong> verloopt op <strong>${expiryText}</strong>. Gebruik 'm op tijd bij Het Strand of Zomers Beachclub &amp; Brewery!</p><p>Gebruik de link of QR-code uit de e-mail die je bij ontvangst van de kaart kreeg om 'm te bekijken en te gebruiken. Kun je die niet meer vinden? Kom gerust langs — we zoeken je kaart dan op aan de hand van dit kaartnummer.</p>`,
+        )
+        .catch((err) => {
+          this.logger.error(`Verloopherinnering voor kadobon ${card.id} mislukt: ${err instanceof Error ? err.message : err}`);
+          return { sent: false };
+        });
+
+      if (result.sent) {
+        await this.prisma.giftCard.update({ where: { id: card.id }, data: { expiryReminderSentAt: new Date() } });
+        remindersSent += 1;
+      }
+    }
+
+    return { remindersSent };
   }
 }

@@ -606,13 +606,13 @@ export class PublicGiftCardController {
     const tokenHash = createHash('sha256').update(token).digest('hex');
     const giftCard = await this.prisma.giftCard.findUnique({
       where: { publicTokenHash: tokenHash },
-      select: { status: true, currentBalance: true, originalValue: true, personalMessage: true, recipientName: true },
+      select: { status: true, currentBalance: true, originalValue: true, personalMessage: true, recipientName: true, expiresAt: true },
     });
     res.status(200).send(this.renderPage(giftCard, token));
   }
 
   private renderPage(
-    card: { status: string; currentBalance: unknown; originalValue: unknown; personalMessage: string | null; recipientName: string | null } | null,
+    card: { status: string; currentBalance: unknown; originalValue: unknown; personalMessage: string | null; recipientName: string | null; expiresAt: Date | null } | null,
     token: string,
   ): string {
     const styles = `
@@ -650,6 +650,9 @@ export class PublicGiftCardController {
     // dat is precies wat de kassa's kadobon-opzoekveld verwacht.
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(token)}`;
     const greeting = card.recipientName ? `Voor ${card.recipientName}` : 'Kadobon';
+    const expiryLine = card.expiresAt
+      ? `<p style="margin-top:12px;">Geldig tot ${card.expiresAt.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</p>`
+      : '';
     return this.htmlShell(
       styles,
       `<div class="brand">HET STRAND &amp; ZOMERS</div>
@@ -660,7 +663,8 @@ export class PublicGiftCardController {
        <div class="qr-wrap"><img src="${qrUrl}" alt="Kadobon-QR"></div>
        <div class="token-hint">Werkt scannen niet? Geef deze code door aan de kassa:</div>
        <div class="token-text">${token}</div>
-       <p>Toon deze pagina of de QR-code bij de kassa om te gebruiken.</p>`,
+       <p>Toon deze pagina of de QR-code bij de kassa om te gebruiken.</p>
+       ${expiryLine}`,
     );
   }
 

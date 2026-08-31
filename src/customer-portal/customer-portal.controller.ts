@@ -598,8 +598,12 @@ export class CustomerPortalController {
         giftCardsEl.innerHTML = '<div class="empty-note">Geen kadobonnen gekoppeld.</div>';
       } else {
         giftCardsEl.innerHTML = giftCards.map(function (c) {
+          const expiryLine = c.expiresAt
+            ? '<div class="item-meta" style="margin-top:2px;">Geldig tot ' + new Date(c.expiresAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' }) + '</div>'
+            : '';
           return '<div class="list-item gc-item" data-gc-id="' + c.id + '" style="cursor:pointer;">'
             + '<div class="top-row"><span class="item-name">Kadobon ' + c.maskedNumber + '</span><span class="item-value">€' + Number(c.currentBalance).toFixed(2) + '</span></div>'
+            + expiryLine
             + '<div class="item-meta" style="margin-top:4px;">Tik om te bekijken en te gebruiken</div>'
             + '<div class="gc-qr-area" style="display:none;text-align:center;margin-top:14px;"></div>'
             + '</div>';

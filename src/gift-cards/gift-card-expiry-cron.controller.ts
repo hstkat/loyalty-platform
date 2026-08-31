@@ -32,4 +32,20 @@ export class GiftCardExpiryCronController {
     }
     return { organizationsChecked: orgs.length, expiredCount: totalExpired, expiredValue: totalValue };
   }
+
+  @Get('gift-card-expiry-reminders')
+  async runReminders(@Headers('authorization') authHeader: string | undefined) {
+    const secret = process.env.CRON_SECRET;
+    if (secret && authHeader !== `Bearer ${secret}`) {
+      throw new UnauthorizedException('Invalid or missing cron secret');
+    }
+
+    const orgs = await this.prisma.organization.findMany({ select: { id: true } });
+    let totalSent = 0;
+    for (const org of orgs) {
+      const { remindersSent } = await this.giftCards.sendExpiryReminders(org.id);
+      totalSent += remindersSent;
+    }
+    return { organizationsChecked: orgs.length, remindersSent: totalSent };
+  }
 }

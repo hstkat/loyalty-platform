@@ -498,7 +498,7 @@
 
       let resultHtml = `<div>Kadobon <strong>${result.giftCardNumber}</strong> aangemaakt — saldo €${amount.toFixed(2)}.</div>
         <div class="warn" style="margin-top:8px;">Token (eenmalig zichtbaar): <code>${result.token}</code></div>
-        <button type="button" class="btn-secondary print-sticker-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" style="margin-top:8px;">🖨️ QR + code printen (sticker)</button>`;
+        <button type="button" class="btn-secondary print-sticker-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}" style="margin-top:8px;">🖨️ QR + code printen (sticker)</button>`;
 
       if (recipientEmail) {
         try {
@@ -519,7 +519,7 @@
       els.issueResult.classList.add('show');
       const printBtn = els.issueResult.querySelector('.print-sticker-btn');
       if (printBtn) {
-        printBtn.addEventListener('click', () => printGiftCardSticker(printBtn.dataset.cardNumber, printBtn.dataset.token, new Date()));
+        printBtn.addEventListener('click', () => printGiftCardSticker(printBtn.dataset.cardNumber, printBtn.dataset.token, new Date(), printBtn.dataset.expiresAt ? new Date(printBtn.dataset.expiresAt) : null));
       }
 
       els.recipientNameInput.value = '';
@@ -611,6 +611,7 @@
       ? '✓ Gekoppeld (' + card.recipient.email + ')'
       : '✗ Niet gekoppeld aan een account — zichtbaar via de e-mail-link, maar niet in Mijn Tegoed';
     const issuedDate = new Date(card.issuedAt).toLocaleDateString('nl-NL');
+    const expiryDate = card.expiresAt ? new Date(card.expiresAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
     const confirmationStatus = card.senderEmail
       ? (card.senderConfirmationSentAt ? 'Verstuurd (' + new Date(card.senderConfirmationSentAt).toLocaleDateString('nl-NL') + ')' : 'Nog niet verstuurd')
       : '—';
@@ -627,6 +628,7 @@
       <div class="detail-tile"><div class="label">Ontvanger-account (Mijn Tegoed)</div><div class="value" style="font-size:13px;">${recipientAccount}</div></div>
       <div class="detail-tile"><div class="label">Persoonlijke boodschap</div><div class="value">${card.personalMessage || '—'}</div></div>
       <div class="detail-tile"><div class="label">Uitgegeven op</div><div class="value">${issuedDate}</div></div>
+      <div class="detail-tile"><div class="label">Geldig tot</div><div class="value">${expiryDate}</div></div>
       <div class="detail-tile"><div class="label">Vervangen door</div><div class="value">${card.replacedByGiftCard ? card.replacedByGiftCard.giftCardNumber : '—'}</div></div>
     `;
 
@@ -761,11 +763,13 @@
    * de QR een keer niet scant (bijv. door slijtage), want de kassa zoekt
    * de kaart op via dit token, niet via het kaartnummer.
    */
-  function printGiftCardSticker(cardNumber, token, issuedAt) {
+  function printGiftCardSticker(cardNumber, token, issuedAt, expiresAt) {
     const { apiBase } = getConfig();
     const viewUrl = apiBase + '/g/' + token;
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(viewUrl);
-    const dateLabel = (issuedAt instanceof Date ? issuedAt : new Date()).toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const expiryLabel = expiresAt instanceof Date && !isNaN(expiresAt)
+      ? 'Geldig tot: ' + expiresAt.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
 
     const printWindow = window.open('', '_blank', 'width=420,height=300');
     if (!printWindow) { alert('Pop-up geblokkeerd — sta pop-ups toe voor deze pagina om te kunnen printen.'); return; }
@@ -794,7 +798,7 @@
   <div class="text-block">
     <div class="card-number">${cardNumber}</div>
     <div class="token">${token}</div>
-    <div class="issued-date">Uitgegeven: ${dateLabel}</div>
+    <div class="issued-date">${expiryLabel}</div>
   </div>
   <div class="print-controls" style="position:fixed;top:32mm;left:0;"><button onclick="window.print()">Printen</button></div>
 </body>

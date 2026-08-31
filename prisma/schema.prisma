@@ -2821,6 +2821,7 @@ model GiftCard {
   issuedAt          DateTime  @default(now()) @map("issued_at")
   activatedAt       DateTime? @map("activated_at")
   expiresAt         DateTime? @map("expires_at")
+  expiryReminderSentAt DateTime? @map("expiry_reminder_sent_at") // 30-dagen-voor-verloop-herinnering — voorkomt dubbel versturen
   blockedAt         DateTime? @map("blocked_at")
   blockedReason     String?   @map("blocked_reason")
   replacedByGiftCardId String? @unique @map("replaced_by_gift_card_id") @db.Uuid
