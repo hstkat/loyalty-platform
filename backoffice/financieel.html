@@ -557,7 +557,7 @@
     const diffColor = Math.abs(rec.difference) > 0.01 ? 'var(--coral)' : 'var(--teal-dark)';
     document.getElementById('reconciliation-box').innerHTML =
       '<div>Ingewisseld volgens ledger: <strong>' + formatEuro(rec.ledgerRedeemedTotal) + '</strong></div>'
-      + '<div>Gekoppeld aan POS-transactie: <strong>' + formatEuro(rec.posLinkedTotal) + '</strong></div>'
+      + '<div>Gekoppeld aan een medewerker: <strong>' + formatEuro(rec.staffAttributedTotal) + '</strong></div>'
       + '<div style="margin-top:6px;color:' + diffColor + ';font-weight:600;">Verschil: ' + formatEuro(rec.difference) + (Math.abs(rec.difference) > 0.01 ? ' ⚠️ controleer de detailregels' : ' ✓') + '</div>';
 
     const physRec = gc.physicalSalesReconciliation;

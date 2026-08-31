@@ -130,7 +130,7 @@ export class FinancialReportsService {
     let soldPhysicalAttributedValue = 0;
     let redeemedValue = 0;
     let redeemedCount = 0;
-    let redeemedLinkedToTransactionValue = 0;
+    let redeemedAttributedValue = 0;
     let correctionsValue = 0;
     let refundsValue = 0;
     let reversalsValue = 0;
@@ -159,7 +159,7 @@ export class FinancialReportsService {
           redeemedValue += Math.abs(amount);
           redeemedCount += 1;
           redeemedGiftCardIds.add(entry.giftCardId);
-          if (entry.transactionId) redeemedLinkedToTransactionValue += Math.abs(amount);
+          if (entry.performedByUserId) redeemedAttributedValue += Math.abs(amount);
           break;
         case 'adjustment':
           correctionsValue += amount;
@@ -231,10 +231,19 @@ export class FinancialReportsService {
       expiredCount,
       expiredValue: round2(expiredValue),
       outstandingLiability: round2(outstandingLiability),
+      // Zelfde principe als de fysieke-verkoop-reconciliatie hieronder:
+      // transactionId is bij inwisseling alleen gevuld als de kadobon
+      // SAMEN met een spaarpunten-transactie werd afgerekend — bij een
+      // los gebruikte kadobon (waarschijnlijk de meeste gevallen) is er
+      // domweg geen POS-transactie om aan te koppelen. Een vergelijking
+      // daartegen zou dus bijna altijd een vals verschil tonen.
+      // performedByUserId is bij ELKE inwisseling wél betrouwbaar gevuld
+      // (de ingelogde medewerker die 'm verwerkte) — dat is de eerlijke
+      // controle: is elke inwisseling toe te wijzen aan een medewerker.
       reconciliation: {
         ledgerRedeemedTotal: round2(redeemedValue),
-        posLinkedTotal: round2(redeemedLinkedToTransactionValue),
-        difference: round2(redeemedValue - redeemedLinkedToTransactionValue),
+        staffAttributedTotal: round2(redeemedAttributedValue),
+        difference: round2(redeemedValue - redeemedAttributedValue),
       },
       // Cadeaukaartverkoop loopt in dit systeem NIET via een apart
       // POS-Transaction-record (in tegenstelling tot loyaltytegoed) —
@@ -647,7 +656,7 @@ export class FinancialReportsService {
     summarySheet.addRow([]);
     summarySheet.addRow(['RECONCILIATIE (kadobonnen — inwisseling)']).font = { bold: true };
     summarySheet.addRow(['Ledger-totaal ingeleverd', formatEuro(summary.giftCards.reconciliation.ledgerRedeemedTotal)]);
-    summarySheet.addRow(['Gekoppeld aan POS-transactie', formatEuro(summary.giftCards.reconciliation.posLinkedTotal)]);
+    summarySheet.addRow(['Gekoppeld aan een medewerker', formatEuro(summary.giftCards.reconciliation.staffAttributedTotal)]);
     const diffRow = summarySheet.addRow(['Verschil', formatEuro(summary.giftCards.reconciliation.difference)]);
     if (Math.abs(summary.giftCards.reconciliation.difference) > 0.01) {
       diffRow.getCell(2).font = { color: { argb: 'FFE8604A' }, bold: true };
@@ -829,12 +838,12 @@ export class FinancialReportsService {
 
       sectionHeader('Reconciliatie (kadobonnen — inwisseling)');
       line('Ingewisseld volgens ledger', formatEuro(summary.giftCards.reconciliation.ledgerRedeemedTotal));
-      line('Gekoppeld aan POS-transactie', formatEuro(summary.giftCards.reconciliation.posLinkedTotal));
+      line('Gekoppeld aan een medewerker', formatEuro(summary.giftCards.reconciliation.staffAttributedTotal));
       const diff = summary.giftCards.reconciliation.difference;
       line('Verschil', formatEuro(diff), Math.abs(diff) > 0.01 ? { bold: true, color: '#e8604a' } : {});
       if (Math.abs(diff) > 0.01) {
         doc.moveDown(0.3);
-        doc.fontSize(9).font('Helvetica-Oblique').fillColor('#e8604a').text('⚠ Er is een verschil tussen de ledger en de gekoppelde POS-transacties — controleer de detailregels in de Excel-export.');
+        doc.fontSize(9).font('Helvetica-Oblique').fillColor('#e8604a').text('⚠ Er zijn inwisselingen zonder gekoppelde medewerker — controleer de detailregels in de Excel-export.');
         doc.fillColor('#000000');
       }
 
