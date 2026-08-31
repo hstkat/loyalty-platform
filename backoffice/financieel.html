@@ -199,6 +199,10 @@
     const password = document.getElementById('staff-login-password').value;
     if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
     const { apiBase, orgId } = getConfig();
+    const loginBtn = document.getElementById('staff-login-btn');
+    loginBtn.disabled = true;
+    const originalLoginLabel = loginBtn.textContent;
+    loginBtn.textContent = 'Bezig…';
     try {
       const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/login', {
         method: 'POST',
@@ -217,6 +221,9 @@
       bootAfterLogin();
     } catch (err) {
       errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = originalLoginLabel;
     }
   });
 
@@ -563,14 +570,16 @@
 
   document.getElementById('export-excel-btn').addEventListener('click', () => {
     if (!currentSummary) { alert('Haal eerst een rapport op.'); return; }
-    downloadExport('excel');
+    downloadExport('excel', document.getElementById('export-excel-btn'), '📊 Excel');
   });
   document.getElementById('export-pdf-btn').addEventListener('click', () => {
     if (!currentSummary) { alert('Haal eerst een rapport op.'); return; }
-    downloadExport('pdf');
+    downloadExport('pdf', document.getElementById('export-pdf-btn'), '📄 PDF');
   });
 
-  async function downloadExport(format) {
+  async function downloadExport(format, btn, originalLabel) {
+    btn.disabled = true;
+    btn.textContent = 'Bezig…';
     try {
       const params = buildQueryParams();
       const { apiBase, orgId } = getConfig();
@@ -590,6 +599,9 @@
       loadHistory();
     } catch (err) {
       alert('Export mislukt: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalLabel;
     }
   }
 
@@ -597,6 +609,11 @@
 
   let detailsMode = null; // 'giftcards' | 'loyalty'
   let detailsPage = 1;
+  const detailButtonIds = ['show-giftcard-details-btn', 'show-loyalty-details-btn', 'details-prev-btn', 'details-next-btn'];
+
+  function setDetailButtonsBusy(busy) {
+    detailButtonIds.forEach((id) => { document.getElementById(id).disabled = busy; });
+  }
 
   document.getElementById('show-giftcard-details-btn').addEventListener('click', () => { detailsMode = 'giftcards'; detailsPage = 1; loadDetails(); });
   document.getElementById('show-loyalty-details-btn').addEventListener('click', () => { detailsMode = 'loyalty'; detailsPage = 1; loadDetails(); });
@@ -609,7 +626,19 @@
     const params = buildQueryParams();
     params.set('page', detailsPage);
     const endpoint = detailsMode === 'giftcards' ? 'gift-card-details' : 'loyalty-details';
-    const result = await apiGet('/organizations/' + orgId + '/financial-reports/' + endpoint + '?' + params.toString());
+
+    setDetailButtonsBusy(true);
+    const wrapEl = document.getElementById('details-table-wrap');
+    wrapEl.innerHTML = '<div class="empty-note">Laden…</div>';
+    let result;
+    try {
+      result = await apiGet('/organizations/' + orgId + '/financial-reports/' + endpoint + '?' + params.toString());
+    } catch (err) {
+      wrapEl.innerHTML = '<div class="empty-note" style="color:var(--coral);">Laden mislukt: ' + err.message + '</div>';
+      setDetailButtonsBusy(false);
+      return;
+    }
+    setDetailButtonsBusy(false);
 
     const wrap = document.getElementById('details-table-wrap');
     if (result.rows.length === 0) {
