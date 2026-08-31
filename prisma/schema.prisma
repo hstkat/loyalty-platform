@@ -1251,7 +1251,7 @@ model WalletLedgerEntry {
   allocationsAsCredit WalletLedgerAllocation[] @relation("CreditEntry")
 
   @@index([walletId, entryType])
-  @@index([organizationId])
+  @@index([organizationId, occurredAt])
   @@index([walletId, status, expiresAt])
   @@map("wallet_ledger_entries")
 }
@@ -2868,6 +2868,7 @@ model GiftCardLedgerEntry {
   transaction Transaction? @relation(fields: [transactionId], references: [id])
 
   @@index([giftCardId, occurredAt])
+  @@index([organizationId, occurredAt])
   @@map("gift_card_ledger_entries")
 }
 
