@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MailgunService } from '../common/mailgun.service';
+import { escapeHtml } from '../common/escape-html';
 import { MollieService } from '../common/mollie.service';
 import { RequestContext } from '../common/decorators/current-context.decorator';
 import {
@@ -229,6 +230,7 @@ export class GiftCardsService {
     const qrUrl = `https://loyalty-platform-live.vercel.app/g/${rawToken}`;
     const amountText = '€' + Number(giftCard.originalValue).toFixed(2);
     const greeting = giftCard.recipientName ? `Beste ${giftCard.recipientName},` : 'Beste,';
+    const greetingHtml = giftCard.recipientName ? `Beste ${escapeHtml(giftCard.recipientName)},` : 'Beste,';
     const messageBlock = giftCard.personalMessage ? `\n\n"${giftCard.personalMessage}"\n` : '';
     const validityNote = 'Je kaart is te besteden bij zowel Het Strand als Zomers Beachclub & Brewery.';
     const expiryNote = giftCard.expiresAt ? `Geldig tot ${formatExpiryDateNL(giftCard.expiresAt)}.` : '';
@@ -237,7 +239,7 @@ export class GiftCardsService {
       giftCard.recipientEmail,
       `Je hebt een kadobon ter waarde van ${amountText} ontvangen!`,
       `${greeting}${messageBlock}\n\nJe hebt een kadobon ontvangen ter waarde van ${amountText}.\n\n${validityNote} ${expiryNote}\n\nBekijk en gebruik je kaart via: ${qrUrl}\n\nVeel plezier!`,
-      `<p>${greeting}</p>${giftCard.personalMessage ? `<p><em>"${giftCard.personalMessage}"</em></p>` : ''}<p>Je hebt een kadobon ontvangen ter waarde van <strong>${amountText}</strong>.</p><p>${validityNote} ${expiryNote}</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
+      `<p>${greetingHtml}</p>${giftCard.personalMessage ? `<p><em>"${escapeHtml(giftCard.personalMessage)}"</em></p>` : ''}<p>Je hebt een kadobon ontvangen ter waarde van <strong>${amountText}</strong>.</p><p>${validityNote} ${expiryNote}</p><p><a href="${qrUrl}">Bekijk en gebruik je kaart</a></p><p>Veel plezier!</p>`,
     );
 
     if (!result.sent) throw new BadRequestException('Versturen mislukt: ' + (result.reason || 'onbekende fout'));
@@ -1209,13 +1211,14 @@ export class GiftCardsService {
       const amountText = '€' + Number(card.currentBalance).toFixed(2);
       const expiryText = formatExpiryDateNL(card.expiresAt!);
       const greeting = card.recipientName ? `Beste ${card.recipientName},` : 'Beste,';
+      const greetingHtml = card.recipientName ? `Beste ${escapeHtml(card.recipientName)},` : 'Beste,';
 
       const result = await this.mailgun
         .sendEmail(
           card.recipientEmail!,
           `Je kadobon verloopt over ${REMINDER_DAYS_BEFORE} dagen`,
           `${greeting}\n\nJe kadobon (${card.giftCardNumber}) met een resterend saldo van ${amountText} verloopt op ${expiryText}. Gebruik 'm op tijd bij Het Strand of Zomers Beachclub & Brewery!\n\nGebruik de link of QR-code uit de e-mail die je bij ontvangst van de kaart kreeg om 'm te bekijken en te gebruiken. Kun je die niet meer vinden? Kom gerust langs — we zoeken je kaart dan op aan de hand van dit kaartnummer.`,
-          `<p>${greeting}</p><p>Je kadobon (${card.giftCardNumber}) met een resterend saldo van <strong>${amountText}</strong> verloopt op <strong>${expiryText}</strong>. Gebruik 'm op tijd bij Het Strand of Zomers Beachclub &amp; Brewery!</p><p>Gebruik de link of QR-code uit de e-mail die je bij ontvangst van de kaart kreeg om 'm te bekijken en te gebruiken. Kun je die niet meer vinden? Kom gerust langs — we zoeken je kaart dan op aan de hand van dit kaartnummer.</p>`,
+          `<p>${greetingHtml}</p><p>Je kadobon (${card.giftCardNumber}) met een resterend saldo van <strong>${amountText}</strong> verloopt op <strong>${expiryText}</strong>. Gebruik 'm op tijd bij Het Strand of Zomers Beachclub &amp; Brewery!</p><p>Gebruik de link of QR-code uit de e-mail die je bij ontvangst van de kaart kreeg om 'm te bekijken en te gebruiken. Kun je die niet meer vinden? Kom gerust langs — we zoeken je kaart dan op aan de hand van dit kaartnummer.</p>`,
         )
         .catch((err) => {
           this.logger.error(`Verloopherinnering voor kadobon ${card.id} mislukt: ${err instanceof Error ? err.message : err}`);

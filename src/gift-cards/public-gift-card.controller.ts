@@ -3,6 +3,7 @@ import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { createHash } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeHtml } from '../common/escape-html';
 import { GiftCardsService } from './gift-cards.service';
 import { MollieService } from '../common/mollie.service';
 
@@ -89,7 +90,7 @@ export class GiftCardCheckoutController {
       body = `<div class="brand">${brandLabel}</div><h1>Niet gevonden</h1><p>Deze bestelling kon niet worden gevonden.</p>`;
     } else if (giftCard.status === 'active') {
       if (giftCard.recipientEmail) {
-        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Kadobon ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${giftCard.recipientEmail}.</p>`;
+        body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Kadobon ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${escapeHtml(giftCard.recipientEmail)}.</p>`;
       } else {
         const rawToken = giftCard.molliePaymentId ? await this.recoverRawToken(giftCard.molliePaymentId) : null;
         const linkBlock = rawToken
@@ -175,7 +176,7 @@ export class GiftCardCheckoutController {
       if (anyActive) {
         const rows = allCards
           .map((c) => {
-            const recipient = c.recipientEmail ? `${c.recipientName || '(geen naam)'} — ${c.recipientEmail}` : '(voor jezelf)';
+            const recipient = c.recipientEmail ? `${escapeHtml(c.recipientName || '(geen naam)')} — ${escapeHtml(c.recipientEmail)}` : '(voor jezelf)';
             return `<div class="card-row"><span>${c.giftCardNumber} — €${Number(c.originalValue).toFixed(2)}</span><span class="recipient">${recipient}</span></div>`;
           })
           .join('');
@@ -649,7 +650,7 @@ export class PublicGiftCardController {
     // Codeert het ruwe token zelf (niet de hele weergavepagina-URL) —
     // dat is precies wat de kassa's kadobon-opzoekveld verwacht.
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(token)}`;
-    const greeting = card.recipientName ? `Voor ${card.recipientName}` : 'Kadobon';
+    const greeting = card.recipientName ? `Voor ${escapeHtml(card.recipientName)}` : 'Kadobon';
     const expiryLine = card.expiresAt
       ? `<p style="margin-top:12px;">Geldig tot ${card.expiresAt.toLocaleDateString('nl-NL', { day: 'numeric', month: 'long', year: 'numeric' })}</p>`
       : '';
@@ -657,7 +658,7 @@ export class PublicGiftCardController {
       styles,
       `<div class="brand">HET STRAND &amp; ZOMERS</div>
        <h1>${greeting}</h1>
-       ${card.personalMessage ? `<div class="message">"${card.personalMessage}"</div>` : ''}
+       ${card.personalMessage ? `<div class="message">"${escapeHtml(card.personalMessage)}"</div>` : ''}
        <div class="balance-label">Beschikbaar saldo</div>
        <div class="balance">€${Number(card.currentBalance).toFixed(2)}</div>
        <div class="qr-wrap"><img src="${qrUrl}" alt="Kadobon-QR"></div>
