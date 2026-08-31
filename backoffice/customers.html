@@ -556,11 +556,15 @@
       els.detailPanel.querySelectorAll('[data-cancel-voucher]').forEach((btn) => {
         btn.addEventListener('click', async () => {
           if (!confirm('Deze voucher intrekken? Dit kan niet ongedaan worden gemaakt.')) return;
+          btn.disabled = true;
+          btn.textContent = 'Bezig…';
           try {
             await apiPost('/organizations/' + orgId + '/vouchers/' + btn.getAttribute('data-cancel-voucher') + '/cancel', { reason: 'Handmatig ingetrokken vanuit gastprofiel' });
             selectCustomer(id);
           } catch (err) {
             alert('Intrekken mislukt: ' + err.message);
+            btn.disabled = false;
+            btn.textContent = 'Intrekken';
           }
         });
       });

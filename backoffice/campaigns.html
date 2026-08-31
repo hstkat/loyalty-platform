@@ -479,6 +479,7 @@
   els.cancelBtn.addEventListener('click', () => els.panel.classList.remove('open'));
 
   els.previewBtn.addEventListener('click', async () => {
+    els.previewBtn.disabled = true;
     els.previewCount.textContent = '…';
     try {
       const filter = JSON.parse(document.getElementById('f-audience').value);
@@ -488,11 +489,17 @@
     } catch (err) {
       els.previewCount.textContent = 'fout';
       alert('Kon doelgroep niet berekenen: ' + err.message);
+    } finally {
+      els.previewBtn.disabled = false;
     }
   });
 
   els.form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = els.form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    const originalSubmitLabel = submitBtn.textContent;
+    submitBtn.textContent = 'Bezig…';
     try {
       const filter = JSON.parse(document.getElementById('f-audience').value);
       const incentiveType = document.getElementById('f-incentive-type').value;
@@ -519,6 +526,9 @@
       loadCampaigns();
     } catch (err) {
       alert('Aanmaken mislukt: ' + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalSubmitLabel;
     }
   });
 

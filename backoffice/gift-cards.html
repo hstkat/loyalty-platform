@@ -657,39 +657,63 @@
     }
     els.actionRow.innerHTML = actions;
 
-    document.getElementById('action-block')?.addEventListener('click', async () => {
+    document.getElementById('action-block')?.addEventListener('click', async (evt) => {
       const reason = prompt('Reden voor blokkeren:');
       if (!reason) return;
+      const btn = evt.currentTarget;
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Bezig…';
       try {
         const { orgId } = getConfig();
         await apiPost('/organizations/' + orgId + '/gift-cards/' + currentCardId + '/block', { reason });
         loadCardDetail(currentCardId);
         loadCards();
-      } catch (err) { alert('Blokkeren mislukt: ' + err.message); }
+      } catch (err) {
+        alert('Blokkeren mislukt: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
 
-    document.getElementById('action-topup')?.addEventListener('click', async () => {
+    document.getElementById('action-topup')?.addEventListener('click', async (evt) => {
       const amountStr = prompt('Met hoeveel euro opwaarderen?');
       const amount = parseFloat(amountStr);
       if (!amount || amount <= 0) return;
+      const btn = evt.currentTarget;
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Bezig…';
       try {
         const { orgId } = getConfig();
         await apiPost('/organizations/' + orgId + '/gift-cards/' + currentCardId + '/top-up', { amount });
         loadCardDetail(currentCardId);
         loadCards();
-      } catch (err) { alert('Opwaarderen mislukt: ' + err.message); }
+      } catch (err) {
+        alert('Opwaarderen mislukt: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
 
-    document.getElementById('action-replace')?.addEventListener('click', async () => {
+    document.getElementById('action-replace')?.addEventListener('click', async (evt) => {
       const newToken = prompt('Scan of typ de token van de NIEUWE (nog niet geactiveerde) kaart:');
       if (!newToken) return;
+      const btn = evt.currentTarget;
+      btn.disabled = true;
+      const originalLabel = btn.textContent;
+      btn.textContent = 'Bezig…';
       try {
         const { orgId } = getConfig();
         await apiPost('/organizations/' + orgId + '/gift-cards/' + currentCardId + '/replace', { newCardToken: newToken.trim() });
         alert('Kaart succesvol vervangen — saldo overgenomen.');
         loadCards();
         els.detailPanel.classList.remove('show');
-      } catch (err) { alert('Vervangen mislukt: ' + err.message); }
+      } catch (err) {
+        alert('Vervangen mislukt: ' + err.message);
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
     });
 
     els.ledgerList.innerHTML = (card.ledgerEntries || []).map((entry) => {
