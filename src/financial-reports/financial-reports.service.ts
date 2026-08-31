@@ -319,8 +319,9 @@ export class FinancialReportsService {
     // periode. Zelfde methodiek als de bestaande dagafsluiting, alleen
     // dan opgeteld over meerdere dagen.
     let redeemedEuroValue = 0;
+    const getRate = this.createRateCache(orgId, locationId);
     for (const [dateKey, points] of redeemedByDate) {
-      const rate = await this.exchangeRate.getPointsPerEuro(orgId, locationId, new Date(`${dateKey}T12:00:00.000Z`));
+      const rate = await getRate(new Date(`${dateKey}T12:00:00.000Z`));
       redeemedEuroValue += rate > 0 ? points / rate : 0;
     }
 
@@ -337,7 +338,7 @@ export class FinancialReportsService {
     }
     let issuedEuroValue = 0;
     for (const [dateKey, points] of issuedByDate) {
-      const rate = await this.exchangeRate.getPointsPerEuro(orgId, locationId, new Date(`${dateKey}T12:00:00.000Z`));
+      const rate = await getRate(new Date(`${dateKey}T12:00:00.000Z`));
       issuedEuroValue += rate > 0 ? points / rate : 0;
     }
 
@@ -513,9 +514,10 @@ export class FinancialReportsService {
     const locations = await this.prisma.location.findMany({ where: { organizationId: orgId }, select: { id: true, name: true } });
     const locationMap = new Map(locations.map((l) => [l.id, l.name]));
 
+    const getRate = this.createRateCache(orgId, filters.locationId);
     const rows = [];
     for (const e of entries) {
-      const rate = await this.exchangeRate.getPointsPerEuro(orgId, filters.locationId, e.occurredAt);
+      const rate = await getRate(e.occurredAt);
       rows.push({
         date: e.occurredAt,
         customerName: [e.wallet.customer.firstName, e.wallet.customer.lastName].filter(Boolean).join(' ') || '(naam onbekend)',
@@ -579,9 +581,10 @@ export class FinancialReportsService {
     });
     const locations = await this.prisma.location.findMany({ where: { organizationId: orgId }, select: { id: true, name: true } });
     const locationMap = new Map(locations.map((l) => [l.id, l.name]));
+    const getRate = this.createRateCache(orgId, locationId);
     const rows = [];
     for (const e of entries) {
-      const rate = await this.exchangeRate.getPointsPerEuro(orgId, locationId, e.occurredAt);
+      const rate = await getRate(e.occurredAt);
       rows.push({
         date: e.occurredAt,
         customerName: [e.wallet.customer.firstName, e.wallet.customer.lastName].filter(Boolean).join(' ') || '(naam onbekend)',
@@ -595,6 +598,28 @@ export class FinancialReportsService {
       });
     }
     return rows;
+  }
+
+  /**
+   * Wisselkoers is alleen afhankelijk van de WEEKDAG (zie
+   * ExchangeRateService — de regel matcht op dag-van-de-week, niet op
+   * de exacte datum), dus binnen één rapportaanvraag zijn er maximaal 7
+   * unieke uitkomsten mogelijk per org+locatie. Zonder deze cache werd
+   * `getPointsPerEuro` (een eigen databasequery) tot wel duizenden keren
+   * aangeroepen bij een grote export — één keer per rij, ook als
+   * honderden rijen dezelfde dag delen. Cache leeft alleen binnen de
+   * levensduur van dit ene rapportverzoek (geen risico op verouderde
+   * koersen tussen aanvragen door).
+   */
+  private createRateCache(orgId: string, locationId: string | undefined) {
+    const cache = new Map<number, number>(); // key: getUTCDay() (0-6)
+    return async (date: Date): Promise<number> => {
+      const day = date.getUTCDay();
+      if (cache.has(day)) return cache.get(day)!;
+      const rate = await this.exchangeRate.getPointsPerEuro(orgId, locationId, date);
+      cache.set(day, rate);
+      return rate;
+    };
   }
 
   private async resolveStaffName(staffId?: string): Promise<string | undefined> {
