@@ -2822,6 +2822,14 @@ model GiftCard {
   activatedAt       DateTime? @map("activated_at")
   expiresAt         DateTime? @map("expires_at")
   expiryReminderSentAt DateTime? @map("expiry_reminder_sent_at") // 30-dagen-voor-verloop-herinnering — voorkomt dubbel versturen
+  // Bewust een LOS veld van het bestaande batchId/batch-mechanisme
+  // (vooraf gedrukte kaarten die via activate() worden geactiveerd) —
+  // dit dekt de andere, veelvoorkomende situatie: een medewerker maakt
+  // via het gewone "Kadobon uitgeven"-formulier (issue()) een kaart aan
+  // én overhandigt daarbij een fysieke sticker/kaart, zonder de
+  // batch-vooraf-drukken-flow te gebruiken. Bepaalt of de rapportage
+  // deze verkoop bij "fysiek" of "digitaal" telt.
+  isPhysical        Boolean   @default(false) @map("is_physical")
   blockedAt         DateTime? @map("blocked_at")
   blockedReason     String?   @map("blocked_reason")
   replacedByGiftCardId String? @unique @map("replaced_by_gift_card_id") @db.Uuid

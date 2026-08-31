@@ -332,6 +332,14 @@
     </div>
 
     <div style="margin-top: 16px;">
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer;">
+        <input type="checkbox" id="issue-is-physical">
+        <span>Fysieke kadobon (kaart/sticker wordt overhandigd)</span>
+      </label>
+      <p class="sub" style="margin-top:4px;margin-bottom:0;">Bepaalt of deze verkoop in de rapportage als fysiek of digitaal telt. Laat uit voor een puur digitale kadobon (alleen per e-mail verstuurd).</p>
+    </div>
+
+    <div style="margin-top: 16px;">
       <button class="btn-primary" id="issue-btn">Kadobon aanmaken</button>
     </div>
     <div class="issue-result" id="issue-result"></div>
@@ -494,6 +502,7 @@
         senderEmail: senderEmail || undefined,
         personalMessage: els.messageInput.value.trim() || undefined,
         locationIds: getIssueLocationIds(),
+        isPhysical: document.getElementById('issue-is-physical').checked,
       });
 
       let resultHtml = `<div>Kadobon <strong>${result.giftCardNumber}</strong> aangemaakt — saldo €${amount.toFixed(2)}.</div>
@@ -527,6 +536,7 @@
       els.senderNameInput.value = '';
       els.senderEmailInput.value = '';
       els.messageInput.value = '';
+      document.getElementById('issue-is-physical').checked = false;
       loadReport();
       loadCards();
     } catch (err) {

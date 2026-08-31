@@ -324,8 +324,11 @@
     <div class="overview-tiles" id="loyalty-tiles" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px;"></div>
     <p class="sub" id="loyalty-location-note" style="display:none;"></p>
 
-    <div class="section-title">Reconciliatie (kadobonnen)</div>
-    <div id="reconciliation-box" style="background:var(--cream);border-radius:10px;padding:14px 16px;font-size:13px;"></div>
+    <div class="section-title">Reconciliatie (kadobonnen — inwisseling)</div>
+    <div id="reconciliation-box" style="background:var(--cream);border-radius:10px;padding:14px 16px;font-size:13px;margin-bottom:20px;"></div>
+
+    <div class="section-title">Reconciliatie (fysieke kadobonnen — verkoop)</div>
+    <div id="physical-reconciliation-box" style="background:var(--cream);border-radius:10px;padding:14px 16px;font-size:13px;"></div>
   </div>
 
   <div class="panel" id="details-panel" style="display:none;">
@@ -515,7 +518,9 @@
 
     const gc = summary.giftCards;
     document.getElementById('giftcard-tiles').innerHTML = [
-      tile('Verkocht', gc.soldCount + 'x — ' + formatEuro(gc.soldValue)),
+      tile('Verkocht (totaal)', gc.soldCount + 'x — ' + formatEuro(gc.soldValue)),
+      tile('Digitaal verkocht', gc.soldDigitalCount + 'x — ' + formatEuro(gc.soldDigitalValue)),
+      tile('Fysiek verkocht', gc.soldPhysicalCount + 'x — ' + formatEuro(gc.soldPhysicalValue)),
       tile('Ingewisseld', formatEuro(gc.redeemedValue)),
       tile('Volledig / gedeeltelijk', gc.fullyRedeemedCount + ' / ' + gc.partiallyRedeemedCount),
       tile('Correcties', formatEuro(gc.correctionsValue)),
@@ -547,6 +552,13 @@
       '<div>Ingewisseld volgens ledger: <strong>' + formatEuro(rec.ledgerRedeemedTotal) + '</strong></div>'
       + '<div>Gekoppeld aan POS-transactie: <strong>' + formatEuro(rec.posLinkedTotal) + '</strong></div>'
       + '<div style="margin-top:6px;color:' + diffColor + ';font-weight:600;">Verschil: ' + formatEuro(rec.difference) + (Math.abs(rec.difference) > 0.01 ? ' ⚠️ controleer de detailregels' : ' ✓') + '</div>';
+
+    const physRec = gc.physicalSalesReconciliation;
+    const physDiffColor = Math.abs(physRec.difference) > 0.01 ? 'var(--coral)' : 'var(--teal-dark)';
+    document.getElementById('physical-reconciliation-box').innerHTML =
+      '<div>Fysiek verkocht volgens kadobon-administratie: <strong>' + formatEuro(physRec.giftCardLedgerTotal) + '</strong></div>'
+      + '<div>Waarvan gekoppeld aan een medewerker: <strong>' + formatEuro(physRec.staffAttributedTotal) + '</strong></div>'
+      + '<div style="margin-top:6px;color:' + physDiffColor + ';font-weight:600;">Verschil: ' + formatEuro(physRec.difference) + (Math.abs(physRec.difference) > 0.01 ? ' ⚠️ controleer de "Fysieke kadobonnen"-mutaties' : ' ✓') + '</div>';
   }
 
   document.getElementById('export-excel-btn').addEventListener('click', () => {
@@ -604,15 +616,17 @@
       wrap.innerHTML = '<div class="empty-note">Geen mutaties in deze periode.</div>';
     } else if (detailsMode === 'giftcards') {
       wrap.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px;">'
-        + '<thead><tr style="text-align:left;color:var(--muted);"><th style="padding:6px 8px;">Datum</th><th style="padding:6px 8px;">Locatie</th><th style="padding:6px 8px;">Kaart</th><th style="padding:6px 8px;">Type</th><th style="padding:6px 8px;text-align:right;">Bedrag</th><th style="padding:6px 8px;text-align:right;">Resterend</th><th style="padding:6px 8px;">Status</th></tr></thead><tbody>'
+        + '<thead><tr style="text-align:left;color:var(--muted);"><th style="padding:6px 8px;">Datum</th><th style="padding:6px 8px;">Locatie</th><th style="padding:6px 8px;">Kaart</th><th style="padding:6px 8px;">Kaarttype</th><th style="padding:6px 8px;">Type</th><th style="padding:6px 8px;text-align:right;">Bedrag</th><th style="padding:6px 8px;text-align:right;">Resterend</th><th style="padding:6px 8px;">Status</th><th style="padding:6px 8px;">Verwerkt door</th></tr></thead><tbody>'
         + result.rows.map((r) => '<tr style="border-top:1px solid var(--line);">'
           + '<td style="padding:6px 8px;">' + formatDateNL(r.date) + '</td>'
           + '<td style="padding:6px 8px;">' + r.locationName + '</td>'
           + '<td style="padding:6px 8px;font-family:monospace;">' + r.giftCardNumberMasked + '</td>'
+          + '<td style="padding:6px 8px;">' + r.type + '</td>'
           + '<td style="padding:6px 8px;">' + (ENTRY_TYPE_LABELS[r.entryType] || r.entryType) + '</td>'
           + '<td style="padding:6px 8px;text-align:right;">' + formatEuro(r.amount) + '</td>'
           + '<td style="padding:6px 8px;text-align:right;">' + formatEuro(r.remainingBalance) + '</td>'
           + '<td style="padding:6px 8px;">' + r.status + '</td>'
+          + '<td style="padding:6px 8px;">' + r.processedBy + '</td>'
           + '</tr>').join('')
         + '</tbody></table>';
     } else {

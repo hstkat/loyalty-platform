@@ -118,11 +118,16 @@ export class FinancialReportsService {
 
     const entries = await this.prisma.giftCardLedgerEntry.findMany({
       where: whereBase,
-      select: { entryType: true, amount: true, transactionId: true, giftCardId: true },
+      select: { entryType: true, amount: true, transactionId: true, performedByUserId: true, giftCardId: true, giftCard: { select: { isPhysical: true } } },
     });
 
     let soldValue = 0;
     let soldCount = 0;
+    let soldPhysicalValue = 0;
+    let soldPhysicalCount = 0;
+    let soldDigitalValue = 0;
+    let soldDigitalCount = 0;
+    let soldPhysicalAttributedValue = 0;
     let redeemedValue = 0;
     let redeemedCount = 0;
     let redeemedLinkedToTransactionValue = 0;
@@ -141,6 +146,14 @@ export class FinancialReportsService {
         case 'top_up':
           soldValue += amount;
           soldCount += 1;
+          if (entry.giftCard.isPhysical) {
+            soldPhysicalValue += amount;
+            soldPhysicalCount += 1;
+            if (entry.performedByUserId) soldPhysicalAttributedValue += amount;
+          } else {
+            soldDigitalValue += amount;
+            soldDigitalCount += 1;
+          }
           break;
         case 'redeem':
           redeemedValue += Math.abs(amount);
@@ -204,6 +217,10 @@ export class FinancialReportsService {
     return {
       soldCount,
       soldValue: round2(soldValue),
+      soldPhysicalCount,
+      soldPhysicalValue: round2(soldPhysicalValue),
+      soldDigitalCount,
+      soldDigitalValue: round2(soldDigitalValue),
       redeemedCount,
       redeemedValue: round2(redeemedValue),
       fullyRedeemedCount,
@@ -218,6 +235,18 @@ export class FinancialReportsService {
         ledgerRedeemedTotal: round2(redeemedValue),
         posLinkedTotal: round2(redeemedLinkedToTransactionValue),
         difference: round2(redeemedValue - redeemedLinkedToTransactionValue),
+      },
+      // Cadeaukaartverkoop loopt in dit systeem NIET via een apart
+      // POS-Transaction-record (in tegenstelling tot loyaltytegoed) —
+      // de ledgerboeking zelf, met de medewerker die 'm verwerkte, IS
+      // hier de kassa-registratie. Deze controle vergelijkt daarom
+      // "totaal fysiek verkocht" tegen "fysiek verkocht MET een
+      // gekoppelde medewerker" — een verschil betekent dat er boekingen
+      // zijn zonder medewerker-toewijzing, wat kantoor wil zien.
+      physicalSalesReconciliation: {
+        giftCardLedgerTotal: round2(soldPhysicalValue),
+        staffAttributedTotal: round2(soldPhysicalAttributedValue),
+        difference: round2(soldPhysicalValue - soldPhysicalAttributedValue),
       },
     };
   }
@@ -410,7 +439,7 @@ export class FinancialReportsService {
       this.prisma.giftCardLedgerEntry.findMany({
         where,
         include: {
-          giftCard: { select: { giftCardNumber: true, originalValue: true, currentBalance: true, status: true } },
+          giftCard: { select: { giftCardNumber: true, originalValue: true, currentBalance: true, status: true, isPhysical: true } },
           transaction: { select: { id: true } },
         },
         orderBy: { occurredAt: 'desc' },
@@ -423,6 +452,14 @@ export class FinancialReportsService {
     const locations = await this.prisma.location.findMany({ where: { organizationId: orgId }, select: { id: true, name: true } });
     const locationMap = new Map(locations.map((l) => [l.id, l.name]));
 
+    // performedByUserId heeft (net als bij WalletLedgerEntry elders in
+    // de codebase) bewust geen Prisma-relatie gekregen — een losse
+    // opzoeking hier is genoeg en voorkomt een schemawijziging puur voor
+    // deze rapportagekolom.
+    const staffIds = Array.from(new Set(entries.map((e) => e.performedByUserId).filter((id): id is string => !!id)));
+    const staffUsers = staffIds.length > 0 ? await this.prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, firstName: true, lastName: true } }) : [];
+    const staffMap = new Map(staffUsers.map((s) => [s.id, [s.firstName, s.lastName].filter(Boolean).join(' ')]));
+
     return {
       page,
       pageSize,
@@ -431,12 +468,14 @@ export class FinancialReportsService {
         date: e.occurredAt,
         locationName: e.locationId ? (locationMap.get(e.locationId) ?? '—') : '—',
         giftCardNumberMasked: this.maskGiftCardNumber(e.giftCard.giftCardNumber),
+        type: e.giftCard.isPhysical ? 'Fysiek' : 'Digitaal',
         originalValue: Number(e.giftCard.originalValue),
         amount: Number(e.amount),
         remainingBalance: Number(e.giftCard.currentBalance),
         entryType: e.entryType,
         status: e.giftCard.status,
         transactionId: e.transactionId,
+        processedBy: e.performedByUserId ? (staffMap.get(e.performedByUserId) ?? '—') : '—',
         reason: e.reason,
       })),
     };
@@ -493,22 +532,27 @@ export class FinancialReportsService {
     };
     const entries = await this.prisma.giftCardLedgerEntry.findMany({
       where,
-      include: { giftCard: { select: { giftCardNumber: true, originalValue: true, currentBalance: true, status: true } } },
+      include: { giftCard: { select: { giftCardNumber: true, originalValue: true, currentBalance: true, status: true, isPhysical: true } } },
       orderBy: { occurredAt: 'asc' },
       take: MAX_EXPORT_ROWS,
     });
     const locations = await this.prisma.location.findMany({ where: { organizationId: orgId }, select: { id: true, name: true } });
     const locationMap = new Map(locations.map((l) => [l.id, l.name]));
+    const staffIds = Array.from(new Set(entries.map((e) => e.performedByUserId).filter((id): id is string => !!id)));
+    const staffUsers = staffIds.length > 0 ? await this.prisma.staffUser.findMany({ where: { id: { in: staffIds } }, select: { id: true, firstName: true, lastName: true } }) : [];
+    const staffMap = new Map(staffUsers.map((s) => [s.id, [s.firstName, s.lastName].filter(Boolean).join(' ')]));
     return entries.map((e) => ({
       date: e.occurredAt,
       locationName: e.locationId ? (locationMap.get(e.locationId) ?? '—') : '—',
       giftCardNumberMasked: this.maskGiftCardNumber(e.giftCard.giftCardNumber),
+      type: e.giftCard.isPhysical ? 'Fysiek' : 'Digitaal',
       originalValue: Number(e.giftCard.originalValue),
       amount: Number(e.amount),
       remainingBalance: Number(e.giftCard.currentBalance),
       entryType: e.entryType,
       status: e.giftCard.status,
       transactionId: e.transactionId,
+      processedBy: e.performedByUserId ? (staffMap.get(e.performedByUserId) ?? '—') : '—',
       reason: e.reason,
     }));
   }
@@ -578,8 +622,12 @@ export class FinancialReportsService {
     summarySheet.addRow(['Gegenereerd door', generatedByName ?? '—']);
     summarySheet.addRow([]);
     summarySheet.addRow(['KADOBONNEN']).font = { bold: true };
-    summarySheet.addRow(['Aantal verkocht', summary.giftCards.soldCount]);
-    summarySheet.addRow(['Totale verkoopwaarde', formatEuro(summary.giftCards.soldValue)]);
+    summarySheet.addRow(['Aantal verkocht (totaal)', summary.giftCards.soldCount]);
+    summarySheet.addRow(['Totale verkoopwaarde (totaal)', formatEuro(summary.giftCards.soldValue)]);
+    summarySheet.addRow(['  Digitale kadobonnen verkocht', summary.giftCards.soldDigitalCount]);
+    summarySheet.addRow(['  Totale waarde digitaal', formatEuro(summary.giftCards.soldDigitalValue)]);
+    summarySheet.addRow(['  Fysieke kadobonnen verkocht', summary.giftCards.soldPhysicalCount]);
+    summarySheet.addRow(['  Totale waarde fysiek', formatEuro(summary.giftCards.soldPhysicalValue)]);
     summarySheet.addRow(['Aantal ingeleverd (mutaties)', summary.giftCards.redeemedCount]);
     summarySheet.addRow(['Totaal ingeleverd', formatEuro(summary.giftCards.redeemedValue)]);
     summarySheet.addRow(['Waarvan volledig ingewisseld', summary.giftCards.fullyRedeemedCount]);
@@ -597,12 +645,20 @@ export class FinancialReportsService {
     summarySheet.addRow(['Verlopen', `${summary.loyalty.pointsExpired} pt`]);
     summarySheet.addRow(['Openstaand tegoed', `${summary.loyalty.outstandingBalance} pt`]);
     summarySheet.addRow([]);
-    summarySheet.addRow(['RECONCILIATIE (kadobonnen)']).font = { bold: true };
+    summarySheet.addRow(['RECONCILIATIE (kadobonnen — inwisseling)']).font = { bold: true };
     summarySheet.addRow(['Ledger-totaal ingeleverd', formatEuro(summary.giftCards.reconciliation.ledgerRedeemedTotal)]);
     summarySheet.addRow(['Gekoppeld aan POS-transactie', formatEuro(summary.giftCards.reconciliation.posLinkedTotal)]);
     const diffRow = summarySheet.addRow(['Verschil', formatEuro(summary.giftCards.reconciliation.difference)]);
     if (Math.abs(summary.giftCards.reconciliation.difference) > 0.01) {
       diffRow.getCell(2).font = { color: { argb: 'FFE8604A' }, bold: true };
+    }
+    summarySheet.addRow([]);
+    summarySheet.addRow(['RECONCILIATIE (fysieke kadobonnen — verkoop)']).font = { bold: true };
+    summarySheet.addRow(['Fysiek verkocht volgens kadobon-administratie', formatEuro(summary.giftCards.physicalSalesReconciliation.giftCardLedgerTotal)]);
+    summarySheet.addRow(['Waarvan gekoppeld aan een medewerker', formatEuro(summary.giftCards.physicalSalesReconciliation.staffAttributedTotal)]);
+    const physDiffRow = summarySheet.addRow(['Verschil', formatEuro(summary.giftCards.physicalSalesReconciliation.difference)]);
+    if (Math.abs(summary.giftCards.physicalSalesReconciliation.difference) > 0.01) {
+      physDiffRow.getCell(2).font = { color: { argb: 'FFE8604A' }, bold: true };
     }
 
     // -- Tab 2: Verkochte kadobonnen --------------------------------------
@@ -611,10 +667,24 @@ export class FinancialReportsService {
       { header: 'Datum', key: 'date', width: 14 },
       { header: 'Locatie', key: 'location', width: 16 },
       { header: 'Kaartnummer', key: 'number', width: 16 },
+      { header: 'Type', key: 'type', width: 12 },
       { header: 'Bedrag', key: 'amount', width: 14 },
     ];
     for (const e of giftCardEntries.filter((e) => ['sale', 'issue', 'top_up'].includes(e.entryType))) {
-      soldSheet.addRow({ date: formatDateNL(e.date), location: e.locationName, number: e.giftCardNumberMasked, amount: formatEuro(e.amount) });
+      soldSheet.addRow({ date: formatDateNL(e.date), location: e.locationName, number: e.giftCardNumberMasked, type: e.type, amount: formatEuro(e.amount) });
+    }
+
+    // -- Tab 2b: Fysieke kadobonnen (apart uitgelicht, zoals gevraagd) ----
+    const physicalSheet = workbook.addWorksheet('Fysieke kadobonnen');
+    physicalSheet.columns = [
+      { header: 'Datum', key: 'date', width: 14 },
+      { header: 'Locatie', key: 'location', width: 16 },
+      { header: 'Kaartnummer', key: 'number', width: 16 },
+      { header: 'Bedrag', key: 'amount', width: 14 },
+      { header: 'Verwerkt door', key: 'staff', width: 20 },
+    ];
+    for (const e of giftCardEntries.filter((e) => ['sale', 'issue', 'top_up'].includes(e.entryType) && e.type === 'Fysiek')) {
+      physicalSheet.addRow({ date: formatDateNL(e.date), location: e.locationName, number: e.giftCardNumberMasked, amount: formatEuro(e.amount), staff: e.processedBy });
     }
 
     // -- Tab 3: Ingeleverde kadobonnen -------------------------------------
@@ -736,7 +806,9 @@ export class FinancialReportsService {
       };
 
       sectionHeader('Kadobonnen');
-      line('Kadobonnen verkocht', `${summary.giftCards.soldCount}x — ${formatEuro(summary.giftCards.soldValue)}`, { bold: true });
+      line('Kadobonnen verkocht (totaal)', `${summary.giftCards.soldCount}x — ${formatEuro(summary.giftCards.soldValue)}`, { bold: true });
+      line('  waarvan digitaal', `${summary.giftCards.soldDigitalCount}x — ${formatEuro(summary.giftCards.soldDigitalValue)}`);
+      line('  waarvan fysiek', `${summary.giftCards.soldPhysicalCount}x — ${formatEuro(summary.giftCards.soldPhysicalValue)}`);
       line('Kadobonnen ingewisseld', formatEuro(summary.giftCards.redeemedValue), { bold: true });
       line('  waarvan volledig', `${summary.giftCards.fullyRedeemedCount}x`);
       line('  waarvan gedeeltelijk', `${summary.giftCards.partiallyRedeemedCount}x`);
@@ -755,7 +827,7 @@ export class FinancialReportsService {
       line('Verlopen', `${summary.loyalty.pointsExpired} punten`);
       line('Openstaand loyaltytegoed', `${summary.loyalty.outstandingBalance} punten`, { bold: true });
 
-      sectionHeader('Reconciliatie (kadobonnen)');
+      sectionHeader('Reconciliatie (kadobonnen — inwisseling)');
       line('Ingewisseld volgens ledger', formatEuro(summary.giftCards.reconciliation.ledgerRedeemedTotal));
       line('Gekoppeld aan POS-transactie', formatEuro(summary.giftCards.reconciliation.posLinkedTotal));
       const diff = summary.giftCards.reconciliation.difference;
@@ -763,6 +835,17 @@ export class FinancialReportsService {
       if (Math.abs(diff) > 0.01) {
         doc.moveDown(0.3);
         doc.fontSize(9).font('Helvetica-Oblique').fillColor('#e8604a').text('⚠ Er is een verschil tussen de ledger en de gekoppelde POS-transacties — controleer de detailregels in de Excel-export.');
+        doc.fillColor('#000000');
+      }
+
+      sectionHeader('Reconciliatie (fysieke kadobonnen — verkoop)');
+      line('Fysiek verkocht volgens kadobon-administratie', formatEuro(summary.giftCards.physicalSalesReconciliation.giftCardLedgerTotal));
+      line('Waarvan gekoppeld aan een medewerker', formatEuro(summary.giftCards.physicalSalesReconciliation.staffAttributedTotal));
+      const physDiff = summary.giftCards.physicalSalesReconciliation.difference;
+      line('Verschil', formatEuro(physDiff), Math.abs(physDiff) > 0.01 ? { bold: true, color: '#e8604a' } : {});
+      if (Math.abs(physDiff) > 0.01) {
+        doc.moveDown(0.3);
+        doc.fontSize(9).font('Helvetica-Oblique').fillColor('#e8604a').text('⚠ Er zijn fysieke verkopen zonder gekoppelde medewerker — controleer de "Fysieke kadobonnen"-tab in de Excel-export.');
         doc.fillColor('#000000');
       }
 

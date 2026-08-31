@@ -17,6 +17,9 @@ export interface IssueGiftCardDto {
   personalMessage?: string;
   scheduledSendAt?: string;
   expiresAt?: string;
+  // Markeert of deze kaart als fysieke kaart/sticker wordt overhandigd —
+  // bepaalt de digitaal/fysiek-uitsplitsing in de financiële rapportage.
+  isPhysical?: boolean;
 }
 
 export interface CreateBatchDto {

@@ -133,6 +133,7 @@ export class GiftCardsService {
         originalValue: dto.originalValue,
         currentBalance: dto.originalValue,
         locationIds: dto.locationIds ?? [],
+        isPhysical: dto.isPhysical ?? false,
         purchaserCustomerId: dto.purchaserCustomerId,
         recipientCustomerId: resolvedRecipientCustomerId,
         recipientName: dto.recipientName,
@@ -703,6 +704,7 @@ export class GiftCardsService {
           currentBalance: dto.originalValue,
           activatedAt: new Date(),
           expiresAt: defaultGiftCardExpiry(),
+          isPhysical: true, // vooraf gedrukte batch-kaart, per definitie fysiek
           purchaserCustomerId: dto.purchaserCustomerId,
           recipientCustomerId: dto.recipientCustomerId,
         },
