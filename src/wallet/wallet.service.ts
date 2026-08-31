@@ -260,7 +260,7 @@ export class WalletService {
     reservationId: string,
     options?: { reason?: string; metadata?: Record<string, unknown> },
   ) {
-    const reservation = await this.getActiveReservation(reservationId);
+    const reservation = await this.getActiveReservation(orgId, reservationId);
     const reservedAmount = Number(reservation.amount);
 
     const wallet = await this.getOrCreateWallet(orgId, customerId);
@@ -324,7 +324,7 @@ export class WalletService {
   }
 
   async cancelRedemption(orgId: string, customerId: string, reservationId: string) {
-    const reservation = await this.getActiveReservation(reservationId);
+    const reservation = await this.getActiveReservation(orgId, reservationId);
     const reservedAmount = Number(reservation.amount);
     const wallet = await this.getOrCreateWallet(orgId, customerId);
 
@@ -358,8 +358,8 @@ export class WalletService {
    * saldo teruggegeven, zodat een vergeten/nooit-bevestigde reservering
    * niet voor altijd saldo blokkeert.
    */
-  private async getActiveReservation(reservationId: string) {
-    const reservation = await this.prisma.walletRedemptionReservation.findUnique({ where: { id: reservationId } });
+  private async getActiveReservation(orgId: string, reservationId: string) {
+    const reservation = await this.prisma.walletRedemptionReservation.findFirst({ where: { id: reservationId, organizationId: orgId } });
     if (!reservation || reservation.status !== 'active') {
       throw new NotFoundException('Reservation not found or already expired');
     }

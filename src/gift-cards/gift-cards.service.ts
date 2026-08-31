@@ -178,7 +178,7 @@ export class GiftCardsService {
     // de kaart is al geldig aangemaakt, dat mag niet teruggedraaid worden.
     let emailSent: boolean | undefined;
     if (dto.recipientCustomerId && !dto.recipientEmail) {
-      const recipient = await this.prisma.customer.findUnique({ where: { id: dto.recipientCustomerId }, select: { email: true } });
+      const recipient = await this.prisma.customer.findFirst({ where: { id: dto.recipientCustomerId, organizationId: orgId }, select: { email: true } });
       if (recipient?.email) {
         await this.prisma.giftCard.update({ where: { id: giftCard.id }, data: { recipientEmail: recipient.email } });
         emailSent = await this.sendDigitalCard(orgId, giftCard.id, token)
