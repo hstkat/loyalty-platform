@@ -236,6 +236,10 @@
     const password = document.getElementById('staff-login-password').value;
     if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
     const { apiBase, orgId } = getConfig();
+    const loginBtn = document.getElementById('staff-login-btn');
+    loginBtn.disabled = true;
+    const originalLoginLabel = loginBtn.textContent;
+    loginBtn.textContent = 'Bezig…';
     try {
       const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/login', {
         method: 'POST',
@@ -254,6 +258,9 @@
       bootAfterLogin();
     } catch (err) {
       errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = originalLoginLabel;
     }
   });
 
@@ -507,10 +514,18 @@
       els.orgIdInput.value = orgId;
     }
   });
-  els.configSave.addEventListener('click', () => {
-    localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
-    localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
-    els.configPanel.classList.remove('open');
+  els.configSave.addEventListener('click', async () => {
+    els.configSave.disabled = true;
+    const originalConfigSaveLabel = els.configSave.textContent;
+    els.configSave.textContent = 'Bezig…';
+    try {
+      localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+      localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+      els.configPanel.classList.remove('open');
+    } finally {
+      els.configSave.disabled = false;
+      els.configSave.textContent = originalConfigSaveLabel;
+    }
   });
 
   function bootAfterLogin() {

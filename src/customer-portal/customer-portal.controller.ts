@@ -313,6 +313,21 @@ export class CustomerPortalController {
   const CREDIT_LABEL = ${JSON.stringify(brand.creditLabel)};
   const STORAGE_KEY = 'mijn_tegoed_session';
 
+  // Client-side variant van dezelfde escape-functie als in de backend
+  // (src/common/escape-html.ts) — nodig omdat namen/redenen die door
+  // een medewerker zijn ingevoerd (voucher-/beloningsnamen, issueReason)
+  // hier via innerHTML worden weergegeven. Nooit vertrouwen op wat de
+  // API teruggeeft, ook al is de bron "alleen" een medewerker.
+  function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   let pendingEmail = '';
   let pendingRegistrationId = null;
   let pendingSignupProfile = null;
@@ -654,8 +669,8 @@ export class CustomerPortalController {
         rewardsEl.innerHTML = '<div class="empty-note">Vandaag geen beloningen beschikbaar.</div>';
       } else {
         rewardsEl.innerHTML = rewards.map(function (r) {
-          const locBadge = (r.locationNames && r.locationNames.length > 0) ? '<div class="location-badge">Alleen geldig bij ' + r.locationNames.join(' & ') + '</div>' : '';
-          return '<div class="list-item"><div class="top-row"><span class="item-name">' + r.name + '</span><span class="item-value">' + r.pointsCost + ' pt</span></div>' + locBadge + '</div>';
+          const locBadge = (r.locationNames && r.locationNames.length > 0) ? '<div class="location-badge">Alleen geldig bij ' + r.locationNames.map(escapeHtml).join(' &amp; ') + '</div>' : '';
+          return '<div class="list-item"><div class="top-row"><span class="item-name">' + escapeHtml(r.name) + '</span><span class="item-value">' + r.pointsCost + ' pt</span></div>' + locBadge + '</div>';
         }).join('');
       }
 
@@ -671,9 +686,9 @@ export class CustomerPortalController {
           const daysLine = (v.status === 'active' && typeof v.daysLeft === 'number')
             ? '<div class="item-meta" style="margin-top:2px;font-weight:600;color:var(--accent-dark);">' + (v.daysLeft === 0 ? 'Vandaag laatste dag' : 'Nog ' + v.daysLeft + ' dag' + (v.daysLeft === 1 ? '' : 'en') + ' geldig') + '</div>'
             : '';
-          const reasonLine = v.issueReason ? '<div class="item-meta" style="margin-top:2px;font-style:italic;">' + v.issueReason + '</div>' : '';
+          const reasonLine = v.issueReason ? '<div class="item-meta" style="margin-top:2px;font-style:italic;">' + escapeHtml(v.issueReason) + '</div>' : '';
           return '<div class="list-item voucher-item" data-voucher-id="' + v.id + '" style="cursor:pointer;">'
-            + '<div class="top-row"><span class="item-name">' + v.name + '</span></div>'
+            + '<div class="top-row"><span class="item-name">' + escapeHtml(v.name) + '</span></div>'
             + '<div class="item-meta">Geldig t/m ' + validUntilLabel + '</div>'
             + daysLine
             + reasonLine
@@ -707,8 +722,8 @@ export class CustomerPortalController {
             : '';
           return '<div class="voucher-banner-item" data-voucher-id="' + v.id + '" style="cursor:pointer;background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-radius:14px;padding:16px 18px;margin-bottom:10px;color:#fff;">'
             + '<div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;margin-bottom:4px;">🎁 Voucher voor jou</div>'
-            + '<div style="font-family:Georgia,serif;font-size:18px;margin-bottom:2px;">' + v.name + '</div>'
-            + '<div style="font-size:13px;opacity:0.9;">' + v.benefit + '</div>'
+            + '<div style="font-family:Georgia,serif;font-size:18px;margin-bottom:2px;">' + escapeHtml(v.name) + '</div>'
+            + '<div style="font-size:13px;opacity:0.9;">' + escapeHtml(v.benefit) + '</div>'
             + (daysLabel ? '<div style="font-size:12px;font-weight:600;margin-top:8px;">' + daysLabel + '</div>' : '')
             + '</div>';
         }).join('');

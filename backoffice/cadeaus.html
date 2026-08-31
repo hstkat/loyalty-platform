@@ -262,6 +262,10 @@
     const password = document.getElementById('staff-login-password').value;
     if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
     const { apiBase, orgId } = getConfig();
+    const loginBtn = document.getElementById('staff-login-btn');
+    loginBtn.disabled = true;
+    const originalLoginLabel = loginBtn.textContent;
+    loginBtn.textContent = 'Bezig…';
     try {
       const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/login', {
         method: 'POST',
@@ -280,6 +284,9 @@
       bootAfterLogin();
     } catch (err) {
       errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = originalLoginLabel;
     }
   });
 
@@ -551,6 +558,8 @@
     els.rateRuleList.querySelectorAll('.rate-delete-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Deze wisselkoersregel verwijderen?')) return;
+        btn.disabled = true;
+        btn.textContent = 'Bezig…';
         const { orgId } = getConfig();
         await apiSend('DELETE', '/organizations/' + orgId + '/redemption-rate-rules/' + btn.dataset.id);
         loadAll();
@@ -632,6 +641,7 @@
 
     els.itemList.querySelectorAll('.toggle-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
+        btn.disabled = true;
         const { orgId } = getConfig();
         await apiSend('PATCH', '/organizations/' + orgId + '/reward-catalog/' + btn.dataset.id, {
           isActive: btn.dataset.active !== 'true',
@@ -642,6 +652,8 @@
     els.itemList.querySelectorAll('.delete-btn').forEach((btn) => {
       btn.addEventListener('click', async () => {
         if (!confirm('Deze beloning definitief verwijderen?')) return;
+        btn.disabled = true;
+        btn.textContent = 'Bezig…';
         const { orgId } = getConfig();
         await apiSend('DELETE', '/organizations/' + orgId + '/reward-catalog/' + btn.dataset.id);
         loadAll();
@@ -655,6 +667,9 @@
       alert('Vul een geldig aantal punten in.');
       return;
     }
+    els.blockSizeSave.disabled = true;
+    const originalBlockSizeLabel = els.blockSizeSave.textContent;
+    els.blockSizeSave.textContent = 'Bezig…';
     try {
       const { orgId } = getConfig();
       await apiSend('POST', '/organizations/' + orgId + '/credit-rules', { redemptionBlockSize: size });
@@ -662,6 +677,9 @@
       els.statusLine.classList.remove('error');
     } catch (err) {
       alert('Opslaan mislukt: ' + err.message);
+    } finally {
+      els.blockSizeSave.disabled = false;
+      els.blockSizeSave.textContent = originalBlockSizeLabel;
     }
   });
 
@@ -707,6 +725,10 @@
 
   els.form.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const submitBtn = els.form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    const originalSubmitLabel = submitBtn.textContent;
+    submitBtn.textContent = 'Bezig…';
     try {
       const { orgId } = getConfig();
       const selectedDays = Array.from(document.querySelectorAll('#day-picker input:checked')).map((cb) => cb.value);
@@ -729,6 +751,9 @@
       loadAll();
     } catch (err) {
       alert('Opslaan mislukt: ' + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalSubmitLabel;
     }
   });
 
@@ -741,11 +766,19 @@
       els.orgIdInput.value = orgId;
     }
   });
-  els.configSave.addEventListener('click', () => {
-    localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
-    localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
-    els.configPanel.classList.remove('open');
-    loadAll();
+  els.configSave.addEventListener('click', async () => {
+    els.configSave.disabled = true;
+    const originalConfigSaveLabel = els.configSave.textContent;
+    els.configSave.textContent = 'Bezig…';
+    try {
+      localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+      localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+      els.configPanel.classList.remove('open');
+      await loadAll();
+    } finally {
+      els.configSave.disabled = false;
+      els.configSave.textContent = originalConfigSaveLabel;
+    }
   });
 
   els.rateRuleSave.addEventListener('click', async () => {
@@ -762,6 +795,9 @@
       return;
     }
 
+    els.rateRuleSave.disabled = true;
+    const originalRateRuleLabel = els.rateRuleSave.textContent;
+    els.rateRuleSave.textContent = 'Bezig…';
     try {
       const { orgId } = getConfig();
       await apiSend('POST', '/organizations/' + orgId + '/redemption-rate-rules', {
@@ -775,6 +811,9 @@
       loadAll();
     } catch (err) {
       alert('Opslaan mislukt: ' + err.message);
+    } finally {
+      els.rateRuleSave.disabled = false;
+      els.rateRuleSave.textContent = originalRateRuleLabel;
     }
   });
 

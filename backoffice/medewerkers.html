@@ -199,6 +199,10 @@
     const password = document.getElementById('staff-login-password').value;
     if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
     const { apiBase, orgId } = getConfig();
+    const loginBtn = document.getElementById('staff-login-btn');
+    loginBtn.disabled = true;
+    const originalLoginLabel = loginBtn.textContent;
+    loginBtn.textContent = 'Bezig…';
     try {
       const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/login', {
         method: 'POST',
@@ -217,6 +221,9 @@
       bootAfterLogin();
     } catch (err) {
       errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = originalLoginLabel;
     }
   });
 
@@ -402,11 +409,19 @@
     els.apiBaseInput.value = apiBase;
     els.orgIdInput.value = orgId;
   });
-  els.configSave.addEventListener('click', () => {
-    localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
-    localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
-    els.configPanel.classList.remove('open');
-    bootAfterLogin();
+  els.configSave.addEventListener('click', async () => {
+    els.configSave.disabled = true;
+    const originalConfigSaveLabel = els.configSave.textContent;
+    els.configSave.textContent = 'Bezig…';
+    try {
+      localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+      localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+      els.configPanel.classList.remove('open');
+      await bootAfterLogin();
+    } finally {
+      els.configSave.disabled = false;
+      els.configSave.textContent = originalConfigSaveLabel;
+    }
   });
 
   let permissionCatalog = [];
@@ -525,6 +540,10 @@
     const { orgId } = getConfig();
     const firstName = document.getElementById('staff-firstname').value.trim();
     const permissions = getSelectedPermissions();
+    const saveBtn = document.getElementById('staff-save-btn');
+    saveBtn.disabled = true;
+    const originalSaveLabel = saveBtn.textContent;
+    saveBtn.textContent = 'Bezig…';
 
     try {
       if (editingUserId) {
@@ -551,6 +570,9 @@
       await loadStaffUsers();
     } catch (err) {
       errorEl.textContent = err.message;
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = originalSaveLabel;
     }
   });
 
@@ -558,12 +580,18 @@
     if (!editingUserId) return;
     if (!confirm('Dit account deactiveren? De medewerker kan dan niet meer inloggen.')) return;
     const { orgId } = getConfig();
+    const deactivateBtn = document.getElementById('staff-deactivate-btn');
+    deactivateBtn.disabled = true;
+    const originalDeactivateLabel = deactivateBtn.textContent;
+    deactivateBtn.textContent = 'Bezig…';
     try {
       await apiDelete('/organizations/' + orgId + '/staff-users/' + editingUserId);
       resetForm();
       await loadStaffUsers();
     } catch (err) {
       document.getElementById('staff-form-error').textContent = err.message;
+      deactivateBtn.disabled = false;
+      deactivateBtn.textContent = originalDeactivateLabel;
     }
   });
 
@@ -589,6 +617,10 @@
     const newPassword = document.getElementById('reset-password-input').value;
     if (!newPassword || newPassword.length < 10) { alert('Wachtwoord moet minstens 10 tekens lang zijn.'); return; }
     const { orgId } = getConfig();
+    const resetBtn = document.getElementById('reset-password-save-btn');
+    resetBtn.disabled = true;
+    const originalResetLabel = resetBtn.textContent;
+    resetBtn.textContent = 'Bezig…';
     try {
       await apiPost('/organizations/' + orgId + '/staff-users/' + resettingUserId + '/reset-password', { newPassword });
       document.getElementById('reset-password-panel').style.display = 'none';
@@ -596,6 +628,9 @@
       els.statusLine.textContent = 'Wachtwoord bijgewerkt.';
     } catch (err) {
       alert(err.message);
+    } finally {
+      resetBtn.disabled = false;
+      resetBtn.textContent = originalResetLabel;
     }
   });
 
