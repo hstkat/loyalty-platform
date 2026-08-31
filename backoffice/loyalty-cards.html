@@ -552,19 +552,20 @@
     }
     els.actionRow.innerHTML = actions;
 
-    document.getElementById('action-block')?.addEventListener('click', () => doCardAction('block', 'Reden voor blokkeren:'));
-    document.getElementById('action-lost')?.addEventListener('click', () => doCardAction('mark-lost', 'Toelichting (optioneel):'));
-    document.getElementById('action-reactivate')?.addEventListener('click', () => doCardAction('reactivate'));
+    document.getElementById('action-block')?.addEventListener('click', (e) => doCardAction('block', 'Reden voor blokkeren:', e.currentTarget));
+    document.getElementById('action-lost')?.addEventListener('click', (e) => doCardAction('mark-lost', 'Toelichting (optioneel):', e.currentTarget));
+    document.getElementById('action-reactivate')?.addEventListener('click', (e) => doCardAction('reactivate', undefined, e.currentTarget));
     document.getElementById('action-replace')?.addEventListener('click', doReplace);
     document.getElementById('action-link')?.addEventListener('click', doManualLink);
   }
 
-  async function doCardAction(action, promptText) {
+  async function doCardAction(action, promptText, btn) {
     let reason;
     if (promptText) {
       reason = prompt(promptText) || '';
       if (promptText.includes('verloren') === false && !reason) return; // block vereist een reden
     }
+    if (btn) { btn.disabled = true; var originalLabel = btn.textContent; btn.textContent = 'Bezig…'; }
     try {
       const { orgId } = getConfig();
       await apiPost('/organizations/' + orgId + '/loyalty-cards/' + currentCardId + '/' + action, reason !== undefined ? { reason } : {});
@@ -572,12 +573,15 @@
       loadCards();
     } catch (err) {
       alert('Actie mislukt: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
     }
   }
 
-  async function doReplace() {
+  async function doReplace(evt) {
     const newToken = prompt('Scan of typ de token van de NIEUWE (nog niet geactiveerde) kaart:');
     if (!newToken) return;
+    const btn = evt && evt.currentTarget;
+    if (btn) { btn.disabled = true; var originalLabel = btn.textContent; btn.textContent = 'Bezig…'; }
     try {
       const { orgId } = getConfig();
       await apiPost('/organizations/' + orgId + '/loyalty-cards/' + currentCardId + '/replace', { newCardToken: newToken.trim() });
@@ -586,6 +590,7 @@
       els.detailPanel.classList.remove('show');
     } catch (err) {
       alert('Vervangen mislukt: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
     }
   }
 
