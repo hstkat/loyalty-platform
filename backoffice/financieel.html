@@ -432,11 +432,19 @@
     els.apiBaseInput.value = apiBase;
     els.orgIdInput.value = orgId;
   });
-  els.configSave.addEventListener('click', () => {
-    localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
-    localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
-    els.configPanel.classList.remove('open');
-    bootAfterLogin();
+  els.configSave.addEventListener('click', async () => {
+    els.configSave.disabled = true;
+    const originalSaveLabel = els.configSave.textContent;
+    els.configSave.textContent = 'Bezig…';
+    try {
+      localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+      localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+      els.configPanel.classList.remove('open');
+      await bootAfterLogin();
+    } finally {
+      els.configSave.disabled = false;
+      els.configSave.textContent = originalSaveLabel;
+    }
   });
 
   const ENTRY_TYPE_LABELS = {
@@ -701,10 +709,9 @@
     }
   }
 
-  function bootAfterLogin() {
+  async function bootAfterLogin() {
     els.statusLine.textContent = '';
-    loadLocations();
-    loadHistory();
+    await Promise.all([loadLocations(), loadHistory()]);
   }
 </script>
 
