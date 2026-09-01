@@ -697,13 +697,54 @@
         return;
       }
       const FORMAT_LABELS = { view: 'Bekeken', excel: 'Excel', pdf: 'PDF' };
+      const VALID_PERIOD_TYPES = ['today', 'this_week', 'last_week', 'this_month', 'last_month', 'quarter', 'year'];
       listEl.innerHTML = history.map((h) => {
         const locLabel = h.locationId ? '' : ' — hele organisatie';
-        return '<div class="overview-tile" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;margin-bottom:6px;">'
+        return '<div class="overview-tile history-item" data-history-id="' + h.id + '" data-report-type="' + h.reportType + '" data-period-start="' + h.periodStart + '" data-period-end="' + h.periodEnd + '" data-location-id="' + (h.locationId || '') + '" data-format="' + h.format + '" style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;margin-bottom:6px;cursor:pointer;">'
           + '<div><strong>' + formatDateNL(h.periodStart) + ' t/m ' + formatDateNL(h.periodEnd) + '</strong>' + locLabel + '</div>'
+          + '<div style="display:flex;align-items:center;gap:10px;">'
           + '<div style="font-size:12px;color:var(--muted);">' + (FORMAT_LABELS[h.format] || h.format) + ' · ' + formatDateTimeNL(h.generatedAt) + '</div>'
+          + '<button type="button" class="history-delete-btn" data-history-id="' + h.id + '" title="Verwijderen uit geschiedenis" style="background:none;border:none;color:var(--muted);font-size:16px;cursor:pointer;padding:2px 6px;line-height:1;">🗑️</button>'
+          + '</div>'
           + '</div>';
       }).join('');
+
+      listEl.querySelectorAll('.history-item').forEach((item) => {
+        item.addEventListener('click', async (e) => {
+          if (e.target.closest('.history-delete-btn')) return; // laat het verwijderklikje z'n eigen handler afhandelen
+          const reportType = item.dataset.reportType;
+          const isKnownPeriod = VALID_PERIOD_TYPES.includes(reportType);
+          document.getElementById('period-select').value = isKnownPeriod ? reportType : 'custom';
+          document.getElementById('custom-period-row').style.display = isKnownPeriod ? 'none' : 'flex';
+          if (!isKnownPeriod) {
+            document.getElementById('custom-from').value = item.dataset.periodStart.slice(0, 10);
+            document.getElementById('custom-to').value = item.dataset.periodEnd.slice(0, 10);
+          }
+          document.getElementById('location-select').value = item.dataset.locationId || '';
+
+          const format = item.dataset.format;
+          if (format === 'excel' || format === 'pdf') {
+            await downloadExport(format, document.getElementById('export-' + format + '-btn'), format === 'excel' ? '📊 Excel' : '📄 PDF');
+          } else {
+            document.getElementById('run-report-btn').click();
+          }
+        });
+      });
+
+      listEl.querySelectorAll('.history-delete-btn').forEach((btn) => {
+        btn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          if (!confirm('Deze regel uit de rapportgeschiedenis verwijderen?')) return;
+          btn.disabled = true;
+          try {
+            await apiDelete('/organizations/' + orgId + '/financial-reports/history/' + btn.dataset.historyId);
+            loadHistory();
+          } catch (err) {
+            alert('Verwijderen mislukt: ' + err.message);
+            btn.disabled = false;
+          }
+        });
+      });
     } catch (err) {
       // Geschiedenis is niet-kritisch voor de rest van de pagina.
     }

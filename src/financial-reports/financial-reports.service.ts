@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import { PrismaService } from '../prisma/prisma.service';
@@ -429,6 +429,12 @@ export class FinancialReportsService {
       orderBy: { generatedAt: 'desc' },
       take: limit,
     });
+  }
+
+  async deleteHistoryEntry(orgId: string, historyId: string) {
+    const result = await this.prisma.financialReportHistory.deleteMany({ where: { id: historyId, organizationId: orgId } });
+    if (result.count === 0) throw new NotFoundException('Rapport niet gevonden');
+    return { deleted: true };
   }
 
   // -- Detailregels (doorklikbaar vanuit het dashboard) --------------------

@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Controller, Delete, Get, Param, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import { FinancialReportsService } from './financial-reports.service';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -50,6 +50,11 @@ export class FinancialReportsController {
   @Get('history')
   getHistory(@Param('orgId') orgId: string) {
     return this.reports.getHistory(orgId);
+  }
+
+  @Delete('history/:historyId')
+  deleteHistoryEntry(@Param('orgId') orgId: string, @Param('historyId') historyId: string) {
+    return this.reports.deleteHistoryEntry(orgId, historyId);
   }
 
   @Get('export/excel')
