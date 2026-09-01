@@ -263,8 +263,18 @@ export class GiftCardsService {
     publicAppUrl: string,
   ): Promise<{ checkoutUrl: string } | { checkoutUrl: null; reason: string }> {
     if (dto.originalValue < MIN_GIFT_CARD_VALUE) throw new BadRequestException(`Minimaal bedrag is €${MIN_GIFT_CARD_VALUE} (i.v.m. transactiekosten)`);
-    if (!this.mollie.isConfigured()) {
-      return { checkoutUrl: null, reason: 'Online betalen is nog niet ingesteld — neem contact op met de zaak.' };
+
+    // Het merk/de locatie bepaalt welk Mollie-account de betaling
+    // ontvangt — dit moet BEKEND en GELDIG zijn vóórdat er ook maar iets
+    // wordt aangemaakt. Geen kaart, geen betaling, als dit niet klopt.
+    const brandResult = await this.resolveBrandLocation(orgId, dto.brand);
+    if (!brandResult.location) {
+      return { checkoutUrl: null, reason: brandResult.reason };
+    }
+    const brandLocation = brandResult.location;
+
+    if (!this.mollie.isConfigured(brandLocation.slug)) {
+      return { checkoutUrl: null, reason: `Online betalen is voor ${brandLocation.name} nog niet ingesteld — neem contact op met de zaak.` };
     }
 
     // Afzendergegevens zijn bij een ONLINE aankoop altijd verplicht (de
@@ -300,15 +310,16 @@ export class GiftCardsService {
         senderEmail: dto.senderEmail!.trim(),
         personalMessage: dto.personalMessage,
         scheduledSendAt: dto.scheduledSendAt ? new Date(dto.scheduledSendAt) : undefined,
+        brandLocationId: brandLocation.id,
       },
     });
 
-    const paymentResult = await this.mollie.createPayment({
+    const paymentResult = await this.mollie.createPayment(brandLocation.slug, {
       amount: dto.originalValue,
       description: `Kadobon ${giftCardNumber} (€${dto.originalValue.toFixed(2)})`,
-      redirectUrl: `${publicAppUrl}/gift-cards/thank-you/${giftCard.id}${dto.brand ? '?brand=' + encodeURIComponent(dto.brand) : ''}`,
+      redirectUrl: `${publicAppUrl}/gift-cards/thank-you/${giftCard.id}?brand=${encodeURIComponent(brandLocation.slug)}`,
       webhookUrl: `${publicAppUrl}/gift-cards/mollie-webhook`,
-      metadata: { giftCardId: giftCard.id, organizationId: orgId, rawToken: token },
+      metadata: { giftCardId: giftCard.id, organizationId: orgId, rawToken: token, brandLocationSlug: brandLocation.slug },
     });
 
     if (!paymentResult.created) {
@@ -338,8 +349,14 @@ export class GiftCardsService {
     dto: BulkPurchaseDto,
     publicAppUrl: string,
   ): Promise<{ checkoutUrl: string } | { checkoutUrl: null; reason: string }> {
-    if (!this.mollie.isConfigured()) {
-      return { checkoutUrl: null, reason: 'Online betalen is nog niet ingesteld — neem contact op met de zaak.' };
+    const brandResult = await this.resolveBrandLocation(orgId, dto.brand);
+    if (!brandResult.location) {
+      return { checkoutUrl: null, reason: brandResult.reason };
+    }
+    const brandLocation = brandResult.location;
+
+    if (!this.mollie.isConfigured(brandLocation.slug)) {
+      return { checkoutUrl: null, reason: `Online betalen is voor ${brandLocation.name} nog niet ingesteld — neem contact op met de zaak.` };
     }
     if (!dto.items || dto.items.length === 0) {
       throw new BadRequestException('Geen kadobonnen opgegeven');
@@ -382,6 +399,7 @@ export class GiftCardsService {
           senderName: dto.senderName.trim(),
           senderEmail: dto.senderEmail.trim(),
           personalMessage: item.personalMessage,
+          brandLocationId: brandLocation.id,
         },
       });
       createdCards.push({ id: giftCard.id, giftCardNumber: giftCard.giftCardNumber });
@@ -394,12 +412,12 @@ export class GiftCardsService {
     // zoekt die kaart op, leest daarvan molliePaymentId (dat hieronder,
     // vóór de checkout-redirect, al gezet wordt) en haalt daarmee alle
     // bijbehorende kaarten van dezelfde betaling op.
-    const paymentResult = await this.mollie.createPayment({
+    const paymentResult = await this.mollie.createPayment(brandLocation.slug, {
       amount: totalAmount,
       description: `${createdCards.length} kadobonnen (${createdCards.map((c) => c.giftCardNumber).join(', ')})`,
-      redirectUrl: `${publicAppUrl}/gift-cards/thank-you-bulk/${createdCards[0].id}${dto.brand ? '?brand=' + encodeURIComponent(dto.brand) : ''}`,
+      redirectUrl: `${publicAppUrl}/gift-cards/thank-you-bulk/${createdCards[0].id}?brand=${encodeURIComponent(brandLocation.slug)}`,
       webhookUrl: `${publicAppUrl}/gift-cards/mollie-webhook`,
-      metadata: { organizationId: orgId, giftCardIds: createdCards.map((c) => c.id), bulk: true },
+      metadata: { organizationId: orgId, giftCardIds: createdCards.map((c) => c.id), bulk: true, brandLocationSlug: brandLocation.slug },
     });
 
     if (!paymentResult.created) {
@@ -435,7 +453,24 @@ export class GiftCardsService {
       return { processed: !!anyCardForPayment };
     }
 
-    const payment = await this.mollie.getPayment(molliePaymentId);
+    // Alle kaarten van dezelfde betaling delen hetzelfde merk (ze zijn
+    // in één en dezelfde startOnlinePurchase/startBulkOnlinePurchase-
+    // aanroep aangemaakt) — dus het volstaat om dit bij de eerste kaart
+    // op te zoeken. Geen brandLocationId betekent dat we NIET weten
+    // welk Mollie-account hier bij hoort — dan bewust stoppen i.p.v.
+    // raden/terugvallen op een vast account.
+    const brandLocationId = draftCards[0].brandLocationId;
+    if (!brandLocationId) {
+      this.logger.error(`Betaling ${molliePaymentId} heeft geen brandLocationId — kan niet bepalen welk Mollie-account te gebruiken, verwerking overgeslagen.`);
+      return { processed: false };
+    }
+    const brandLocation = await this.prisma.location.findUnique({ where: { id: brandLocationId }, select: { slug: true, name: true } });
+    if (!brandLocation?.slug) {
+      this.logger.error(`Betaling ${molliePaymentId}: brandLocationId ${brandLocationId} verwijst naar een locatie zonder slug — kan geen Mollie-account bepalen.`);
+      return { processed: false };
+    }
+
+    const payment = await this.mollie.getPayment(brandLocation.slug, molliePaymentId);
     if (!payment || payment.status !== 'paid') {
       return { processed: true }; // nog niet (of niet meer) betaald — nog niets te activeren
     }
@@ -842,6 +877,10 @@ export class GiftCardsService {
     const newBalance = Number(giftCard.currentBalance) + reversalAmount;
     if (newBalance < 0) throw new BadRequestException('Terugboeken zou een negatief saldo veroorzaken');
 
+    // Puur interne correctieboeking — geen daadwerkelijke terugbetaling
+    // via Mollie. Geld dat via Mollie is ontvangen, betaal je terug via
+    // het Mollie-dashboard zelf; deze actie past alleen het kadobon-
+    // saldo hier in het systeem aan.
     const reversal = await this.prisma.$transaction(async (tx) => {
       const entry = await tx.giftCardLedgerEntry.create({
         data: {
@@ -1042,6 +1081,7 @@ export class GiftCardsService {
       include: {
         purchaser: { select: { firstName: true, lastName: true, email: true } },
         recipient: { select: { firstName: true, lastName: true, email: true } },
+        brandLocation: { select: { name: true, slug: true } },
       },
     });
   }
@@ -1055,6 +1095,7 @@ export class GiftCardsService {
         ledgerEntries: { orderBy: { occurredAt: 'desc' } },
         replacedByGiftCard: { select: { id: true, giftCardNumber: true, status: true } },
         replacesGiftCard: { select: { id: true, giftCardNumber: true, status: true } },
+        brandLocation: { select: { name: true, slug: true } },
       },
     });
     if (!giftCard) throw new NotFoundException('Kadobon niet gevonden');
@@ -1117,6 +1158,29 @@ export class GiftCardsService {
     await this.prisma.giftCard.update({ where: { id: card.id }, data: { publicTokenHash: this.hashToken(token) } });
 
     return { giftCardId: card.id, giftCardNumber: card.giftCardNumber, token, currentBalance: Number(card.currentBalance) };
+  }
+
+  /**
+   * Zoekt de Location die bij een merk-slug ("het-strand"/"zomers") hoort
+   * — puur op basis van organizationId + slug, NOOIT op een locatie-ID
+   * dat rechtstreeks van de frontend komt (dat zou een kwaadwillende
+   * kunnen laten kiezen welk Mollie-account de betaling ontvangt). Geeft
+   * bewust GEEN default terug als het merk ontbreekt of onbekend is —
+   * zie de instructie: nooit stilzwijgend terugvallen op één vast
+   * account.
+   */
+  private async resolveBrandLocation(orgId: string, brandSlug: string | undefined): Promise<{ location: null; reason: string } | { location: { id: string; slug: string; name: string } }> {
+    if (!brandSlug) {
+      return { location: null, reason: 'Geen merk/locatie opgegeven bij deze bestelling — kan geen Mollie-account bepalen.' };
+    }
+    const location = await this.prisma.location.findFirst({
+      where: { organizationId: orgId, slug: brandSlug },
+      select: { id: true, slug: true, name: true },
+    });
+    if (!location || !location.slug) {
+      return { location: null, reason: `Geen locatie gevonden voor merk "${brandSlug}" — kan geen Mollie-account bepalen.` };
+    }
+    return { location: { id: location.id, slug: location.slug, name: location.name } };
   }
 
   private async getCardOrThrow(orgId: string, giftCardId: string) {

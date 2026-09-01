@@ -581,11 +581,15 @@
     els.cardList.innerHTML = cards.map((card) => {
       const recipient = card.recipient ? [card.recipient.firstName, card.recipient.lastName].filter(Boolean).join(' ') : (card.recipientName || 'Geen ontvanger');
       const senderLine = card.senderName ? `<div class="customer" style="font-size:11px;color:var(--muted);">Van: ${card.senderName}</div>` : '';
+      const brandBadge = card.molliePaymentId && card.brandLocation
+        ? `<div style="font-size:11px;color:var(--muted);">🌐 ${card.brandLocation.name}</div>`
+        : '';
       return `<div class="card-row" data-id="${card.id}">
         <div>
           <div class="number">${card.giftCardNumber}</div>
           <div class="customer">${recipient}</div>
           ${senderLine}
+          ${brandBadge}
         </div>
         <div style="display:flex;align-items:center;gap:12px;">
           <span class="balance">€${Number(card.currentBalance).toFixed(2)}</span>
@@ -646,6 +650,8 @@
       <div class="detail-tile"><div class="label">Persoonlijke boodschap</div><div class="value">${card.personalMessage || '—'}</div></div>
       <div class="detail-tile"><div class="label">Uitgegeven op</div><div class="value">${issuedDate}</div></div>
       <div class="detail-tile"><div class="label">Geldig tot</div><div class="value">${expiryDate}</div></div>
+      ${card.molliePaymentId ? `<div class="detail-tile"><div class="label">Website</div><div class="value">${card.brandLocation?.name ?? '—'}</div></div>
+      <div class="detail-tile"><div class="label">Mollie payment ID</div><div class="value" style="font-family:monospace;font-size:12px;">${card.molliePaymentId}</div></div>` : ''}
       <div class="detail-tile"><div class="label">Vervangen door</div><div class="value">${card.replacedByGiftCard ? card.replacedByGiftCard.giftCardNumber : '—'}</div></div>
     `;
 

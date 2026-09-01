@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Param, Post, Body, Query, Res } from '@nestjs/common';
+import { Controller, Get, Header, Headers, Param, Post, Body, Query, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { createHash } from 'crypto';
@@ -60,7 +60,7 @@ export class GiftCardCheckoutController {
     const brandLabel = brand.slug ? brand.name.toUpperCase() : 'HET STRAND &amp; ZOMERS';
     const giftCard = await this.prisma.giftCard.findUnique({
       where: { id: giftCardId },
-      select: { status: true, giftCardNumber: true, currentBalance: true, recipientEmail: true, molliePaymentId: true },
+      select: { status: true, giftCardNumber: true, currentBalance: true, recipientEmail: true, molliePaymentId: true, brandLocation: { select: { slug: true } } },
     });
 
     const styles = `
@@ -92,7 +92,9 @@ export class GiftCardCheckoutController {
       if (giftCard.recipientEmail) {
         body = `<div class="brand">${brandLabel}</div><h1>Bedankt voor je aankoop!</h1><p>Kadobon ${giftCard.giftCardNumber} — €${Number(giftCard.currentBalance).toFixed(2)}. Je ontvangt hem per e-mail op ${escapeHtml(giftCard.recipientEmail)}.</p>`;
       } else {
-        const rawToken = giftCard.molliePaymentId ? await this.recoverRawToken(giftCard.molliePaymentId) : null;
+        const rawToken = giftCard.molliePaymentId && giftCard.brandLocation?.slug
+          ? await this.recoverRawToken(giftCard.brandLocation.slug, giftCard.molliePaymentId)
+          : null;
         const linkBlock = rawToken
           ? `<a class="btn" href="/g/${rawToken}">Bekijk mijn kadobon</a><p style="margin-top:14px;font-size:12px;">Bewaar deze link — dit is je enige toegang tot de kaart.</p>`
           : `<p>Er ging iets mis bij het ophalen van je kaartlink. Neem contact op met de zaak, onder vermelding van kaartnummer ${giftCard.giftCardNumber}.</p>`;
@@ -217,9 +219,40 @@ export class GiftCardCheckoutController {
   // Voorkomt spam van lege concept-kadobonnen en herhaalde
   // Mollie-betaalverzoeken vanaf één bron.
   @Throttle({ default: { limit: 10, ttl: 300000 } })
+  /**
+   * Bepaalt het merk (Het Strand / Zomers) server-side, aan de hand van
+   * de Origin/Referer-header — NIET puur aan de hand van `body.brand`,
+   * want dat is een gewoon veld in de POST-body en dus vrij aanpasbaar
+   * vanaf de client. De header wordt door de browser zelf gezet en is
+   * veel lastiger te vervalsen vanuit een normale bestelling.
+   *
+   * Herkent de header wél een van de twee bekende domeinen, dan WINT
+   * die altijd van `body.brand` (ook als ze toevallig verschillen —
+   * dat zou op een verkeerd geconfigureerde/verouderde widget-embed
+   * kunnen wijzen, en we willen sowieso nooit op de client-waarde
+   * vertrouwen als de header iets anders zegt).
+   *
+   * Is er geen bruikbare Origin/Referer (bijv. een directe server-naar-
+   * server testaanroep zonder browsercontext), dan valt dit terug op
+   * `body.brand` zelf — dat blijft dus wél werken voor legitieme
+   * interne tests, maar is nooit de eerste bron van waarheid zodra een
+   * herkenbare header aanwezig is.
+   */
+  private resolveBrandFromRequest(headers: Record<string, string | string[] | undefined>, bodyBrand: string | undefined): string | undefined {
+    const raw = headers['origin'] || headers['referer'] || headers['referrer'];
+    const headerValue = Array.isArray(raw) ? raw[0] : raw;
+    if (headerValue) {
+      const lower = headerValue.toLowerCase();
+      if (lower.includes('hetstrand.nl') || lower.includes('het-strand.nl')) return 'het-strand';
+      if (lower.includes('zomersbeachclub.nl')) return 'zomers';
+    }
+    return bodyBrand;
+  }
+
   @Post('buy/:orgId')
   async startPurchase(
     @Param('orgId') orgId: string,
+    @Headers() headers: Record<string, string | string[] | undefined>,
     @Body()
     body: {
       originalValue: number;
@@ -232,7 +265,8 @@ export class GiftCardCheckoutController {
     },
   ) {
     const publicAppUrl = process.env.PUBLIC_APP_URL || 'https://loyalty-platform-live.vercel.app';
-    return this.giftCards.startOnlinePurchase(orgId, body, publicAppUrl);
+    const brand = this.resolveBrandFromRequest(headers, body.brand);
+    return this.giftCards.startOnlinePurchase(orgId, { ...body, brand }, publicAppUrl);
   }
 
   // Bulk-aankoop: meerdere ontvangers/bedragen, één betaling — zelfde
@@ -241,6 +275,7 @@ export class GiftCardCheckoutController {
   @Post('buy-bulk/:orgId')
   async startBulkPurchase(
     @Param('orgId') orgId: string,
+    @Headers() headers: Record<string, string | string[] | undefined>,
     @Body()
     body: {
       brand?: string;
@@ -250,11 +285,12 @@ export class GiftCardCheckoutController {
     },
   ) {
     const publicAppUrl = process.env.PUBLIC_APP_URL || 'https://loyalty-platform-live.vercel.app';
-    return this.giftCards.startBulkOnlinePurchase(orgId, body, publicAppUrl);
+    const brand = this.resolveBrandFromRequest(headers, body.brand);
+    return this.giftCards.startBulkOnlinePurchase(orgId, { ...body, brand }, publicAppUrl);
   }
 
-  private async recoverRawToken(molliePaymentId: string): Promise<string | null> {
-    const payment = await this.mollie.getPayment(molliePaymentId);
+  private async recoverRawToken(locationSlug: string, molliePaymentId: string): Promise<string | null> {
+    const payment = await this.mollie.getPayment(locationSlug, molliePaymentId);
     const rawToken = (payment?.metadata as { rawToken?: string } | null)?.rawToken;
     return rawToken ?? null;
   }

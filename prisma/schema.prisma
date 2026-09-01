@@ -99,6 +99,10 @@ model Location {
   name           String
   // Onderscheidt de merken (Het Strand / Zomers) die dezelfde centrale
   // klantomgeving delen — bepaalt branding op de klantportal-pagina.
+  // Bepaalt óók welk Mollie-account (via de MOLLIE_API_KEY__<SLUG>
+  // environment variable, zie MollieService) online kadobon-betalingen
+  // voor deze locatie verwerkt.
+  mollieProfileId String? @map("mollie_profile_id") // Mollie's EIGEN profiel-ID (bijv. "pfl_xxx") — géén geheim, puur ter herkenning/rapportage. De echte API-sleutel staat bewust NOOIT in de database, alleen in environment variables.
   slug           String?  @unique
   timezone       String   @default("Europe/Amsterdam")
   createdAt      DateTime @default(now()) @map("created_at")
@@ -108,6 +112,7 @@ model Location {
   customerLocations   CustomerLocation[]
   timelineEvents      CustomerTimelineEvent[]
   favoriteOfCustomers Customer[]          @relation("FavoriteLocation")
+  giftCardsAsBrandOrigin GiftCard[]       @relation("GiftCardBrandLocation")
 
   // Module 2 — Transactions & POS
   posConnections PosConnection[]
@@ -2807,6 +2812,17 @@ model GiftCard {
   // MollieService voor de reden waarom nooit op de webhook-inhoud zelf
   // wordt vertrouwd, alleen op een verse statusopvraag bij Mollie.
   molliePaymentId     String? @map("mollie_payment_id")
+  // Welke website/merk deze ONLINE aankoop startte (Het Strand of
+  // Zomers) — bepaalt welk Mollie-account de betaling verwerkt en welk
+  // account een eventuele terugbetaling moet gebruiken. Bewust een
+  // ANDER veld dan locationIds hieronder: locationIds bepaalt waar de
+  // kaart INGEWISSELD mag worden (vaak leeg = organisatiebreed), terwijl
+  // brandLocationId vastlegt waar 'm VERKOCHT is — die twee lopen
+  // volledig uiteen bij online aankoop. Voor kaarten die niet online via
+  // Mollie zijn gekocht (kassa/admin) blijft dit veld leeg; dat is prima,
+  // want dan is er ook geen Mollie-betaling om aan te koppelen.
+  brandLocationId     String? @map("brand_location_id") @db.Uuid
+  brandLocation       Location? @relation("GiftCardBrandLocation", fields: [brandLocationId], references: [id])
   personalMessage     String? @map("personal_message")
   scheduledSendAt     DateTime? @map("scheduled_send_at") // geplande verzending (bijv. verjaardag) — zie GiftCardsService voor het bewuste, gedocumenteerde verzendmechanisme
 
