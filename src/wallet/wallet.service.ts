@@ -93,12 +93,17 @@ export class WalletService {
     occurredAt: Date;
     rewardCalculationId?: string;
   }) {
-    const wallet = await this.getOrCreateWallet(params.organizationId, params.customerId);
-
-    const creditRule = await this.prisma.creditRule.findFirst({
-      where: { organizationId: params.organizationId, isActive: true },
-      orderBy: { locationId: 'asc' }, // location-specific (non-null) sorts after null alphabetically is not guaranteed; acceptable simplification for MVP
-    });
+    // Wallet-opzoeking en geldigheidsregel-opzoeking zijn volledig
+    // onafhankelijk van elkaar — parallel laten lopen i.p.v. na elkaar
+    // scheelt één databaseheenenweer in deze toch al vrij lange keten
+    // (transactie boeken → puntenberekening → tegoed bijschrijven).
+    const [wallet, creditRule] = await Promise.all([
+      this.getOrCreateWallet(params.organizationId, params.customerId),
+      this.prisma.creditRule.findFirst({
+        where: { organizationId: params.organizationId, isActive: true },
+        orderBy: { locationId: 'asc' }, // location-specific (non-null) sorts after null alphabetically is not guaranteed; acceptable simplification for MVP
+      }),
+    ]);
     const validityDays = creditRule?.validityDays ?? DEFAULT_VALIDITY_DAYS;
     const expiresAt = new Date(params.occurredAt.getTime() + validityDays * 24 * 60 * 60 * 1000);
 

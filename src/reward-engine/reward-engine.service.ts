@@ -42,22 +42,33 @@ const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'frida
 export class RewardEngineService {
   constructor(private prisma: PrismaService) {}
 
-  async calculate(params: CalculateRewardParams) {
-    const trace: TraceEntry[] = [];
-    trace.push({ stage: 'eligibility', message: `Eligible amount: €${params.eligibleAmount.toFixed(2)}` });
-
-    const activeRules = await this.prisma.rewardRule.findMany({
+  /**
+   * Losgetrokken van calculate() zodat een aanroeper (zie
+   * TransactionsService.create()) deze opzoeking al kan starten VOORDAT
+   * de transactie zelf is weggeschreven — de regels hangen namelijk
+   * nergens van af behalve organizationId/locationId/occurredAt, dus er
+   * is geen reden om hier na elkaar op te wachten.
+   */
+  async fetchActiveRules(organizationId: string, locationId: string | undefined, occurredAt: Date) {
+    return this.prisma.rewardRule.findMany({
       where: {
-        organizationId: params.organizationId,
+        organizationId,
         isActive: true,
-        OR: [{ locationId: params.locationId ?? undefined }, { locationId: null }],
+        OR: [{ locationId: locationId ?? undefined }, { locationId: null }],
         AND: [
-          { OR: [{ activeFrom: null }, { activeFrom: { lte: params.occurredAt } }] },
-          { OR: [{ activeUntil: null }, { activeUntil: { gte: params.occurredAt } }] },
+          { OR: [{ activeFrom: null }, { activeFrom: { lte: occurredAt } }] },
+          { OR: [{ activeUntil: null }, { activeUntil: { gte: occurredAt } }] },
         ],
       },
       orderBy: { priority: 'desc' },
     });
+  }
+
+  async calculate(params: CalculateRewardParams, preFetchedRules?: RewardRule[]) {
+    const trace: TraceEntry[] = [];
+    trace.push({ stage: 'eligibility', message: `Eligible amount: €${params.eligibleAmount.toFixed(2)}` });
+
+    const activeRules = preFetchedRules ?? (await this.fetchActiveRules(params.organizationId, params.locationId, params.occurredAt));
 
     // -- Stage 1: percentage bucket -----------------------------------
     const percentageRules = activeRules.filter(

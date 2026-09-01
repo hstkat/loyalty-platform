@@ -34,8 +34,24 @@ export class TransactionsService {
   async create(orgId: string, dto: CreateTransactionDto) {
     const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
 
+    // Als er een customerId is opgegeven, moet die daadwerkelijk bij
+    // deze organisatie horen — anders meteen stoppen (fail fast), in
+    // plaats van straks stilzwijgend door te gaan met een ongeldige
+    // customerId totdat een diepere laag (wallet/reward-engine) het pas
+    // toevallig tegenkomt.
     const customer = dto.customerId
       ? await this.prisma.customer.findFirst({ where: { id: dto.customerId, organizationId: orgId } })
+      : null;
+    if (dto.customerId && !customer) {
+      throw new NotFoundException('Gast niet gevonden');
+    }
+
+    // De actieve spaarregels hangen alleen af van organizationId/
+    // locationId/occurredAt — die zijn nu al bekend, dus deze opzoeking
+    // kan gewoon parallel lopen met het wegschrijven van de transactie
+    // hieronder, in plaats van er sequentieel op te wachten.
+    const activeRulesPromise = customer
+      ? this.rewardEngine.fetchActiveRules(orgId, dto.locationId, occurredAt)
       : null;
 
     const transaction = await this.prisma.$transaction(async (tx) => {
@@ -123,17 +139,21 @@ export class TransactionsService {
     }
 
     let rewardResult = null;
-    if (dto.customerId && eligibleAmount > 0) {
-      rewardResult = await this.rewardEngine.calculate({
-        organizationId: orgId,
-        transactionId: transaction.id,
-        customerId: dto.customerId,
-        tierId: customer?.tierId ?? undefined,
-        locationId: dto.locationId,
-        eligibleAmount,
-        occurredAt,
-        isSimulation: false,
-      });
+    if (customer && eligibleAmount > 0) {
+      const activeRules = await activeRulesPromise!;
+      rewardResult = await this.rewardEngine.calculate(
+        {
+          organizationId: orgId,
+          transactionId: transaction.id,
+          customerId: dto.customerId!,
+          tierId: customer?.tierId ?? undefined,
+          locationId: dto.locationId,
+          eligibleAmount,
+          occurredAt,
+          isSimulation: false,
+        },
+        activeRules,
+      );
 
       // Module 3 (Wallet & Credit): a positive reward becomes an `earn`
       // ledger entry — the direct in-process equivalent of Wallet & Credit
@@ -142,7 +162,7 @@ export class TransactionsService {
       if (rewardResult.finalRewardAmount > 0) {
         await this.wallet.recordEarn({
           organizationId: orgId,
-          customerId: dto.customerId,
+          customerId: dto.customerId!,
           transactionId: transaction.id,
           amount: rewardResult.finalRewardAmount,
           occurredAt,
@@ -161,8 +181,8 @@ export class TransactionsService {
     // wat met de transactie zelf niets te maken heeft. Een eventuele
     // fout hier mag de transactie/puntenboeking nooit terugdraaien —
     // die is al veiliggesteld — dus alleen loggen, niet gooien.
-    if (dto.customerId) {
-      this.journeyEngine.handleEvent(orgId, 'transaction.completed', dto.customerId, transaction.id).catch((err) => {
+    if (customer) {
+      this.journeyEngine.handleEvent(orgId, 'transaction.completed', customer.id, transaction.id).catch((err) => {
         this.logger.error(
           `Journey-verwerking na transactie ${transaction.id} mislukt (transactie/punten zijn al veiliggesteld): ${err instanceof Error ? err.message : err}`,
         );
