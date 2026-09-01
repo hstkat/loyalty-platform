@@ -305,6 +305,13 @@
         <label>Wachtwoord (min. 10 tekens)</label>
         <input type="password" id="staff-password" autocomplete="new-password">
       </div>
+      <div class="form-field">
+        <label>Vaste locatie (optioneel)</label>
+        <select id="staff-home-location">
+          <option value="">Geen — medewerker kiest zelf per handeling</option>
+        </select>
+        <p class="sub" style="margin-top:4px;margin-bottom:0;">Vooral voor kassamedewerkers: alles wat ze doen (kadobonnen, tegoed, vouchers) wordt dan automatisch op deze locatie geboekt — ze kunnen zelf geen andere locatie kiezen.</p>
+      </div>
     </div>
 
     <div style="margin-top:18px;">
@@ -315,7 +322,9 @@
     <div style="margin-top:20px;display:flex;gap:10px;flex-wrap:wrap;">
       <button class="btn-primary" id="staff-save-btn">Medewerker aanmaken</button>
       <button class="btn-secondary" id="staff-cancel-edit-btn" style="display:none;">Annuleren</button>
+      <button class="btn-secondary" id="staff-reactivate-btn" style="display:none;">Account heractiveren</button>
       <button class="btn-danger" id="staff-deactivate-btn" style="display:none;">Account deactiveren</button>
+      <button class="btn-danger" id="staff-delete-btn" style="display:none;">Account definitief verwijderen</button>
     </div>
     <div class="status-line error" id="staff-form-error" style="margin-top:10px;margin-bottom:0;"></div>
     <div class="status-line" id="staff-form-success" style="margin-top:6px;margin-bottom:0;color:var(--teal-dark);"></div>
@@ -470,10 +479,11 @@
         : (u.lockedUntil && new Date(u.lockedUntil) > new Date()
           ? '<span class="action-badge update" style="margin-left:8px;">Tijdelijk geblokkeerd</span>'
           : '');
+      const locationBadge = u.homeLocation ? ' — 📍 vast bij ' + u.homeLocation.name : '';
       return '<div class="overview-tile" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">' +
         '<div>' +
           '<div style="font-family:\'Fraunces\',serif;color:var(--navy);font-size:15px;">' + name + statusBadge + '</div>' +
-          '<div style="font-size:12px;color:var(--muted);margin-top:2px;">' + u.email + ' — ' + u.permissions.length + ' recht(en) — laatst ingelogd: ' + (u.lastLoginAt ? formatDate(u.lastLoginAt) : 'nog niet') + '</div>' +
+          '<div style="font-size:12px;color:var(--muted);margin-top:2px;">' + u.email + ' — ' + u.permissions.length + ' recht(en) — laatst ingelogd: ' + (u.lastLoginAt ? formatDate(u.lastLoginAt) : 'nog niet') + locationBadge + '</div>' +
         '</div>' +
         '<div style="display:flex;gap:8px;">' +
           '<button class="btn-secondary" data-edit="' + u.id + '">Bewerken</button>' +
@@ -502,9 +512,12 @@
     document.getElementById('staff-email').disabled = false;
     document.getElementById('staff-password').value = '';
     document.getElementById('staff-password-field').style.display = 'flex';
+    document.getElementById('staff-home-location').value = '';
     document.getElementById('staff-save-btn').textContent = 'Medewerker aanmaken';
     document.getElementById('staff-cancel-edit-btn').style.display = 'none';
     document.getElementById('staff-deactivate-btn').style.display = 'none';
+    document.getElementById('staff-reactivate-btn').style.display = 'none';
+    document.getElementById('staff-delete-btn').style.display = 'none';
     document.getElementById('staff-form-error').textContent = '';
     document.getElementById('staff-form-success').textContent = '';
     renderPermissionGroups([]);
@@ -521,9 +534,12 @@
     document.getElementById('staff-email').value = user.email;
     document.getElementById('staff-email').disabled = true; // e-mailadres wijzigen kan niet — dat is de login-identiteit
     document.getElementById('staff-password-field').style.display = 'none'; // wachtwoord wijzigen gaat via het losse reset-paneel
+    document.getElementById('staff-home-location').value = user.homeLocationId || '';
     document.getElementById('staff-save-btn').textContent = 'Wijzigingen opslaan';
     document.getElementById('staff-cancel-edit-btn').style.display = 'inline-block';
     document.getElementById('staff-deactivate-btn').style.display = user.isActive ? 'inline-block' : 'none';
+    document.getElementById('staff-reactivate-btn').style.display = user.isActive ? 'none' : 'inline-block';
+    document.getElementById('staff-delete-btn').style.display = 'inline-block';
     document.getElementById('staff-form-error').textContent = '';
     document.getElementById('staff-form-success').textContent = '';
     renderPermissionGroups(user.permissions);
@@ -551,6 +567,7 @@
           firstName: firstName || undefined,
           lastName: document.getElementById('staff-lastname').value.trim() || undefined,
           permissions,
+          homeLocationId: document.getElementById('staff-home-location').value,
         });
         successEl.textContent = 'Wijzigingen opgeslagen.';
       } else {
@@ -563,6 +580,7 @@
           email, password, firstName,
           lastName: document.getElementById('staff-lastname').value.trim() || undefined,
           permissions,
+          homeLocationId: document.getElementById('staff-home-location').value || undefined,
         });
         successEl.textContent = 'Medewerker aangemaakt.';
       }
@@ -592,6 +610,44 @@
       document.getElementById('staff-form-error').textContent = err.message;
       deactivateBtn.disabled = false;
       deactivateBtn.textContent = originalDeactivateLabel;
+    }
+  });
+
+  document.getElementById('staff-reactivate-btn').addEventListener('click', async () => {
+    if (!editingUserId) return;
+    const { orgId } = getConfig();
+    const reactivateBtn = document.getElementById('staff-reactivate-btn');
+    reactivateBtn.disabled = true;
+    const originalReactivateLabel = reactivateBtn.textContent;
+    reactivateBtn.textContent = 'Bezig…';
+    try {
+      await apiPatch('/organizations/' + orgId + '/staff-users/' + editingUserId, { isActive: true });
+      resetForm();
+      await loadStaffUsers();
+    } catch (err) {
+      document.getElementById('staff-form-error').textContent = err.message;
+      reactivateBtn.disabled = false;
+      reactivateBtn.textContent = originalReactivateLabel;
+    }
+  });
+
+  document.getElementById('staff-delete-btn').addEventListener('click', async () => {
+    if (!editingUserId) return;
+    const user = currentUsers.find((u) => u.id === editingUserId);
+    if (!confirm(`Weet je zeker dat je "${user ? user.email : 'dit account'}" DEFINITIEF wil verwijderen? Dit kan niet ongedaan worden gemaakt. Overweeg "Deactiveren" als je twijfelt.`)) return;
+    const { orgId } = getConfig();
+    const deleteBtn = document.getElementById('staff-delete-btn');
+    deleteBtn.disabled = true;
+    const originalDeleteLabel = deleteBtn.textContent;
+    deleteBtn.textContent = 'Bezig…';
+    try {
+      await apiDelete('/organizations/' + orgId + '/staff-users/' + editingUserId + '/permanently');
+      resetForm();
+      await loadStaffUsers();
+    } catch (err) {
+      document.getElementById('staff-form-error').textContent = err.message;
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = originalDeleteLabel;
     }
   });
 
@@ -654,10 +710,20 @@
     renderPermissionGroups([]);
   }
 
-  function bootAfterLogin() {
+  async function loadLocationOptions() {
+    const { orgId } = getConfig();
+    const locations = await apiGet('/organizations/' + orgId + '/vouchers/locations');
+    const select = document.getElementById('staff-home-location');
+    select.innerHTML = '<option value="">Geen — medewerker kiest zelf per handeling</option>'
+      + locations.map((l) => '<option value="' + l.id + '">' + l.name + '</option>').join('');
+  }
+
+  async function bootAfterLogin() {
     els.statusLine.textContent = 'Laden…';
     els.statusLine.classList.remove('error');
-    loadPermissionCatalog().then(loadStaffUsers);
+    await loadLocationOptions();
+    await loadPermissionCatalog();
+    await loadStaffUsers();
   }
 </script>
 

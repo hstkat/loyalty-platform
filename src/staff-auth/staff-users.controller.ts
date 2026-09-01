@@ -23,6 +23,13 @@ class CreateStaffUserDto {
   @IsArray()
   @IsString({ each: true })
   permissions!: string[];
+
+  // Vaste locatie (kassamedewerker) — zie StaffUser.homeLocationId in
+  // schema.prisma voor wat dit precies afdwingt. Leeg = geen vaste
+  // locatie, medewerker kiest zelf (bijv. kantoor/administratie).
+  @IsOptional()
+  @IsString()
+  homeLocationId?: string;
 }
 
 class UpdateStaffUserDto {
@@ -42,6 +49,14 @@ class UpdateStaffUserDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  // Leeg-string wordt door de service opgevat als "koppeling verwijderen"
+  // (@IsOptional laat weglaten toe, wat "niet wijzigen" betekent — een
+  // los null-achtig ontkoppelen kan dus alleen door expliciet "" mee te
+  // sturen, zie staff-auth.service.ts updateUser()).
+  @IsOptional()
+  @IsString()
+  homeLocationId?: string;
 }
 
 class ResetPasswordDto {
@@ -94,5 +109,14 @@ export class StaffUsersController {
   @RequirePermissions('admin.write')
   deactivate(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: { staffContext?: { actorId: string | null } }) {
     return this.staffAuth.deactivateUser(orgId, id, req.staffContext?.actorId ?? '');
+  }
+
+  // Écht verwijderen (geen soft-delete) — apart route i.p.v. hetzelfde
+  // DELETE :id te hergebruiken, zodat een verwijdering nooit per ongeluk
+  // kan gebeuren via een client die alleen deactiveren bedoelde.
+  @Delete(':id/permanently')
+  @RequirePermissions('admin.write')
+  deletePermanently(@Param('orgId') orgId: string, @Param('id') id: string, @Req() req: { staffContext?: { actorId: string | null } }) {
+    return this.staffAuth.deleteUser(orgId, id, req.staffContext?.actorId ?? '');
   }
 }

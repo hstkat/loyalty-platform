@@ -155,6 +155,8 @@ export class StaffAuthService {
         lastLoginAt: true,
         lockedUntil: true,
         createdAt: true,
+        homeLocationId: true,
+        homeLocation: { select: { name: true, slug: true } },
       },
     });
     return users;
@@ -162,7 +164,7 @@ export class StaffAuthService {
 
   async createUser(
     orgId: string,
-    dto: { email: string; password: string; firstName: string; lastName?: string; permissions: string[] },
+    dto: { email: string; password: string; firstName: string; lastName?: string; permissions: string[]; homeLocationId?: string },
   ) {
     this.validatePermissions(dto.permissions);
     if (!dto.password || dto.password.length < 10) {
@@ -171,6 +173,15 @@ export class StaffAuthService {
 
     const existing = await this.prisma.staffUser.findFirst({ where: { organizationId: orgId, email: dto.email } });
     if (existing) throw new ConflictException('Er bestaat al een medewerker met dit e-mailadres');
+
+    // Bestaat de opgegeven locatie ook echt binnen deze organisatie? Een
+    // ongeldig/vreemd ID hier zou stilzwijgend een medewerker zonder
+    // werkende locatie-afdwinging opleveren — beter meteen duidelijk
+    // weigeren.
+    if (dto.homeLocationId) {
+      const location = await this.prisma.location.findFirst({ where: { id: dto.homeLocationId, organizationId: orgId } });
+      if (!location) throw new BadRequestException('Opgegeven locatie niet gevonden binnen deze organisatie');
+    }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
     const staffUser = await this.prisma.staffUser.create({
@@ -181,8 +192,9 @@ export class StaffAuthService {
         firstName: dto.firstName,
         lastName: dto.lastName,
         permissions: dto.permissions,
+        homeLocationId: dto.homeLocationId || null,
       },
-      select: { id: true, email: true, firstName: true, lastName: true, permissions: true, isActive: true },
+      select: { id: true, email: true, firstName: true, lastName: true, permissions: true, isActive: true, homeLocationId: true, homeLocation: { select: { name: true } } },
     });
     return staffUser;
   }
@@ -190,12 +202,27 @@ export class StaffAuthService {
   async updateUser(
     orgId: string,
     targetUserId: string,
-    dto: { firstName?: string; lastName?: string; permissions?: string[]; isActive?: boolean },
+    dto: { firstName?: string; lastName?: string; permissions?: string[]; isActive?: boolean; homeLocationId?: string },
   ) {
     if (dto.permissions) this.validatePermissions(dto.permissions);
 
     const target = await this.prisma.staffUser.findFirst({ where: { id: targetUserId, organizationId: orgId } });
     if (!target) throw new NotFoundException('Medewerker niet gevonden');
+
+    // Onderscheid tussen "veld niet meegegeven" (niet wijzigen) en
+    // "expliciet lege string meegegeven" (koppeling verwijderen) — bij
+    // een gewone update-aanroep die het veld gewoon weglaat, moet de
+    // bestaande homeLocationId onaangeroerd blijven.
+    let homeLocationIdUpdate: string | null | undefined = undefined;
+    if (dto.homeLocationId !== undefined) {
+      if (dto.homeLocationId === '') {
+        homeLocationIdUpdate = null;
+      } else {
+        const location = await this.prisma.location.findFirst({ where: { id: dto.homeLocationId, organizationId: orgId } });
+        if (!location) throw new BadRequestException('Opgegeven locatie niet gevonden binnen deze organisatie');
+        homeLocationIdUpdate = dto.homeLocationId;
+      }
+    }
 
     const updated = await this.prisma.staffUser.update({
       where: { id: targetUserId },
@@ -204,8 +231,9 @@ export class StaffAuthService {
         lastName: dto.lastName,
         permissions: dto.permissions,
         isActive: dto.isActive,
+        homeLocationId: homeLocationIdUpdate,
       },
-      select: { id: true, email: true, firstName: true, lastName: true, permissions: true, isActive: true },
+      select: { id: true, email: true, firstName: true, lastName: true, permissions: true, isActive: true, homeLocationId: true, homeLocation: { select: { name: true } } },
     });
 
     // Alle actieve sessies van dit account intrekken zodra iemand het
@@ -259,5 +287,23 @@ export class StaffAuthService {
       throw new ForbiddenException('Je kunt je eigen account niet deactiveren');
     }
     return this.updateUser(orgId, targetUserId, { isActive: false });
+  }
+
+  /**
+   * Écht verwijderen (geen soft-delete) — bedoeld voor accounts zonder
+   * relevante geschiedenis. Sessies gaan automatisch mee (cascade).
+   * Losse verwijzingen elders (performedByUserId e.d.) zijn bewust GEEN
+   * echte foreign-key-koppeling in dit platform, dus die blokkeren een
+   * verwijdering nooit — zie ook scripts/delete-staff-users-except.ts.
+   */
+  async deleteUser(orgId: string, targetUserId: string, requestingUserId: string) {
+    if (targetUserId === requestingUserId) {
+      throw new ForbiddenException('Je kunt je eigen account niet verwijderen');
+    }
+    const target = await this.prisma.staffUser.findFirst({ where: { id: targetUserId, organizationId: orgId } });
+    if (!target) throw new NotFoundException('Medewerker niet gevonden');
+
+    await this.prisma.staffUser.delete({ where: { id: targetUserId } });
+    return { deleted: true };
   }
 }
