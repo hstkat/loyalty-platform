@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { RewardEngineService } from '../reward-engine/reward-engine.service';
@@ -22,6 +22,8 @@ import { RefundTransactionDto, VoidTransactionDto } from './dto/refund-transacti
  */
 @Injectable()
 export class TransactionsService {
+  private readonly logger = new Logger(TransactionsService.name);
+
   constructor(
     private prisma: PrismaService,
     private rewardEngine: RewardEngineService,
@@ -150,11 +152,21 @@ export class TransactionsService {
     }
 
     // Module 8 (Automated Journeys): trigger any published journeys
-    // listening for transaction.completed — the direct in-process
-    // equivalent of consuming that event (same simplification pattern
-    // as the Reward Engine / Wallet calls above).
+    // listening for transaction.completed. Bewust NIET afgewacht (geen
+    // `await`) — de punten zijn op dit moment al volledig bijgeschreven
+    // (recordEarn hierboven is al klaar), dus de kassa hoeft nergens
+    // meer op te wachten. Journey-verwerking kan een pushbericht
+    // versturen (een externe netwerkaanroep, vaak de traagste stap in
+    // deze hele keten) — dat mocht eerder de kassa laten wachten op iets
+    // wat met de transactie zelf niets te maken heeft. Een eventuele
+    // fout hier mag de transactie/puntenboeking nooit terugdraaien —
+    // die is al veiliggesteld — dus alleen loggen, niet gooien.
     if (dto.customerId) {
-      await this.journeyEngine.handleEvent(orgId, 'transaction.completed', dto.customerId, transaction.id);
+      this.journeyEngine.handleEvent(orgId, 'transaction.completed', dto.customerId, transaction.id).catch((err) => {
+        this.logger.error(
+          `Journey-verwerking na transactie ${transaction.id} mislukt (transactie/punten zijn al veiliggesteld): ${err instanceof Error ? err.message : err}`,
+        );
+      });
     }
 
     return { transaction, reward: rewardResult };
