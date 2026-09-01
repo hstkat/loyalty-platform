@@ -605,7 +605,7 @@ export class CustomerPortalController {
       if (me.expiringSoon) {
         const d = new Date(me.expiringSoon.expiresAt).toLocaleDateString('nl-NL', { day: 'numeric', month: 'long' });
         document.getElementById('db-expiring').style.display = 'block';
-        document.getElementById('db-expiring').textContent = '€' + Number(me.expiringSoon.amount).toFixed(2) + ' Beach Credit verloopt op ' + d;
+        document.getElementById('db-expiring').textContent = Number(me.expiringSoon.amount).toLocaleString('nl-NL') + ' pt ' + CREDIT_LABEL.toLowerCase() + ' verloopt op ' + d;
       }
 
       const giftCardsEl = document.getElementById('db-giftcards');

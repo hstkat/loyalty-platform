@@ -5,7 +5,7 @@ import { ReserveRedemptionDto, ManualAdjustmentDto } from './dto/wallet.dto';
 import { ExchangeRateService } from './exchange-rate.service';
 
 const RESERVATION_TTL_MS = 5 * 60 * 1000; // 5 minutes, per Module 3 design doc section 6
-const DEFAULT_VALIDITY_DAYS = 60;
+const DEFAULT_VALIDITY_DAYS = 720; // 2 jaar — zelfde geldigheidstermijn als kadobonnen
 
 /**
  * Implements Module 3 (Wallet & Credit): the lot-based ledger, the earn
