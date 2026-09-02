@@ -9,6 +9,10 @@ interface AuditParams {
   entityId: string;
   action: 'create' | 'update' | 'delete' | 'merge' | 'anonymize' | 'export';
   actor: Pick<RequestContext, 'actorId' | 'actorType' | 'ipAddress'>;
+  // Locatie waarop deze mutatie geboekt is — zie schema-commentaar bij
+  // AuditLog.locationId. Optioneel: niet elke gelogde actie heeft een
+  // zinvolle locatiecontext.
+  locationId?: string | null;
   beforeState?: unknown;
   afterState?: unknown;
   reason?: string;
@@ -32,6 +36,7 @@ export class AuditService {
         action: params.action,
         actorType: params.actor.actorType,
         actorId: params.actor.actorId ?? undefined,
+        locationId: params.locationId ?? undefined,
         beforeState: (params.beforeState as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         afterState: (params.afterState as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         reason: params.reason,

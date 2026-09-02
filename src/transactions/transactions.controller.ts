@@ -4,6 +4,7 @@ import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RefundTransactionDto, VoidTransactionDto } from './dto/refund-transaction.dto';
 import { RequirePermissions } from '../common/decorators/permissions.decorator';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
+import { Ctx, RequestContext } from '../common/decorators/current-context.decorator';
 
 @Controller('organizations/:orgId/transactions')
 @UseGuards(PermissionsGuard)
@@ -12,8 +13,8 @@ export class TransactionsController {
 
   @Post()
   @RequirePermissions('transaction.write')
-  create(@Param('orgId') orgId: string, @Body() dto: CreateTransactionDto) {
-    return this.transactions.create(orgId, dto);
+  create(@Param('orgId') orgId: string, @Ctx() ctx: RequestContext, @Body() dto: CreateTransactionDto) {
+    return this.transactions.create(orgId, ctx, dto);
   }
 
   @Get()

@@ -33,6 +33,9 @@ export interface ActivateGiftCardDto {
   originalValue: number;
   purchaserCustomerId?: string;
   recipientCustomerId?: string;
+  // Optioneel — voor kassamedewerkers met een vaste locatie wordt dit
+  // altijd genegeerd/afgedwongen via resolveLocationId().
+  locationId?: string;
 }
 
 export interface RedeemGiftCardDto {
@@ -48,6 +51,9 @@ export interface RedeemGiftCardDto {
 export interface TopUpGiftCardDto {
   amount: number;
   reason?: string;
+  // Optioneel — voor kassamedewerkers met een vaste locatie wordt dit
+  // altijd genegeerd/afgedwongen via resolveLocationId().
+  locationId?: string;
 }
 
 export interface BlockGiftCardDto {
@@ -62,11 +68,17 @@ export interface ReplaceGiftCardDto {
 export interface AdjustGiftCardDto {
   amount: number; // positief of negatief
   reason: string;
+  // Optioneel — voor kassamedewerkers met een vaste locatie wordt dit
+  // altijd genegeerd/afgedwongen via resolveLocationId().
+  locationId?: string;
 }
 
 export interface RefundGiftCardDto {
   ledgerEntryId: string;
   reason?: string;
+  // Optioneel — voor kassamedewerkers met een vaste locatie wordt dit
+  // altijd genegeerd/afgedwongen via resolveLocationId().
+  locationId?: string;
 }
 
 // -- Bulk online aankoop: één Mollie-betaling, meerdere kadobonnen met

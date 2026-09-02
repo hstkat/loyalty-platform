@@ -255,6 +255,7 @@ export class LoyaltyCardsService {
       ipAddress: null,
       organizationId: card.organizationId,
       permissions: [],
+      homeLocationId: null,
     });
 
     const session = await this.guestAuth.issueSession(customer.id, 'card-claim');
@@ -277,6 +278,7 @@ export class LoyaltyCardsService {
       ipAddress: null,
       organizationId: card.organizationId,
       permissions: [],
+      homeLocationId: null,
     });
 
     return { claimed: true, customerId: customer.id };

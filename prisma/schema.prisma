@@ -70,8 +70,16 @@ model StaffUser {
   lastLoginAt           DateTime? @map("last_login_at")
   createdAt             DateTime  @default(now()) @map("created_at")
   updatedAt             DateTime  @updatedAt @map("updated_at")
+  // Vaste locatie voor kassamedewerkers — is dit gezet, dan bepaalt DEZE
+  // koppeling server-side en onwrikbaar alles wat de medewerker boekt
+  // (kadobon-uitgifte/-inwisseling, tegoed-afboeking, voucher-
+  // inwisseling, etc.), ongeacht wat een client als locationId meestuurt.
+  // Zie common/location-resolution.ts. Leeg = medewerker kiest zelf per
+  // handeling een locatie (kantoor/administratie-rol).
+  homeLocationId        String?   @map("home_location_id") @db.Uuid
 
   organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  homeLocation Location?      @relation(fields: [homeLocationId], references: [id])
   sessions     StaffSession[]
 
   @@unique([organizationId, email])
@@ -136,6 +144,10 @@ model Location {
   weatherForecasts       WeatherForecast[]
   forecastRuns           ForecastRun[]
   occupancyOpportunities OccupancyOpportunity[]
+
+  // Kassamedewerkers met deze locatie als vaste locatie (zie
+  // StaffUser.homeLocationId).
+  staffUsersWithHomeLocation StaffUser[]
 
   @@index([organizationId])
   @@map("locations")
@@ -646,6 +658,12 @@ model AuditLog {
   action         AuditAction
   actorType      ActorType   @map("actor_type")
   actorId        String?     @map("actor_id") @db.Uuid
+  // Locatie waarop deze mutatie geboekt is — bij kassamedewerkers met
+  // een vaste locatie (StaffUser.homeLocationId) is dit ALTIJD hun eigen
+  // locatie, nooit een door de client opgegeven waarde. Bewust een los
+  // scalair veld, geen Prisma-relatie — zelfde patroon als de
+  // performedByUserId-velden elders in dit schema.
+  locationId     String?     @map("location_id") @db.Uuid
   beforeState    Json?       @map("before_state")
   afterState     Json?       @map("after_state")
   reason         String?

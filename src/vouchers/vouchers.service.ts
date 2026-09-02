@@ -4,6 +4,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { MessagingService } from '../messaging/messaging.service';
 import { VoucherTemplateDto, IssueVoucherDto, RedeemVoucherDto } from './dto/vouchers.dto';
+import { resolveLocationId } from '../common/location-resolution';
+import type { RequestContext } from '../common/decorators/current-context.decorator';
 
 export interface ActorContext {
   actorType: 'staff' | 'system' | 'journey' | 'campaign' | 'reward_engine';
@@ -379,7 +381,8 @@ export class VouchersService {
     };
   }
 
-  async redeemVoucher(orgId: string, staffId: string, dto: RedeemVoucherDto) {
+  async redeemVoucher(orgId: string, ctx: RequestContext, dto: RedeemVoucherDto) {
+    const staffId = ctx.actorId ?? '';
     const voucher = await this.prisma.customerVoucher.findFirst({
       where: { organizationId: orgId, secureTokenHash: this.hashToken(dto.secureToken) },
       include: { voucherTemplate: true },
@@ -392,8 +395,13 @@ export class VouchersService {
     if (effectiveStatus === 'expired') throw new BadRequestException('Deze voucher is verlopen');
     if (effectiveStatus === 'scheduled') throw new BadRequestException('Deze voucher is nog niet geldig');
 
+    // Kassamedewerkers met een vaste locatie boeken de inwisseling
+    // altijd op hun eigen locatie — een eventueel meegegeven
+    // dto.locationId wordt genegeerd/afgedwongen (zie resolveLocationId).
+    const redeemLocationId = resolveLocationId(ctx, dto.locationId);
+
     const locationScope = voucher.voucherTemplate.locationIds;
-    if (locationScope.length > 0 && dto.locationId && !locationScope.includes(dto.locationId)) {
+    if (locationScope.length > 0 && redeemLocationId && !locationScope.includes(redeemLocationId)) {
       throw new ForbiddenException('Deze voucher is niet geldig op deze locatie');
     }
 
@@ -408,7 +416,7 @@ export class VouchersService {
         status: 'redeemed',
         redeemedAt: new Date(),
         transactionId: dto.transactionId,
-        locationId: dto.locationId,
+        locationId: redeemLocationId,
         redeemedByStaffId: staffId,
       },
     });
@@ -422,8 +430,9 @@ export class VouchersService {
       entityId: voucher.id,
       action: 'update',
       actor: { actorType: 'staff', actorId: staffId, ipAddress: null },
+      locationId: redeemLocationId,
       beforeState: { status: effectiveStatus },
-      afterState: { status: 'redeemed', locationId: dto.locationId, transactionId: dto.transactionId },
+      afterState: { status: 'redeemed', locationId: redeemLocationId, transactionId: dto.transactionId },
       reason: `Voucher "${voucher.voucherTemplate.name}" ingewisseld`,
     });
 

@@ -26,6 +26,10 @@ export interface RequestContext {
   actorType: 'staff' | 'system' | 'api_key' | 'customer_self_service';
   permissions: string[];
   ipAddress: string | null;
+  // Vaste locatie van de ingelogde medewerker (StaffUser.homeLocationId)
+  // — null voor accounts zonder vaste locatie. Zie
+  // common/location-resolution.ts voor hoe dit wordt afgedwongen.
+  homeLocationId: string | null;
 }
 
 export const Ctx = createParamDecorator((_data: unknown, ctx: ExecutionContext): RequestContext => {

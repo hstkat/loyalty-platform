@@ -6,6 +6,8 @@ import { WalletService } from '../wallet/wallet.service';
 import { JourneyEngineService } from '../journeys/journey-engine.service';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { RefundTransactionDto, VoidTransactionDto } from './dto/refund-transaction.dto';
+import { resolveLocationId } from '../common/location-resolution';
+import type { RequestContext } from '../common/decorators/current-context.decorator';
 
 /**
  * Implements the core of Module 2 (Transactions & POS) for manual/generic
@@ -31,8 +33,18 @@ export class TransactionsService {
     private journeyEngine: JourneyEngineService,
   ) {}
 
-  async create(orgId: string, dto: CreateTransactionDto) {
+  async create(orgId: string, ctx: RequestContext, dto: CreateTransactionDto) {
     const occurredAt = dto.occurredAt ? new Date(dto.occurredAt) : new Date();
+
+    // Kassamedewerkers met een vaste locatie (kassa@het-strand.nl,
+    // kassa@zomersbeachclub.nl) boeken ALTIJD op hun eigen locatie —
+    // een eventueel meegegeven dto.locationId wordt hier genegeerd/
+    // afgedwongen. Dit bepaalt zowel de transactie zelf als, via de
+    // koppeling hieronder, alle spaarpunten-boekingen die uit deze
+    // transactie voortkomen (verdienen én inwisselen lopen beide via
+    // deze transactie-locatie — WalletLedgerEntry heeft bewust geen
+    // eigen locationId, zie schema.prisma).
+    const locationId = resolveLocationId(ctx, dto.locationId);
 
     // Als er een customerId is opgegeven, moet die daadwerkelijk bij
     // deze organisatie horen — anders meteen stoppen (fail fast), in
@@ -51,14 +63,14 @@ export class TransactionsService {
     // kan gewoon parallel lopen met het wegschrijven van de transactie
     // hieronder, in plaats van er sequentieel op te wachten.
     const activeRulesPromise = customer
-      ? this.rewardEngine.fetchActiveRules(orgId, dto.locationId, occurredAt)
+      ? this.rewardEngine.fetchActiveRules(orgId, locationId, occurredAt)
       : null;
 
     const transaction = await this.prisma.$transaction(async (tx) => {
       const created = await tx.transaction.create({
         data: {
           organizationId: orgId,
-          locationId: dto.locationId,
+          locationId: locationId,
           source: 'manual',
           externalTransactionId: dto.externalTransactionId,
           customerId: dto.customerId,
@@ -121,7 +133,7 @@ export class TransactionsService {
             firstVisitAt: customer.firstVisitAt ?? occurredAt,
             lastVisitAt: occurredAt,
             averageVisitFrequencyDays: newAverageVisitFrequencyDays,
-            favoriteLocationId: customer.favoriteLocationId ?? dto.locationId,
+            favoriteLocationId: customer.favoriteLocationId ?? locationId,
           },
         });
       }
@@ -147,7 +159,7 @@ export class TransactionsService {
           transactionId: transaction.id,
           customerId: dto.customerId!,
           tierId: customer?.tierId ?? undefined,
-          locationId: dto.locationId,
+          locationId: locationId,
           eligibleAmount,
           occurredAt,
           isSimulation: false,

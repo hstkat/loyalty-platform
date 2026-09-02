@@ -173,6 +173,6 @@ export class VouchersController {
   @Post('redeem')
   @RequirePermissions('voucher.redeem')
   redeem(@Param('orgId') orgId: string, @Ctx() ctx: RequestContext, @Body() dto: RedeemVoucherBodyDto) {
-    return this.vouchers.redeemVoucher(orgId, ctx.actorId ?? '', dto);
+    return this.vouchers.redeemVoucher(orgId, ctx, dto);
   }
 }

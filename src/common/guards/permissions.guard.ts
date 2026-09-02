@@ -71,6 +71,7 @@ export class PermissionsGuard implements CanActivate {
       actorType: 'staff' as const,
       permissions: staffUser.permissions,
       ipAddress: request.ip ?? null,
+      homeLocationId: staffUser.homeLocationId ?? null,
     };
 
     return true;

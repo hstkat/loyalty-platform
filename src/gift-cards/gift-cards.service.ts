@@ -6,6 +6,7 @@ import { MailgunService } from '../common/mailgun.service';
 import { escapeHtml } from '../common/escape-html';
 import { MollieService } from '../common/mollie.service';
 import { RequestContext } from '../common/decorators/current-context.decorator';
+import { resolveLocationId } from '../common/location-resolution';
 import {
   IssueGiftCardDto,
   CreateBatchDto,
@@ -118,6 +119,13 @@ export class GiftCardsService {
     const token = this.generateToken();
     const giftCardNumber = 'GC-' + String(existingCount + 1).padStart(6, '0');
 
+    // Let op het onderscheid: dit bepaalt WIE/WAAR deze verkoop wordt
+    // geboekt (voor de ledger/rapportage) — niet waar de kaart
+    // INWISSELBAAR is. Kadobonnen blijven bewust org-breed geldig op
+    // beide locaties (dto.locationIds hieronder, ongemoeid), ook als een
+    // kassamedewerker met een vaste locatie 'm uitgeeft.
+    const issueLocationId = resolveLocationId(ctx, dto.locationIds?.[0]);
+
     // Als de medewerker alleen een vrij-tekst e-mailadres invulde (geen
     // expliciet gekozen gast via recipientCustomerId), toch proberen te
     // koppelen aan een bestaand account met dat e-mailadres — zelfde
@@ -152,7 +160,7 @@ export class GiftCardsService {
       data: {
         giftCardId: giftCard.id,
         organizationId: orgId,
-        locationId: dto.locationIds?.[0],
+        locationId: issueLocationId,
         entryType: 'sale',
         amount: dto.originalValue,
         performedByUserId: ctx.actorId ?? undefined,
@@ -166,6 +174,7 @@ export class GiftCardsService {
       entityId: giftCard.id,
       action: 'create',
       actor: ctx,
+      locationId: issueLocationId,
       afterState: { originalValue: dto.originalValue, giftCardNumber },
     });
 
@@ -732,6 +741,8 @@ export class GiftCardsService {
     if (giftCard.organizationId !== orgId) throw new NotFoundException('Kadobon niet gevonden');
     if (giftCard.status !== 'draft') throw new ConflictException('Deze kaart is al geactiveerd of niet meer geldig');
 
+    const activateLocationId = resolveLocationId(ctx, dto.locationId);
+
     await this.prisma.$transaction([
       this.prisma.giftCard.update({
         where: { id: giftCard.id },
@@ -750,6 +761,7 @@ export class GiftCardsService {
         data: {
           giftCardId: giftCard.id,
           organizationId: orgId,
+          locationId: activateLocationId,
           entryType: 'sale',
           amount: dto.originalValue,
           performedByUserId: ctx.actorId ?? undefined,
@@ -764,6 +776,7 @@ export class GiftCardsService {
       entityId: giftCard.id,
       action: 'update',
       actor: ctx,
+      locationId: activateLocationId,
       beforeState: { status: 'draft' },
       afterState: { status: 'active', originalValue: dto.originalValue },
       reason: 'Kaart geactiveerd',
@@ -786,10 +799,19 @@ export class GiftCardsService {
     if (giftCard.expiresAt && giftCard.expiresAt < new Date()) {
       throw new ConflictException(`Deze kaart is verlopen op ${giftCard.expiresAt.toLocaleDateString('nl-NL')} en kan niet meer worden ingewisseld`);
     }
+    // Kassamedewerkers met een vaste locatie wisselen ALTIJD in op hun
+    // eigen locatie — een eventueel meegegeven dto.locationId wordt
+    // genegeerd/afgedwongen (zie resolveLocationId). Dit is nadrukkelijk
+    // een ANDER concept dan de scope-check hieronder: díe bepaalt of
+    // deze kaart hier überhaupt inwisselbaar is (locationIds op de kaart
+    // zelf, bewust org-breed voor de meeste kaarten — "geldig op beide
+    // locaties").
+    const redeemLocationId = resolveLocationId(ctx, dto.locationId);
+
     // Locatiescope daadwerkelijk afdwingen — leeg array = organisatiebreed
     // (bruikbaar bij zowel Het Strand als Zomers), gevuld array beperkt
     // tot precies die locatie(s). Zelfde controle als bij vouchers.
-    if (giftCard.locationIds.length > 0 && dto.locationId && !giftCard.locationIds.includes(dto.locationId)) {
+    if (giftCard.locationIds.length > 0 && redeemLocationId && !giftCard.locationIds.includes(redeemLocationId)) {
       throw new ForbiddenException('Deze kadobon is niet geldig op deze locatie');
     }
     const currentBalance = Number(giftCard.currentBalance);
@@ -805,6 +827,7 @@ export class GiftCardsService {
         data: {
           giftCardId: giftCard.id,
           organizationId: orgId,
+          locationId: redeemLocationId,
           entryType: 'redeem',
           amount: -dto.amount,
           transactionId: dto.transactionId,
@@ -822,6 +845,7 @@ export class GiftCardsService {
       entityId: giftCard.id,
       action: 'update',
       actor: ctx,
+      locationId: redeemLocationId,
       beforeState: { currentBalance },
       afterState: { currentBalance: newBalance, status: newStatus },
       reason: dto.reason || 'Ingewisseld',
@@ -838,11 +862,13 @@ export class GiftCardsService {
     }
 
     const newBalance = Number(giftCard.currentBalance) + dto.amount;
+    const topUpLocationId = resolveLocationId(ctx, dto.locationId);
     await this.prisma.$transaction([
       this.prisma.giftCardLedgerEntry.create({
         data: {
           giftCardId: giftCard.id,
           organizationId: orgId,
+          locationId: topUpLocationId,
           entryType: 'top_up',
           amount: dto.amount,
           performedByUserId: ctx.actorId ?? undefined,
@@ -858,6 +884,7 @@ export class GiftCardsService {
       entityId: giftCard.id,
       action: 'update',
       actor: ctx,
+      locationId: topUpLocationId,
       beforeState: { currentBalance: Number(giftCard.currentBalance) },
       afterState: { currentBalance: newBalance },
       reason: dto.reason || 'Opgewaardeerd',
@@ -881,11 +908,13 @@ export class GiftCardsService {
     // via Mollie. Geld dat via Mollie is ontvangen, betaal je terug via
     // het Mollie-dashboard zelf; deze actie past alleen het kadobon-
     // saldo hier in het systeem aan.
+    const refundLocationId = resolveLocationId(ctx, dto.locationId);
     const reversal = await this.prisma.$transaction(async (tx) => {
       const entry = await tx.giftCardLedgerEntry.create({
         data: {
           giftCardId: giftCard.id,
           organizationId: orgId,
+          locationId: refundLocationId,
           entryType: 'reversal',
           amount: reversalAmount,
           performedByUserId: ctx.actorId ?? undefined,
@@ -906,6 +935,7 @@ export class GiftCardsService {
       entityId: giftCard.id,
       action: 'update',
       actor: ctx,
+      locationId: refundLocationId,
       beforeState: { currentBalance: Number(giftCard.currentBalance) },
       afterState: { currentBalance: newBalance },
       reason: 'Terugboeking',
@@ -919,11 +949,14 @@ export class GiftCardsService {
     const newBalance = Number(giftCard.currentBalance) + dto.amount;
     if (newBalance < 0) throw new BadRequestException('Correctie zou een negatief saldo veroorzaken');
 
+    const adjustmentLocationId = resolveLocationId(ctx, dto.locationId);
+
     await this.prisma.$transaction([
       this.prisma.giftCardLedgerEntry.create({
         data: {
           giftCardId: giftCard.id,
           organizationId: orgId,
+          locationId: adjustmentLocationId,
           entryType: 'adjustment',
           amount: dto.amount,
           performedByUserId: ctx.actorId ?? undefined,
@@ -939,6 +972,7 @@ export class GiftCardsService {
       entityId: giftCard.id,
       action: 'update',
       actor: ctx,
+      locationId: adjustmentLocationId,
       beforeState: { currentBalance: Number(giftCard.currentBalance) },
       afterState: { currentBalance: newBalance },
       reason: dto.reason,
