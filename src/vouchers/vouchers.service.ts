@@ -87,6 +87,30 @@ export class VouchersService {
     });
   }
 
+  /**
+   * Alleen mogelijk als er nog NOOIT een voucher van dit sjabloon is
+   * uitgegeven — anders zou je de geschiedenis van al bestaande,
+   * gastgebonden vouchers kapot maken (CustomerVoucher.voucherTemplateId
+   * heeft bewust geen cascade). Is dat wel het geval, dan is
+   * deactiveren (isActive: false, via updateTemplate hierboven) het
+   * juiste alternatief — dat blijft de bestaande vouchers gewoon tonen,
+   * voorkomt alleen nieuwe uitgifte.
+   */
+  async deleteTemplate(orgId: string, templateId: string) {
+    const existing = await this.prisma.voucherTemplate.findFirst({ where: { id: templateId, organizationId: orgId } });
+    if (!existing) throw new NotFoundException('Voucher-template niet gevonden');
+
+    const issuedCount = await this.prisma.customerVoucher.count({ where: { voucherTemplateId: templateId } });
+    if (issuedCount > 0) {
+      throw new BadRequestException(
+        `Dit sjabloon is al ${issuedCount}x uitgegeven en kan daarom niet verwijderd worden — deactiveer het in plaats daarvan (dan blijven bestaande vouchers gewoon zichtbaar, maar kan er niets nieuws meer mee worden uitgegeven).`,
+      );
+    }
+
+    await this.prisma.voucherTemplate.delete({ where: { id: templateId } });
+    return { deleted: true };
+  }
+
   async listTemplates(orgId: string, includeInactive = false) {
     return this.prisma.voucherTemplate.findMany({
       where: { organizationId: orgId, ...(includeInactive ? {} : { isActive: true }) },

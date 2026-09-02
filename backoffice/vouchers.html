@@ -542,11 +542,49 @@
           + '<div style="font-family:\'Fraunces\',serif;color:var(--navy);font-size:15px;">' + t.name + statusBadge + '</div>'
           + '<div style="font-size:12px;color:var(--muted);margin-top:2px;">' + t.benefit + ' — ' + validityLabel + ' — ' + locLabel + '</div>'
         + '</div>'
-        + '<button class="btn-secondary" data-edit-template="' + t.id + '">Bewerken</button>'
+        + '<div style="display:flex;gap:6px;">'
+          + '<button class="btn-secondary" data-edit-template="' + t.id + '">Bewerken</button>'
+          + '<button class="btn-secondary" data-toggle-template="' + t.id + '" data-currently-active="' + t.isActive + '">' + (t.isActive ? 'Deactiveren' : 'Activeren') + '</button>'
+          + '<button class="btn-danger" data-delete-template="' + t.id + '">Verwijderen</button>'
+        + '</div>'
       + '</div>';
     }).join('');
     listEl.querySelectorAll('[data-edit-template]').forEach((btn) => {
       btn.addEventListener('click', () => startEditTemplate(btn.getAttribute('data-edit-template')));
+    });
+    listEl.querySelectorAll('[data-toggle-template]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const currentlyActive = btn.getAttribute('data-currently-active') === 'true';
+        btn.disabled = true;
+        const originalLabel = btn.textContent;
+        btn.textContent = 'Bezig…';
+        try {
+          const { orgId } = getConfig();
+          await apiPatch('/organizations/' + orgId + '/vouchers/templates/' + btn.getAttribute('data-toggle-template'), { isActive: !currentlyActive });
+          loadAll();
+        } catch (err) {
+          alert('Wijzigen mislukt: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+        }
+      });
+    });
+    listEl.querySelectorAll('[data-delete-template]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Dit sjabloon definitief verwijderen? Dit kan alleen als er nog nooit een voucher van uitgegeven is.')) return;
+        btn.disabled = true;
+        const originalLabel = btn.textContent;
+        btn.textContent = 'Bezig…';
+        try {
+          const { orgId } = getConfig();
+          await apiDelete('/organizations/' + orgId + '/vouchers/templates/' + btn.getAttribute('data-delete-template'));
+          loadAll();
+        } catch (err) {
+          alert('Verwijderen mislukt: ' + err.message);
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+        }
+      });
     });
 
     const select = document.getElementById('issue-template-select');

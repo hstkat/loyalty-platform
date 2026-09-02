@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Min } from 'class-validator';
 import { VouchersService } from './vouchers.service';
 import { PermissionsGuard } from '../common/guards/permissions.guard';
@@ -126,6 +126,12 @@ export class VouchersController {
   @RequirePermissions('voucher.write')
   updateTemplate(@Param('orgId') orgId: string, @Param('templateId') templateId: string, @Body() dto: Partial<VoucherTemplateBodyDto>) {
     return this.vouchers.updateTemplate(orgId, templateId, dto);
+  }
+
+  @Delete('templates/:templateId')
+  @RequirePermissions('voucher.write')
+  deleteTemplate(@Param('orgId') orgId: string, @Param('templateId') templateId: string) {
+    return this.vouchers.deleteTemplate(orgId, templateId);
   }
 
   // -- Uitgifte & gastprofiel-acties -------------------------------------
