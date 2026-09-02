@@ -28,6 +28,8 @@ import type { RequestContext } from './decorators/current-context.decorator';
  * Nooit vertrouwen op een frontend-waarde als er een homeLocationId is
  * — dit is de server-side afdwinging die de opdracht expliciet vereist.
  */
+export function resolveLocationId(ctx: RequestContext, requestedLocationId: string): string;
+export function resolveLocationId(ctx: RequestContext, requestedLocationId: string | undefined | null): string | undefined;
 export function resolveLocationId(ctx: RequestContext, requestedLocationId: string | undefined | null): string | undefined {
   if (ctx.homeLocationId) {
     if (requestedLocationId && requestedLocationId !== ctx.homeLocationId) {
