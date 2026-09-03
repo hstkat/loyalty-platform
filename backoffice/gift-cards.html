@@ -65,6 +65,12 @@
   .issue-result { display: none; background: var(--cream); border: 1px solid var(--wood); border-radius: 10px; padding: 16px 18px; margin-top: 16px; font-size: 13px; }
   .issue-result.show { display: block; }
   .issue-result .warn { color: var(--coral); font-weight: 600; margin-bottom: 8px; }
+  .redeem-gc-result { display: none; background: var(--cream); border: 1px solid var(--wood); border-radius: 10px; padding: 16px 18px; margin-top: 16px; font-size: 13px; }
+  .redeem-gc-result.show { display: block; }
+  .redeem-gc-result.error {
+    color: var(--coral); font-weight: 600; background: rgba(232, 96, 74, 0.08);
+    border: 1px solid var(--coral-light);
+  }
 
   .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
   .toolbar input, .toolbar select { background: var(--white); border: 1px solid var(--line); color: var(--body-text); padding: 9px 12px; border-radius: 8px; font-size: 13px; }
@@ -351,6 +357,29 @@
       <button class="btn-primary" id="issue-btn">Kadobon aanmaken</button>
     </div>
     <div class="issue-result" id="issue-result"></div>
+  </div>
+
+  <!-- Kadobon afboeken — anoniem bruikbaar, geen gast of transactie
+       nodig. Verplaatst hierheen vanaf Spaarpunten, waar het los stond
+       van puntensparen en verwarrend was. De variant die WEL bij een
+       lopende puntentransactie hoort (samen op dezelfde rekening) staat
+       nog steeds op Spaarpunten, direct na het boeken. -->
+  <div class="panel">
+    <h2>🎁 Kadobon afboeken</h2>
+    <p class="sub">Scan of typ de kadobon-token — geen gast nodig, werkt volledig los van puntensparen.</p>
+    <div class="form-field" style="max-width: 420px;">
+      <label>Kadobon-token</label>
+      <input type="text" id="gc-redeem-token-input" placeholder="Scan of typ de kadobon-token…" autofocus>
+    </div>
+    <div id="gc-redeem-lookup-result" style="font-size:13px; color:var(--muted); margin-top:10px;"></div>
+    <div class="form-field" style="max-width: 220px; margin-top: 12px;">
+      <label>Te besteden bedrag (€)</label>
+      <input type="number" id="gc-redeem-amount-input" placeholder="0,00" min="0.01" step="0.01" disabled>
+    </div>
+    <div style="margin-top: 16px;">
+      <button class="btn-primary" id="gc-redeem-confirm-btn" disabled>Kadobon-betaling bevestigen</button>
+    </div>
+    <div class="redeem-gc-result" id="gc-redeem-result"></div>
   </div>
 
   <div class="panel">
@@ -860,6 +889,82 @@
 </html>`);
     printWindow.document.close();
   }
+
+  // -- Kadobon afboeken — losse token-opzoek + inwissel-flow, volledig
+  // onafhankelijk van een gast of andere transactie (zie comment bij
+  // het paneel hierboven). ------------------------------------------
+
+  const gcRedeemEls = {
+    tokenInput: document.getElementById('gc-redeem-token-input'),
+    lookupResult: document.getElementById('gc-redeem-lookup-result'),
+    amountInput: document.getElementById('gc-redeem-amount-input'),
+    confirmBtn: document.getElementById('gc-redeem-confirm-btn'),
+    resultDiv: document.getElementById('gc-redeem-result'),
+  };
+  let gcRedeemToken = null;
+  let gcRedeemBalance = 0;
+  let gcRedeemLookupTimeout = null;
+
+  gcRedeemEls.tokenInput.addEventListener('input', () => {
+    clearTimeout(gcRedeemLookupTimeout);
+    const token = gcRedeemEls.tokenInput.value.trim();
+    gcRedeemEls.amountInput.disabled = true;
+    gcRedeemEls.confirmBtn.disabled = true;
+    gcRedeemEls.resultDiv.classList.remove('show', 'error');
+    if (!token) { gcRedeemEls.lookupResult.textContent = ''; return; }
+    gcRedeemLookupTimeout = setTimeout(async () => {
+      gcRedeemEls.lookupResult.textContent = 'Kaart controleren…';
+      try {
+        const { orgId } = getConfig();
+        const card = await apiGet('/organizations/' + orgId + '/gift-cards/lookup/' + encodeURIComponent(token));
+        if (card.status !== 'active' && card.status !== 'partially_redeemed') {
+          gcRedeemEls.lookupResult.innerHTML = '<span class="warn">Deze kaart heeft status "' + card.status + '" en kan niet gebruikt worden.</span>';
+          return;
+        }
+        gcRedeemToken = token;
+        gcRedeemBalance = card.currentBalance;
+        gcRedeemEls.lookupResult.textContent = 'Kaart ' + card.giftCardNumber + ' — beschikbaar saldo: €' + Number(card.currentBalance).toFixed(2);
+        gcRedeemEls.amountInput.disabled = false;
+        gcRedeemEls.amountInput.max = card.currentBalance;
+        gcRedeemEls.amountInput.focus();
+      } catch {
+        gcRedeemEls.lookupResult.innerHTML = '<span class="warn">Kaart niet gevonden.</span>';
+      }
+    }, 300);
+  });
+
+  gcRedeemEls.amountInput.addEventListener('input', () => {
+    const amount = parseFloat(gcRedeemEls.amountInput.value);
+    gcRedeemEls.confirmBtn.disabled = !gcRedeemToken || !amount || amount <= 0 || amount > gcRedeemBalance;
+  });
+
+  gcRedeemEls.confirmBtn.addEventListener('click', async () => {
+    if (!gcRedeemToken) return;
+    const amount = parseFloat(gcRedeemEls.amountInput.value);
+    gcRedeemEls.confirmBtn.disabled = true;
+    gcRedeemEls.confirmBtn.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      const result = await apiPost('/organizations/' + orgId + '/gift-cards/redeem', {
+        token: gcRedeemToken,
+        amount,
+        reason: 'Betaling aan kassa',
+      });
+      gcRedeemEls.resultDiv.classList.remove('error');
+      gcRedeemEls.resultDiv.classList.add('show');
+      gcRedeemEls.resultDiv.textContent = `€${amount.toFixed(2)} afgeboekt — resterend saldo: €${result.remainingBalance.toFixed(2)}.`;
+      gcRedeemEls.amountInput.value = '';
+      gcRedeemEls.amountInput.disabled = true;
+      gcRedeemBalance = result.remainingBalance;
+      gcRedeemEls.lookupResult.textContent = 'Kaart ' + result.giftCardNumber + ' — beschikbaar saldo: €' + result.remainingBalance.toFixed(2);
+    } catch (err) {
+      gcRedeemEls.resultDiv.classList.add('show', 'error');
+      gcRedeemEls.resultDiv.textContent = '⚠ Betaling mislukt — er is niets afgeboekt. ' + err.message;
+      gcRedeemEls.confirmBtn.disabled = false;
+    } finally {
+      gcRedeemEls.confirmBtn.textContent = 'Kadobon-betaling bevestigen';
+    }
+  });
 
   function bootAfterLogin() {
     loadReport();
