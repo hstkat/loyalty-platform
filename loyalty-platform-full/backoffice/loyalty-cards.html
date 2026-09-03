@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strand tegoed — Loyaltykaarten</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a;
+    --body-text: #3a4a5c; --muted: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
+    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45;
+    --line: rgba(27, 58, 92, 0.12); --shadow: 0 2px 14px rgba(27, 58, 92, 0.07);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cream); color: var(--body-text); font-family: 'Inter', sans-serif; min-height: 100vh; }
+  .accent-line { height: 3px; background: linear-gradient(90deg, var(--teal), var(--coral)); }
+  header { background: var(--navy-dark); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .header-inner { max-width: 1100px; margin: 0 auto; padding: 24px 32px; display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px; }
+  .brand-logo { display: block; margin: 0 0 8px; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 26px; margin: 0; letter-spacing: -0.01em; color: var(--white); }
+  nav a { color: rgba(240,244,247,0.6); text-decoration: none; font-size: 12px; margin-left: 16px; letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid transparent; padding-bottom: 3px; }
+  nav a:hover, nav a:focus-visible { color: var(--white); border-color: var(--coral); }
+  nav a.active { color: var(--coral-light); }
+  .config-toggle { background: none; border: 1px solid rgba(240,244,247,0.25); color: rgba(240,244,247,0.7); font-family: 'Inter', sans-serif; font-size: 12px; padding: 8px 14px; border-radius: 20px; cursor: pointer; }
+  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--white); }
+  #config-panel { max-width: 1100px; margin: 0 auto; padding: 0 32px 20px; display: none; gap: 12px; flex-wrap: wrap; }
+  #config-panel.open { display: flex; }
+  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; flex: 1; min-width: 220px; }
+  #config-panel input { background: var(--white); border: 1px solid var(--line); color: var(--body-text); padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px; }
+  #config-panel button { align-self: flex-end; background: var(--coral); color: var(--white); border: none; padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  main { max-width: 1100px; margin: 0 auto; padding: 32px 32px 80px; }
+  .status-line { font-size: 13px; color: var(--muted); margin-bottom: 20px; min-height: 18px; }
+  .status-line.error { color: var(--coral); }
+
+  .panel { background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 18px; padding: 26px 30px; margin-bottom: 24px; }
+  .panel h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0 0 6px; color: var(--navy); }
+  .panel .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; line-height: 1.6; }
+
+  .form-row { display: grid; grid-template-columns: 2fr 1fr auto; gap: 12px; align-items: end; }
+  @media (max-width: 640px) { .form-row { grid-template-columns: 1fr; } }
+  .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .form-field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-field input { background: var(--cream); border: 1px solid var(--line); color: var(--body-text); padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px; }
+  .btn-primary { background: var(--coral); color: var(--white); border: none; padding: 11px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .btn-primary:disabled { opacity: 0.5; cursor: default; }
+  .btn-secondary { background: none; border: 1px solid var(--line); color: var(--muted); padding: 9px 16px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .btn-danger { background: none; border: 1px solid var(--coral); color: var(--coral); padding: 9px 16px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+
+  .batch-result { display: none; background: var(--cream); border: 1px solid var(--wood); border-radius: 10px; padding: 18px; margin-top: 16px; }
+  .batch-result.show { display: block; }
+  .batch-result .warn { color: var(--coral); font-size: 12px; margin-bottom: 10px; font-weight: 600; }
+
+  .toolbar { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+  .toolbar input, .toolbar select { background: var(--white); border: 1px solid var(--line); color: var(--body-text); padding: 9px 12px; border-radius: 8px; font-size: 13px; }
+
+  .card-list { display: flex; flex-direction: column; gap: 8px; }
+  .card-row { background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; padding: 12px 16px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; cursor: pointer; }
+  .card-row:hover { border-color: var(--teal); }
+  .card-row .number { font-family: 'Fraunces', serif; color: var(--navy); font-size: 14px; }
+  .card-row .customer { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .status-pill { font-size: 10px; padding: 3px 10px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.03em; }
+  .status-pill.unclaimed { background: var(--line); color: var(--muted); }
+  .status-pill.active { background: rgba(73,122,157,0.12); color: var(--teal-dark); }
+  .status-pill.blocked, .status-pill.lost { background: rgba(232,96,74,0.15); color: var(--coral); }
+  .status-pill.replaced, .status-pill.expired { background: rgba(196,122,69,0.12); color: var(--wood); }
+
+  .detail-panel { display: none; }
+  .detail-panel.show { display: block; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 20px; }
+  .detail-tile { background: var(--cream); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; }
+  .detail-tile .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px; }
+  .detail-tile .value { font-family: 'Fraunces', serif; font-size: 15px; color: var(--navy); }
+  .action-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+
+  .empty-note { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
+
+  .modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(14,28,42,0.6); z-index: 100;
+    align-items: center; justify-content: center; padding: 20px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal { background: var(--white); border-radius: 18px; padding: 28px 30px; max-width: 480px; width: 100%; max-height: 85vh; overflow-y: auto; }
+  .modal h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0 0 6px; color: var(--navy); }
+  .modal .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+  .modal .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .modal .form-field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .modal .form-field input { background: var(--cream); border: 1px solid var(--line); color: var(--body-text); padding: 10px 12px; border-radius: 8px; font-size: 14px; }
+
+  .autocomplete-field { position: relative; }
+  .autocomplete-field input {
+    width: 100%; background: var(--cream); border: 1px solid var(--line); color: var(--body-text);
+    padding: 11px 14px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
+  }
+  .autocomplete-list {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 10;
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 8px;
+    max-height: 260px; overflow-y: auto;
+  }
+  .autocomplete-list.open { display: block; }
+  .autocomplete-list .option { padding: 10px 14px; cursor: pointer; font-size: 14px; border-bottom: 1px solid var(--line); }
+  .autocomplete-list .option:last-child { border-bottom: none; }
+  .autocomplete-list .option:hover, .autocomplete-list .option.highlighted { background: var(--cream); }
+  .autocomplete-list .option .meta { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .autocomplete-list .no-match { padding: 10px 14px; color: var(--muted); font-size: 13px; }
+
+  .selected-customer-box {
+    display: none; margin-top: 12px; background: var(--cream); border: 1px solid var(--teal-light);
+    border-radius: 8px; padding: 12px 14px; font-size: 13px;
+  }
+  .selected-customer-box.show { display: block; }
+  .selected-customer-box .name { font-family: 'Fraunces', serif; color: var(--navy); font-size: 15px; }
+  .selected-customer-box .meta { color: var(--muted); margin-top: 4px; line-height: 1.6; }
+  footer { max-width: 1100px; margin: 0 auto; padding: 24px 32px 40px; font-size: 12px; color: var(--muted); }
+</style>
+<style>nav a[data-page] { display: none; }</style>
+</head>
+<body>
+<div id="staff-login-overlay" style="position:fixed;inset:0;background:#0e1c2ae6;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,'Inter',sans-serif;">
+  <div style="width:100%;max-width:360px;background:#f6f3ec;border-radius:16px;padding:32px 28px;">
+    <h2 style="font-family:Georgia,serif;font-size:20px;color:#1b3a5c;margin:0 0 6px;">Inloggen</h2>
+    <p style="font-size:13px;color:#7a8ea0;margin:0 0 20px;">Log in met je backoffice-account.</p>
+    <input type="email" id="staff-login-email" name="staff-login-email" placeholder="E-mailadres" autocomplete="username" style="width:100%;padding:11px 14px;border-radius:8px;border:1px solid rgba(27,58,92,0.12);background:#fff;font-size:14px;margin-bottom:10px;box-sizing:border-box;">
+    <input type="password" id="staff-login-password" name="staff-login-password" placeholder="Wachtwoord" autocomplete="current-password" style="width:100%;padding:11px 14px;border-radius:8px;border:1px solid rgba(27,58,92,0.12);background:#fff;font-size:14px;margin-bottom:14px;box-sizing:border-box;">
+    <button id="staff-login-btn" style="width:100%;padding:13px;border-radius:8px;border:none;background:#e8604a;color:#fff;font-weight:600;font-size:14px;cursor:pointer;">Inloggen</button>
+    <div id="staff-login-error" style="color:#e8604a;font-size:12px;margin-top:10px;min-height:14px;"></div>
+  </div>
+</div>
+<script>
+  function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  function setStaffToken(t) { localStorage.setItem('staff_token', t); }
+  function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
+  function staffLogout() { clearStaffToken(); location.reload(); }
+
+  function showStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'flex'; }
+  function hideStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'none'; }
+
+  // Welke permissie geeft toegang tot welk tabblad — moet in lockstep
+  // blijven met de @RequirePermissions(...) op de belangrijkste
+  // endpoints van elke pagina. Een tabblad verbergen is puur UX (geen
+  // beveiliging op zich — de ECHTE afscherming zit server-side in
+  // PermissionsGuard); dit voorkomt alleen dat iemand op een tabblad
+  // klikt en daar meteen een foutmelding krijgt.
+  const NAV_PAGE_PERMISSION = {
+    dashboard: 'analytics.read',
+    customers: 'customer.read',
+    campaigns: 'campaign.read',
+    transacties: 'transaction.write',
+    cadeaus: 'credit_rules.read',
+    inschrijven: 'customer.write',
+    import: 'import.read',
+    'loyalty-cards': 'loyalty_card.read',
+    instellingen: 'admin.read',
+    medewerkers: 'admin.read',
+    'gift-cards': 'gift_card.read',
+    vouchers: 'voucher.read',
+    financieel: 'finance.read',
+  };
+
+  // Alle tabbladen staan standaard op display:none via CSS (zie de
+  // <style>-regel in <head>) — dit toont alleen de toegestane, in
+  // plaats van dat we eerst alles laten zien en dan verkeerde weer
+  // wegtoveren (dat gaf een storende flits van tabbladen die er niet
+  // horen te zijn).
+  function applyNavPermissions(permissions) {
+    localStorage.setItem('staff_permissions', JSON.stringify(permissions));
+    document.querySelectorAll('nav [data-page]').forEach(function (link) {
+      const required = NAV_PAGE_PERMISSION[link.getAttribute('data-page')];
+      link.style.display = (!required || permissions.indexOf(required) !== -1) ? 'inline' : 'none';
+    });
+  }
+
+  // Terugvalmechanisme: als het ophalen van de rechten om wat voor
+  // reden dan ook mislukt (tijdelijke netwerkstoring, trage server,
+  // een endpoint dat nog niet overal is uitgerold), mag het menu NOOIT
+  // permanent leeg blijven staan — dat is erger dan te veel tonen. In
+  // het ergste geval ziet iemand een tabblad waar ze geen rechten voor
+  // hebben en krijgen ze bij een klik een nette foutmelding; de ECHTE
+  // beveiliging blijft altijd server-side (PermissionsGuard) staan,
+  // ongeacht wat hier in de UI zichtbaar is.
+  function showAllNavTabs() {
+    document.querySelectorAll('nav [data-page]').forEach(function (link) { link.style.display = 'inline'; });
+  }
+
+  // Gecachte rechten van de vorige keer meteen (synchroon, geen
+  // netwerk-vertraging) toepassen zodat het menu vanaf de eerste
+  // seconde al (bijna altijd) correct staat — de live servercall
+  // hieronder ververst dit daarna alsnog, voor het geval rechten
+  // intussen gewijzigd zijn.
+  function applyCachedPermissionsImmediately() {
+    try {
+      const cached = JSON.parse(localStorage.getItem('staff_permissions') || '[]');
+      if (cached.length) applyNavPermissions(cached);
+    } catch (err) { /* geen geldige cache — wacht op de servercall hieronder */ }
+  }
+
+  async function fetchAndApplyOwnPermissions() {
+    const { apiBase, orgId } = getConfig();
+    // Als de servercall te lang duurt (trage verbinding), na 6 seconden
+    // toch maar alles tonen i.p.v. de medewerker met een leeg menu te
+    // laten zitten.
+    const fallbackTimer = setTimeout(showAllNavTabs, 6000);
+    try {
+      const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/me', {
+        headers: { Authorization: 'Bearer ' + getStaffToken() },
+      });
+      clearTimeout(fallbackTimer);
+      if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); return; }
+      if (!res.ok) { showAllNavTabs(); return; }
+      const data = await res.json();
+      applyNavPermissions(data.permissions || []);
+    } catch (err) {
+      clearTimeout(fallbackTimer);
+      showAllNavTabs();
+    }
+  }
+
+  document.getElementById('staff-login-btn').addEventListener('click', async function () {
+    const errorEl = document.getElementById('staff-login-error');
+    errorEl.textContent = '';
+    const email = document.getElementById('staff-login-email').value.trim();
+    const password = document.getElementById('staff-login-password').value;
+    if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
+    const { apiBase, orgId } = getConfig();
+    const loginBtn = document.getElementById('staff-login-btn');
+    loginBtn.disabled = true;
+    const originalLoginLabel = loginBtn.textContent;
+    loginBtn.textContent = 'Bezig…';
+    try {
+      const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password }),
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) { errorEl.textContent = data.message || 'Inloggen mislukt.'; return; }
+      setStaffToken(data.token);
+      if (data.staffUser && data.staffUser.permissions) {
+        applyNavPermissions(data.staffUser.permissions);
+      } else {
+        showAllNavTabs();
+      }
+      hideStaffLoginOverlay();
+      bootAfterLogin();
+    } catch (err) {
+      errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = originalLoginLabel;
+    }
+  });
+
+  // Pas checken/booten nadat de HELE pagina (inclusief het script
+  // onderaan dat bootAfterLogin() definieert) is ingeladen — anders
+  // bestaat die functie nog niet op het moment van deze check.
+  window.addEventListener('DOMContentLoaded', function () {
+    if (getStaffToken()) {
+      hideStaffLoginOverlay();
+      applyCachedPermissionsImmediately();
+      fetchAndApplyOwnPermissions();
+      bootAfterLogin();
+    } else {
+      showStaffLoginOverlay();
+    }
+  });
+</script>
+
+<header>
+  <div class="header-inner">
+    <div>
+      <img class="brand-logo" data:image/png;base64,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 alt="Zomers Beachclub &amp; Brewery / Het Strand" height="34">
+      <h1>Loyaltykaarten</h1>
+    </div>
+    <div>
+      <nav>
+        <a href="dashboard.html" data-page="dashboard">Overzicht</a>
+        <a href="transacties.html" data-page="transacties">Spaarpunten</a>
+        <a href="gift-cards.html" data-page="gift-cards">Kadobonnen</a>
+        <a href="vouchers.html" data-page="vouchers">Vouchers</a>
+        <a href="customers.html" data-page="customers">Gasten</a>
+        <a href="campaigns.html" data-page="campaigns">Campagnes</a>
+        <a href="cadeaus.html" data-page="cadeaus">Beloningen</a>
+        <a href="medewerkers.html" data-page="medewerkers">Medewerkers</a>
+        <a href="#" class="active" aria-current="page" data-page="loyalty-cards">Kaarten</a>
+        <a href="financieel.html" data-page="financieel">Financieel</a>
+        <a href="inschrijven.html" data-page="inschrijven">Inschrijven</a>
+        <a href="import.html" data-page="import">Import</a>
+        <a href="instellingen.html" data-page="instellingen">Instellingen</a>
+      </nav>
+      <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+      <button class="config-toggle" id="staff-logout-btn" style="margin-left:8px;" onclick="staffLogout()">Uitloggen</button>
+    </div>
+  </div>
+</header>
+<div class="accent-line"></div>
+
+<div id="config-panel">
+  <label>API-basis-URL<input type="text" id="api-base" placeholder="https://loyalty-platform-live.vercel.app"></label>
+  <label>Organisatie-ID<input type="text" id="org-id" placeholder="ab51a93c-..."></label>
+  <button id="config-save">Opslaan &amp; laden</button>
+</div>
+
+<main>
+  <p class="status-line" id="status-line">Kaarten laden…</p>
+
+  <div class="panel">
+    <h2>Nieuwe batch kaarten laten drukken</h2>
+    <p class="sub">Genereert unieke, veilige QR-tokens — geen persoonsgegevens erin. De tokens zijn na deze stap nooit meer op te vragen: download de lijst meteen.</p>
+    <div class="form-row">
+      <div class="form-field"><label>Batchnaam</label><input type="text" id="batch-name" placeholder="Bijv. SUMMER-2026-01"></div>
+      <div class="form-field"><label>Aantal kaarten</label><input type="number" id="batch-qty" value="100" min="1" max="5000"></div>
+      <button class="btn-primary" id="create-batch-btn">Batch genereren</button>
+    </div>
+    <div class="batch-result" id="batch-result"></div>
+  </div>
+
+  <div class="panel">
+    <h2>Kaarten</h2>
+    <div class="toolbar">
+      <input type="text" id="search-input" placeholder="Zoek op kaartnummer, naam, e-mail of telefoon…" style="min-width: 280px;">
+      <select id="status-filter">
+        <option value="">Alle statussen</option>
+        <option value="unclaimed">Niet geactiveerd</option>
+        <option value="active">Actief</option>
+        <option value="blocked">Geblokkeerd</option>
+        <option value="lost">Verloren</option>
+        <option value="replaced">Vervangen</option>
+        <option value="expired">Verlopen</option>
+      </select>
+      <button class="btn-secondary" id="refresh-btn">Vernieuwen</button>
+    </div>
+    <div class="card-list" id="card-list"></div>
+  </div>
+
+  <div class="panel detail-panel" id="detail-panel">
+    <h2 id="detail-title">Kaartdetail</h2>
+    <div class="detail-grid" id="detail-grid"></div>
+    <div class="action-row" id="action-row"></div>
+  </div>
+
+  <!-- Zoekvenster voor "koppelen aan bestaande gast" — vervangt een reeks losse prompt()'s -->
+  <div class="modal-overlay" id="link-modal-overlay">
+    <div class="modal">
+      <h2>Gast zoeken om te koppelen</h2>
+      <p class="sub">Zoek op naam, e-mailadres, telefoonnummer, of een ander kaartnummer.</p>
+      <div class="autocomplete-field">
+        <input type="text" id="link-search-input" placeholder="Typ om te zoeken…" autocomplete="off">
+        <div class="autocomplete-list" id="link-autocomplete-list"></div>
+      </div>
+      <div id="link-selected-customer" class="selected-customer-box"></div>
+      <div class="form-field" style="margin-top:14px;">
+        <label>Token van de fysieke kaart</label>
+        <input type="text" id="link-token-input" placeholder="Scan of typ de token van de kaart">
+      </div>
+      <div class="action-row" style="margin-top:18px;">
+        <button class="btn-primary" id="link-confirm-btn" disabled>Koppelen</button>
+        <button class="btn-secondary" id="link-cancel-btn">Annuleren</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>Elke kaart is alleen een identifier — het saldo blijft altijd bij de gekoppelde gast, nooit bij de kaart zelf.</footer>
+
+<script>
+  const DEFAULTS = { apiBase: 'https://loyalty-platform-live.vercel.app', orgId: 'ab51a93c-43a2-40cd-8635-f8522f68a8c8' };
+  const PERMISSIONS = 'loyalty_card.read,loyalty_card.write,customer.read';
+
+  function getConfig() {
+    return {
+      apiBase: localStorage.getItem('bc_api_base') || DEFAULTS.apiBase,
+      orgId: localStorage.getItem('bc_org_id') || DEFAULTS.orgId,
+    };
+  }
+
+  async function apiGet(path) {
+    const { apiBase } = getConfig();
+    const res = await fetch(apiBase + path, { headers: { Authorization: 'Bearer ' + getStaffToken() } });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
+    if (!res.ok) throw new Error('API-fout: ' + res.status);
+    return res.json();
+  }
+
+  async function apiPost(path, body) {
+    const { apiBase } = getConfig();
+    const res = await fetch(apiBase + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getStaffToken() },
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.message ? [].concat(errBody.message).join(', ') : 'API-fout: ' + res.status);
+    }
+    return res.json();
+  }
+
+  const STATUS_LABELS = { unclaimed: 'Niet geactiveerd', active: 'Actief', blocked: 'Geblokkeerd', lost: 'Verloren', replaced: 'Vervangen', expired: 'Verlopen' };
+
+  const els = {
+    statusLine: document.getElementById('status-line'),
+    configToggle: document.getElementById('config-toggle'),
+    configPanel: document.getElementById('config-panel'),
+    configSave: document.getElementById('config-save'),
+    apiBaseInput: document.getElementById('api-base'),
+    orgIdInput: document.getElementById('org-id'),
+    batchName: document.getElementById('batch-name'),
+    batchQty: document.getElementById('batch-qty'),
+    createBatchBtn: document.getElementById('create-batch-btn'),
+    batchResult: document.getElementById('batch-result'),
+    searchInput: document.getElementById('search-input'),
+    statusFilter: document.getElementById('status-filter'),
+    refreshBtn: document.getElementById('refresh-btn'),
+    cardList: document.getElementById('card-list'),
+    detailPanel: document.getElementById('detail-panel'),
+    detailTitle: document.getElementById('detail-title'),
+    detailGrid: document.getElementById('detail-grid'),
+    actionRow: document.getElementById('action-row'),
+  };
+
+  // -- Batch aanmaken -----------------------------------------------------
+
+  els.createBatchBtn.addEventListener('click', async () => {
+    const name = els.batchName.value.trim();
+    const quantity = parseInt(els.batchQty.value, 10);
+    if (!name || !quantity || quantity < 1) {
+      alert('Vul een batchnaam en een geldig aantal in.');
+      return;
+    }
+    els.createBatchBtn.disabled = true;
+    els.createBatchBtn.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      const result = await apiPost('/organizations/' + orgId + '/loyalty-cards/batches', { name, quantity });
+
+      const csvLines = ['card_number,public_token,qr_url']
+        .concat(result.cards.map((c) => `${c.cardNumber},${c.token},${c.qrUrl}`));
+      const csvContent = csvLines.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name.replace(/[^a-z0-9-]/gi, '_') + '.csv';
+      a.textContent = 'Download ' + name + '.csv (' + result.cards.length + ' kaarten)';
+      a.style.color = 'var(--coral)';
+      a.style.fontWeight = '600';
+
+      els.batchResult.innerHTML = '<div class="warn">Belangrijk: dit is de ENIGE keer dat je deze tokens ziet. Download nu.</div>';
+      els.batchResult.appendChild(a);
+      els.batchResult.classList.add('show');
+
+      loadCards();
+    } catch (err) {
+      alert('Batch aanmaken mislukt: ' + err.message);
+    } finally {
+      els.createBatchBtn.disabled = false;
+      els.createBatchBtn.textContent = 'Batch genereren';
+    }
+  });
+
+  // -- Kaartenlijst ---------------------------------------------------------
+
+  async function loadCards() {
+    els.statusLine.textContent = 'Kaarten laden…';
+    els.statusLine.classList.remove('error');
+    try {
+      const { orgId } = getConfig();
+      const params = new URLSearchParams();
+      if (els.statusFilter.value) params.set('status', els.statusFilter.value);
+      if (els.searchInput.value.trim()) params.set('search', els.searchInput.value.trim());
+
+      const cards = await apiGet('/organizations/' + orgId + '/loyalty-cards?' + params.toString());
+      renderCardList(cards);
+      els.statusLine.textContent = cards.length + ' kaart(en) getoond';
+    } catch (err) {
+      els.statusLine.textContent = 'Kon kaarten niet laden: ' + err.message;
+      els.statusLine.classList.add('error');
+    }
+  }
+
+  function renderCardList(cards) {
+    if (cards.length === 0) {
+      els.cardList.innerHTML = '<div class="empty-note">Geen kaarten gevonden.</div>';
+      return;
+    }
+    els.cardList.innerHTML = cards.map((card) => {
+      const customerName = card.customer ? [card.customer.firstName, card.customer.lastName].filter(Boolean).join(' ') : 'Niet gekoppeld';
+      return `<div class="card-row" data-id="${card.id}">
+        <div>
+          <div class="number">${card.cardNumber}</div>
+          <div class="customer">${customerName}${card.batch ? ' · ' + card.batch.name : ''}</div>
+        </div>
+        <span class="status-pill ${card.status}">${STATUS_LABELS[card.status] || card.status}</span>
+      </div>`;
+    }).join('');
+
+    els.cardList.querySelectorAll('.card-row').forEach((row) => {
+      row.addEventListener('click', () => loadCardDetail(row.dataset.id));
+    });
+  }
+
+  els.searchInput.addEventListener('input', () => { clearTimeout(window._searchTimeout); window._searchTimeout = setTimeout(loadCards, 300); });
+  els.statusFilter.addEventListener('change', loadCards);
+  els.refreshBtn.addEventListener('click', loadCards);
+
+  // -- Kaartdetail + acties ---------------------------------------------------
+
+  let currentCardId = null;
+
+  async function loadCardDetail(cardId) {
+    currentCardId = cardId;
+    try {
+      const { orgId } = getConfig();
+      const card = await apiGet('/organizations/' + orgId + '/loyalty-cards/' + cardId);
+      renderCardDetail(card);
+      els.detailPanel.classList.add('show');
+      els.detailPanel.scrollIntoView({ behavior: 'smooth' });
+    } catch (err) {
+      alert('Kon kaartdetail niet laden: ' + err.message);
+    }
+  }
+
+  function renderCardDetail(card) {
+    els.detailTitle.textContent = 'Kaart ' + card.cardNumber;
+    const customerName = card.customer ? [card.customer.firstName, card.customer.lastName].filter(Boolean).join(' ') : '—';
+    const claimedDate = card.claimedAt ? new Date(card.claimedAt).toLocaleDateString('nl-NL') : '—';
+    const lastUsedDate = card.lastUsedAt ? new Date(card.lastUsedAt).toLocaleDateString('nl-NL') : '—';
+
+    els.detailGrid.innerHTML = `
+      <div class="detail-tile"><div class="label">Status</div><div class="value">${STATUS_LABELS[card.status] || card.status}</div></div>
+      <div class="detail-tile"><div class="label">Gast</div><div class="value">${customerName}</div></div>
+      <div class="detail-tile"><div class="label">Batch</div><div class="value">${card.batch ? card.batch.name : '—'}</div></div>
+      <div class="detail-tile"><div class="label">Geactiveerd op</div><div class="value">${claimedDate}</div></div>
+      <div class="detail-tile"><div class="label">Laatst gebruikt</div><div class="value">${lastUsedDate}</div></div>
+      <div class="detail-tile"><div class="label">Vervangen door</div><div class="value">${card.replacedBy ? card.replacedBy.cardNumber : '—'}</div></div>
+    `;
+
+    let actions = '';
+    if (card.status === 'active') {
+      actions += `<button class="btn-danger" id="action-block">Blokkeren</button>`;
+      actions += `<button class="btn-danger" id="action-lost">Markeer als verloren</button>`;
+      actions += `<button class="btn-secondary" id="action-replace">Vervangen door nieuwe kaart</button>`;
+    }
+    if (card.status === 'blocked' || card.status === 'lost') {
+      actions += `<button class="btn-primary" id="action-reactivate">Heractiveren</button>`;
+      actions += `<button class="btn-secondary" id="action-replace">Vervangen door nieuwe kaart</button>`;
+    }
+    if (card.status === 'unclaimed') {
+      actions += `<button class="btn-primary" id="action-link">Koppelen aan bestaande gast</button>`;
+    }
+    els.actionRow.innerHTML = actions;
+
+    document.getElementById('action-block')?.addEventListener('click', (e) => doCardAction('block', 'Reden voor blokkeren:', e.currentTarget));
+    document.getElementById('action-lost')?.addEventListener('click', (e) => doCardAction('mark-lost', 'Toelichting (optioneel):', e.currentTarget));
+    document.getElementById('action-reactivate')?.addEventListener('click', (e) => doCardAction('reactivate', undefined, e.currentTarget));
+    document.getElementById('action-replace')?.addEventListener('click', doReplace);
+    document.getElementById('action-link')?.addEventListener('click', doManualLink);
+  }
+
+  async function doCardAction(action, promptText, btn) {
+    let reason;
+    if (promptText) {
+      reason = prompt(promptText) || '';
+      if (promptText.includes('verloren') === false && !reason) return; // block vereist een reden
+    }
+    if (btn) { btn.disabled = true; var originalLabel = btn.textContent; btn.textContent = 'Bezig…'; }
+    try {
+      const { orgId } = getConfig();
+      await apiPost('/organizations/' + orgId + '/loyalty-cards/' + currentCardId + '/' + action, reason !== undefined ? { reason } : {});
+      loadCardDetail(currentCardId);
+      loadCards();
+    } catch (err) {
+      alert('Actie mislukt: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+    }
+  }
+
+  async function doReplace(evt) {
+    const newToken = prompt('Scan of typ de token van de NIEUWE (nog niet geactiveerde) kaart:');
+    if (!newToken) return;
+    const btn = evt && evt.currentTarget;
+    if (btn) { btn.disabled = true; var originalLabel = btn.textContent; btn.textContent = 'Bezig…'; }
+    try {
+      const { orgId } = getConfig();
+      await apiPost('/organizations/' + orgId + '/loyalty-cards/' + currentCardId + '/replace', { newCardToken: newToken.trim() });
+      alert('Kaart succesvol vervangen.');
+      loadCards();
+      els.detailPanel.classList.remove('show');
+    } catch (err) {
+      alert('Vervangen mislukt: ' + err.message);
+      if (btn) { btn.disabled = false; btn.textContent = originalLabel; }
+    }
+  }
+
+  // -- Gast koppelen: zoek-en-selecteer i.p.v. losse prompt()'s -------------
+
+  let linkSelectedCustomer = null;
+  let linkSearchTimeout = null;
+  let linkHighlightedIndex = -1;
+  let linkSearchResults = [];
+
+  const linkEls = {
+    overlay: document.getElementById('link-modal-overlay'),
+    searchInput: document.getElementById('link-search-input'),
+    autocompleteList: document.getElementById('link-autocomplete-list'),
+    selectedBox: document.getElementById('link-selected-customer'),
+    tokenInput: document.getElementById('link-token-input'),
+    confirmBtn: document.getElementById('link-confirm-btn'),
+    cancelBtn: document.getElementById('link-cancel-btn'),
+  };
+
+  function doManualLink() {
+    linkSelectedCustomer = null;
+    linkSearchResults = [];
+    linkEls.searchInput.value = '';
+    linkEls.tokenInput.value = '';
+    linkEls.selectedBox.classList.remove('show');
+    linkEls.autocompleteList.classList.remove('open');
+    linkEls.confirmBtn.disabled = true;
+    linkEls.overlay.classList.add('open');
+    linkEls.searchInput.focus();
+  }
+
+  function formatDob(dateOfBirth) {
+    if (!dateOfBirth) return null;
+    return new Date(dateOfBirth).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' });
+  }
+
+  linkEls.searchInput.addEventListener('input', () => {
+    clearTimeout(linkSearchTimeout);
+    const q = linkEls.searchInput.value.trim();
+    if (q.length < 2) {
+      linkEls.autocompleteList.classList.remove('open');
+      return;
+    }
+    linkSearchTimeout = setTimeout(async () => {
+      try {
+        const { orgId } = getConfig();
+        const result = await apiGet('/organizations/' + orgId + '/customers?search=' + encodeURIComponent(q) + '&pageSize=10');
+        linkSearchResults = result.items || result || [];
+        renderLinkAutocomplete();
+      } catch {
+        linkEls.autocompleteList.innerHTML = '<div class="no-match">Zoeken mislukt</div>';
+        linkEls.autocompleteList.classList.add('open');
+      }
+    }, 250);
+  });
+
+  function renderLinkAutocomplete() {
+    linkHighlightedIndex = -1;
+    if (linkSearchResults.length === 0) {
+      linkEls.autocompleteList.innerHTML = '<div class="no-match">Geen gasten gevonden</div>';
+      linkEls.autocompleteList.classList.add('open');
+      return;
+    }
+    // Toon genoeg gegevens om gasten met dezelfde naam te onderscheiden:
+    // volledige naam, e-mail, telefoon, en (indien bekend) geboortedatum.
+    linkEls.autocompleteList.innerHTML = linkSearchResults.map((c, idx) => {
+      const name = [c.firstName, c.lastName].filter(Boolean).join(' ') || '(naam onbekend)';
+      const dob = formatDob(c.dateOfBirth);
+      const metaParts = [c.email, c.phone, dob ? 'geb. ' + dob : null].filter(Boolean);
+      return `<div class="option" data-idx="${idx}">
+        <div>${name}</div>
+        <div class="meta">${metaParts.join(' · ') || 'Geen verdere gegevens'}</div>
+      </div>`;
+    }).join('');
+    linkEls.autocompleteList.classList.add('open');
+
+    linkEls.autocompleteList.querySelectorAll('.option').forEach((opt) => {
+      opt.addEventListener('click', () => selectLinkCustomer(linkSearchResults[parseInt(opt.dataset.idx, 10)]));
+    });
+  }
+
+  function selectLinkCustomer(customer) {
+    linkSelectedCustomer = customer;
+    const name = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || '(naam onbekend)';
+    const dob = formatDob(customer.dateOfBirth);
+    linkEls.selectedBox.innerHTML = `
+      <div class="name">${name}</div>
+      <div class="meta">${customer.email || 'geen e-mail'} · ${customer.phone || 'geen telefoon'}${dob ? ' · geb. ' + dob : ''}</div>
+    `;
+    linkEls.selectedBox.classList.add('show');
+    linkEls.autocompleteList.classList.remove('open');
+    linkEls.searchInput.value = name;
+    updateLinkConfirmState();
+  }
+
+  function updateLinkConfirmState() {
+    linkEls.confirmBtn.disabled = !linkSelectedCustomer || !linkEls.tokenInput.value.trim();
+  }
+  linkEls.tokenInput.addEventListener('input', updateLinkConfirmState);
+
+  linkEls.confirmBtn.addEventListener('click', async () => {
+    if (!linkSelectedCustomer) return;
+    linkEls.confirmBtn.disabled = true;
+    linkEls.confirmBtn.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      await apiPost('/organizations/' + orgId + '/loyalty-cards/link', {
+        token: linkEls.tokenInput.value.trim(),
+        customerId: linkSelectedCustomer.id,
+      });
+      linkEls.overlay.classList.remove('open');
+      alert('Kaart gekoppeld.');
+      loadCardDetail(currentCardId);
+      loadCards();
+    } catch (err) {
+      alert('Koppelen mislukt: ' + err.message);
+      linkEls.confirmBtn.disabled = false;
+    } finally {
+      linkEls.confirmBtn.textContent = 'Koppelen';
+    }
+  });
+
+  linkEls.cancelBtn.addEventListener('click', () => linkEls.overlay.classList.remove('open'));
+  linkEls.overlay.addEventListener('click', (e) => { if (e.target === linkEls.overlay) linkEls.overlay.classList.remove('open'); });
+
+  els.configToggle.addEventListener('click', () => {
+    const open = els.configPanel.classList.toggle('open');
+    els.configToggle.setAttribute('aria-expanded', String(open));
+    if (open) {
+      const { apiBase, orgId } = getConfig();
+      els.apiBaseInput.value = apiBase;
+      els.orgIdInput.value = orgId;
+    }
+  });
+  els.configSave.addEventListener('click', async () => {
+    els.configSave.disabled = true;
+    const originalConfigSaveLabel = els.configSave.textContent;
+    els.configSave.textContent = 'Bezig…';
+    try {
+      localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+      localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+      els.configPanel.classList.remove('open');
+      await loadCards();
+    } finally {
+      els.configSave.disabled = false;
+      els.configSave.textContent = originalConfigSaveLabel;
+    }
+  });
+
+  function bootAfterLogin() {
+    loadCards();
+  }
+
+</script>
+
+</body>
+</html>

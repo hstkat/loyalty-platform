@@ -1,0 +1,30 @@
+{
+  "version": 2,
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "functions": {
+    "api/index.ts": {
+      "maxDuration": 30,
+      "includeFiles": "backoffice/**"
+    }
+  },
+  "rewrites": [{ "source": "/(.*)", "destination": "/api" }],
+  "crons": [
+    {
+      "path": "/cron/daily-closing",
+      "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/cron/gift-card-expiry",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/cron/gift-card-expiry-reminders",
+      "schedule": "30 7 * * *"
+    },
+    {
+      "path": "/cron/voucher-expiry-reminders",
+      "schedule": "0 8 * * *"
+    }
+  ]
+}

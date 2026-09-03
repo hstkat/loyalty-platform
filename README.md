@@ -1,1370 +1,1 @@
-# Loyalty Platform — Module 1: Customer & CRM
-
-Fundament van het horeca/hospitality loyaltyplatform. Deze repo bevat op dit
-moment het **database schema en de migraties** voor Module 1. Volgende
-modules (Transactions & POS, Wallet & Credit, Reward Engine, ...) worden
-hier als vervolg-migraties en later als NestJS-modules aan toegevoegd.
-
-**Stack:** Node.js/TypeScript · Prisma · Supabase (Postgres) · GitHub · Vercel
-
----
-
-## Belangrijk: status van dit schema
-
-Het `prisma/schema.prisma`-bestand en de SQL-migratie in
-`prisma/migrations/20260813000000_init_customer_crm/` zijn **met de hand
-geschreven en op elkaar afgestemd**, niet automatisch gegenereerd — de
-sandbox waarin dit is gebouwd had geen netwerktoegang tot
-`binaries.prisma.sh` (waar Prisma's engine-binaries vandaan komen), dus
-`prisma generate` / `prisma migrate dev` konden daar niet draaien.
-
-Dat is geen probleem voor gebruik — de SQL is functioneel identiek aan wat
-Prisma zelf zou genereren — maar doe **lokaal** wel eerst een validatie-check
-voordat je naar productie migreert (stap 3 hieronder).
-
----
-
-## 1. Supabase-project aanmaken
-
-1. Ga naar [supabase.com](https://supabase.com) → **New project**.
-2. Kies een sterk database-wachtwoord en bewaar dit.
-3. Ga naar **Project Settings → Database → Connection string**.
-4. Je hebt twee connectiestrings nodig:
-   - **Connection pooling (Transaction mode, poort 6543)** → wordt `DATABASE_URL`
-   - **Direct connection (poort 5432)** → wordt `DIRECT_URL`
-
-   Waarom beide: serverless functies (Vercel) openen bij elke aanroep een
-   nieuwe databaseverbinding — zonder pooling loop je snel tegen Postgres'
-   connectielimiet aan. Prisma Migrate heeft daarentegen een
-   sessie-connectie nodig, vandaar de directe URL apart.
-
-5. Kopieer `.env.example` naar `.env` en vul beide URL's in.
-
-```bash
-cp .env.example .env
-```
-
----
-
-## 2. Lokaal installeren
-
-```bash
-npm install
-```
-
-Dit installeert Prisma en genereert **geen** engine-download-problemen op
-een normale (niet-gesandboxde) machine.
-
----
-
-## 3. Schema valideren en client genereren
-
-```bash
-npx prisma validate      # controleert schema.prisma op syntaxfouten
-npx prisma generate      # genereert de TypeScript Prisma Client
-```
-
----
-
-## 4. Migratie naar Supabase uitvoeren
-
-Omdat de migratie-SQL al klaarstaat, hoef je niets te "diffen" — je past
-hem direct toe:
-
-```bash
-npx prisma migrate deploy
-```
-
-Dit voert `prisma/migrations/20260813000000_init_customer_crm/migration.sql`
-uit tegen je Supabase-database en registreert de migratie in de
-`_prisma_migrations`-tabel, zodat toekomstige migraties (Module 2, 3, ...)
-hierop voortbouwen.
-
-> Werk je liever met `prisma migrate dev` tijdens verdere ontwikkeling
-> (met shadow database, automatische diff-generatie)? Dat kan vanaf hier
-> gewoon — de bestaande migratie wordt dan als startpunt herkend.
-
-**Controle:** open **Supabase → Table Editor** en check dat alle tabellen
-(`organizations`, `customers`, `customer_identities`, `customer_consents`,
-`customer_timeline_events`, `audit_log`, ...) er staan.
-
----
-
-## 5. Sanity-check met het seedscript
-
-```bash
-npm run db:seed
-```
-
-Dit maakt een testorganisatie ("Beach Hospitality Group"), een locatie
-("Beachclub Noordwijk") en het voorbeeldklantprofiel (Jan de Vries) aan
-zoals in de moduleopdracht beschreven — inclusief identities, consent en
-een eerste timeline-event. Handig om te verifiëren dat alle relaties
-correct staan vóórdat je de API erbovenop bouwt.
-
----
-
-## 6. Naar GitHub
-
-```bash
-git init
-git add .
-git commit -m "Module 1: Customer & CRM — schema en migratie"
-git branch -M main
-git remote add origin https://github.com/<jouw-account>/loyalty-platform.git
-git push -u origin main
-```
-
-`.env` staat in `.gitignore` — commit nooit je database-credentials.
-
----
-
-## 7. Koppelen aan Vercel
-
-1. Ga naar [vercel.com/new](https://vercel.com/new) → importeer de GitHub-repo.
-2. Zet de environment variables (`DATABASE_URL`, `DIRECT_URL`) in
-   **Project Settings → Environment Variables** — zelfde waarden als in je
-   lokale `.env`.
-3. Voeg in `package.json` een `postinstall`-script toe zodra er ook een
-   NestJS-app in de repo staat, zodat Vercel bij elke deploy automatisch de
-   Prisma Client genereert:
-   ```json
-   "postinstall": "prisma generate"
-   ```
-   (Dit script staat er nu nog niet in, omdat er nog geen deploybare app-laag
-   is — dat komt met de eerste API-endpoints.)
-
-Op dit moment bevat de repo alleen schema/migraties, dus er is nog niets
-"live" te draaien op Vercel — dat wordt relevant zodra we de NestJS API
-(resolve-identity, CRUD-endpoints, etc.) uit Module 1 sectie 9 toevoegen.
-
----
-
-## 8. NestJS API draaien
-
-De API-laag implementeert de endpoints uit sectie 9 van het Module 1-ontwerp
-(`/customers`, `/resolve-identity`, `/merge`, consent-beheer, timeline,
-notes, tags, custom fields) met de permissiematrix uit sectie 10 als guards.
-
-```bash
-npm install
-npx prisma generate
-npm run build
-npm run start:dev
-```
-
-De server draait dan op `http://localhost:3000`.
-
-### Auth-stub (belangrijk om te weten)
-
-Er is nog geen Users/Roles/authenticatie-module gebouwd — dat hoort bij een
-gedeelde platform/auth-module die nog niet bestaat. Tot die er is, wordt de
-tenant- en actor-context uit request-headers gelezen:
-
-| Header | Betekenis |
-|---|---|
-| `x-organization-id` | UUID van de organisatie (**verplicht** op elk endpoint) |
-| `x-actor-id` | UUID van de staff-user of API-key (optioneel) |
-| `x-actor-type` | `staff` \| `system` \| `api_key` \| `customer_self_service` |
-| `x-permissions` | komma-gescheiden lijst, bv. `customer.read,customer.write` |
-
-Voorbeeld met `curl`:
-
-```bash
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/customers \
-  -H "Content-Type: application/json" \
-  -H "x-organization-id: <ORG_ID>" \
-  -H "x-actor-type: staff" \
-  -H "x-permissions: customer.write" \
-  -d '{"firstName":"Jan","lastName":"de Vries","email":"jan@example.nl","sourceChannel":"pos"}'
-```
-
-Zodra de echte auth-module er is, vervang je alleen
-`src/common/decorators/current-context.decorator.ts` — de rest van de
-codebase leest context via die ene decorator.
-
-### Belangrijkste endpoints
-
-```
-POST   /organizations/:orgId/customers
-GET    /organizations/:orgId/customers
-GET    /organizations/:orgId/customers/duplicates
-POST   /organizations/:orgId/customers/resolve-identity
-GET    /organizations/:orgId/customers/:id
-PATCH  /organizations/:orgId/customers/:id
-DELETE /organizations/:orgId/customers/:id
-POST   /organizations/:orgId/customers/:id/identities
-DELETE /organizations/:orgId/customers/:id/identities/:identityId
-GET    /organizations/:orgId/customers/:id/timeline
-POST   /organizations/:orgId/customers/:id/notes
-GET    /organizations/:orgId/customers/:id/notes
-POST   /organizations/:orgId/customers/:id/tags/:tagId
-DELETE /organizations/:orgId/customers/:id/tags/:tagId
-GET    /organizations/:orgId/customers/:id/consents
-POST   /organizations/:orgId/customers/:id/consents
-GET    /organizations/:orgId/customers/:id/consents/history
-POST   /organizations/:orgId/customers/:id/merge
-POST   /organizations/:orgId/customers/:id/export
-POST   /organizations/:orgId/customers/:id/anonymize
-GET    /organizations/:orgId/customers/:id/locations
-GET    /organizations/:orgId/tags
-POST   /organizations/:orgId/tags
-GET    /organizations/:orgId/custom-fields
-POST   /organizations/:orgId/custom-fields
-```
-
-## 9. Deployen naar Vercel
-
-### Nieuwe endpoints — Module 2 & 4
-
-```
-POST   /organizations/:orgId/transactions
-GET    /organizations/:orgId/transactions
-GET    /organizations/:orgId/transactions/:id
-POST   /organizations/:orgId/transactions/:id/refund
-POST   /organizations/:orgId/transactions/:id/void
-GET    /organizations/:orgId/pos-connections
-POST   /organizations/:orgId/pos-connections
-GET    /organizations/:orgId/pos-connections/:id/health
-GET    /organizations/:orgId/reward-rules
-POST   /organizations/:orgId/reward-rules
-PATCH  /organizations/:orgId/reward-rules/:id
-DELETE /organizations/:orgId/reward-rules/:id
-POST   /organizations/:orgId/reward-simulations
-GET    /organizations/:orgId/reward-calculations
-GET    /organizations/:orgId/reward-calculations/:id
-POST   /organizations/:orgId/reward-calculations/:id/resimulate
-```
-
-**Voorbeeld — het doorgerekende voorbeeld uit het Module 4-ontwerp, live via de simulator:**
-```bash
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/reward-simulations \
-  -H "Content-Type: application/json" \
-  -H "x-organization-id: <ORG_ID>" \
-  -H "x-permissions: reward_rule.read" \
-  -d '{"amount": 100, "tierId": "<GOLD_TIER_ID>"}'
-```
-
-### Eerlijk over de scope van deze API-laag
-
-Gebouwd en (na jouw lokale `npm run build`) compileerbaar:
-- **Transacties invoeren** (`POST /transactions`) — berekent automatisch de eligible amount uit regel-items en triggert de Reward Engine synchroon, in-process (niet via een echte event-bus/message-queue — dat is een architecturale vereenvoudiging t.o.v. het ontwerp, prima voor één-proces-deployment, maar zou in een groter systeem via een echte queue moeten lopen)
-- **Refund/void** met proportionele reward-reversal — een **vereenvoudigde** reversal (het bedrag wordt proportioneel teruggerekend zonder de volledige multi-stage berekening opnieuw te doorlopen op het verlaagde bedrag); een productierijpe versie zou dat wel moeten doen
-- **Reward-regels CRUD**, inclusief versioning zodra een regel al gebruikt is (sectie 15 van het ontwerp)
-- **Rule Simulator** (`POST /reward-simulations`) — hergebruikt exact dezelfde rekencode als een live transactie, precies zoals het ontwerp vereist
-- **Calculation trace** — elke berekening (live of simulatie) bevat het volledige stap-voor-stap logboek
-
-**Bewust niet gebouwd in deze stap** (wel volledig ontworpen in de bijbehorende markdown-documenten):
-- Webhook-ontvangst per POS-provider, polling-worker, bulk/CSV-import
-- Reconciliation-job en het volledige integration-dashboard
-- Customer-caps en location-caps worden nog niet gehandhaafd in de berekening (staan als tabellen klaar in het schema, sectie 6, maar de cap-check in stadium 4 is nog niet geïmplementeerd — alleen `maximumRewardPerTransaction` werkt al)
-- Challenge-regels (stadium 5) — aparte pijplijn, nog niet gebouwd
-
-
-De repo bevat nu `api/index.ts` (serverless entrypoint, wrapt de NestJS-app
-in een gecachete Express-handler) en `vercel.json` (routeert alle requests
-daarnaartoe).
-
-1. Importeer de GitHub-repo op [vercel.com/new](https://vercel.com/new)
-2. Zet `DATABASE_URL` en `DIRECT_URL` in **Project Settings → Environment
-   Variables**
-3. Deploy — Vercel draait automatisch `npm install` (met `postinstall:
-   prisma generate`) en `npm run build`
-
-> **Let op:** de Prisma Client-engine wordt bij `npm install` gedownload
-> van `binaries.prisma.sh`. Dat werkt gewoon op Vercel's build-servers en
-> op een normale ontwikkelmachine met internettoegang — alleen deze
-> specifieke ontwikkel-sandbox waarin dit project is opgezet had daar geen
-> toegang toe. Test dus altijd eerst lokaal (stap 8) vóór je naar Vercel
-> pusht.
-
-## Volgende stap
-
-**Module 2 (Transactions & POS) en Module 4 (Reward Engine)** zijn nu ook als
-database-migratie toegevoegd (`20260814000000_transactions_pos_reward_engine`).
-Deze migratie is **echt getest**, op dezelfde manier als de eerste: lokaal
-tegen een verse Postgres 16-installatie gedraaid, met een concrete
-dataset die exact het doorgerekende voorbeeld uit het Module 4-ontwerp
-reproduceert (base 5% + Gold-tier 1% = 6%, ×2 Double Credit-campagne =
-**€12,00** reward op een transactie van €100) — en de idempotency-constraint
-uit Module 2 (geen dubbele transactie met hetzelfde extern ID op dezelfde
-POS-koppeling) is expliciet gecontroleerd: een duplicaat-insert gaf terecht
-een database-fout.
-
-**Om deze migratie ook bij jou uit te voeren:**
-
-```bash
-npx prisma generate
-npx prisma migrate deploy
-npm run db:seed:rewards
-```
-
-> `db:seed:rewards` hergebruikt de organisatie uit de eerste seed
-> (`beach-hospitality-group`) — draai dus eerst `npm run db:seed` als je dat
-> nog niet had gedaan, of het script maakt 'm alsnog aan (upsert).
-
-**Wat deze migratie toevoegt (21 nieuwe tabellen):**
-- Module 2: `pos_connections`, `pos_events`, `transactions`,
-  `transaction_line_items` (+ modifiers), `transaction_refunds`,
-  `transaction_voids`, `transaction_chargebacks`, `pos_product_mappings`,
-  `pos_customer_mappings`, `failed_transactions`, `pos_sync_runs`
-- Module 4: `reward_rules`, `reward_customer_caps`, `reward_location_caps`,
-  `reward_calculations`, `reward_challenge_progress`
-
-**Nog te bouwen:** de NestJS API-laag voor deze twee modules (endpoints uit
-Module 2 sectie 5 en Module 4 sectie 11), en de webhook-adapter voor een
-eerste concrete POS-provider zodra dat relevant wordt.
-
-## 10. Module 3 (Wallet & Credit) — database
-
-Toegevoegd via `20260815000000_wallet_credit`: `wallets`,
-`wallet_ledger_entries`, `wallet_ledger_allocations`, `wallet_passes`,
-`credit_rules` — het lot-based ledger-model uit het Module 3-ontwerp.
-
-**Getest, net als de vorige migraties:** lokaal tegen een verse Postgres 16,
-met een concreet scenario dat het hele pad doorloopt:
-1. Transactie van €184 → earn-lot van €9,20 (10 dagen geleden)
-2. Een *volgend* bezoek (andere transactie) → gedeeltelijke besteding van
-   €5,00, met een allocatie-rij die expliciet naar de oorspronkelijke lot
-   verwijst — traceerbaarheidsquery bevestigd: je kunt van elke besteding
-   exact aanwijzen uit welke verdien-gebeurtenis hij kwam
-3. Een verlopen lot van €3,00 → expiratie-flow, lot netjes afgesloten
-4. Reconciliatie: de ledger herberekenen en vergelijken met de
-   denormalized cache — dit ving zelfs een fout in mijn eigen testscript
-   op (een vergeten cache-update), precies zoals sectie 15 bedoeld is
-
-```bash
-npx prisma generate
-npx prisma migrate deploy
-```
-
-**Nog te bouwen:** de NestJS API-laag voor Module 3 (redemption
-reserve/confirm-flow, admin-correcties, Wallet-pas-endpoints) staat nog
-niet — alleen schema + migratie zijn nu klaar, net als bij Module 2/4 in
-eerste instantie.
-
-## 11. Nieuwe endpoints — Module 3 (Wallet & Credit)
-
-```
-GET    /organizations/:orgId/customers/:customerId/wallet
-GET    /organizations/:orgId/customers/:customerId/wallet/ledger
-GET    /organizations/:orgId/customers/:customerId/wallet/ledger/:entryId
-POST   /organizations/:orgId/customers/:customerId/wallet/redemptions/reserve
-POST   /organizations/:orgId/customers/:customerId/wallet/redemptions/:reservationId/confirm
-POST   /organizations/:orgId/customers/:customerId/wallet/redemptions/:reservationId/cancel
-POST   /organizations/:orgId/customers/:customerId/wallet/adjustments
-```
-
-**Belangrijk:** het aanmaken van een transactie (`POST /transactions`) boekt
-nu automatisch een `earn`-ledger entry op de wallet van de klant, als de
-Reward Engine een positief bedrag berekent — precies het "transactie →
-reward → zichtbaar tegoed"-pad waar we naartoe hebben gewerkt.
-
-**Voorbeeld — volledige cyclus testen:**
-```bash
-# 1. Transactie invoeren (levert reward op, boekt automatisch een earn)
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/transactions \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
-  -H "x-permissions: transaction.write" \
-  -d '{"locationId":"<LOCATION_ID>","customerId":"<CUSTOMER_ID>","grossAmount":100,"netAmount":100,"totalAmount":100,"paymentMethod":"card"}'
-
-# 2. Saldo bekijken
-curl http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet \
-  -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.read"
-
-# 3. Tegoed reserveren voor besteding bij een ANDERE (volgende) transactie
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet/redemptions/reserve \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.redeem" \
-  -d '{"amount":5,"transactionId":"<EEN_ANDERE_TRANSACTIE_ID>","idempotencyKey":"test-1"}'
-
-# 4. Bevestigen (reservationId uit de vorige response)
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet/redemptions/<RESERVATION_ID>/confirm \
-  -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.redeem"
-```
-
-### Eerlijk over de scope van deze wallet-API
-
-- **Redemption-reserveringen staan in-memory** (een `Map` in de service), niet in een database-tabel of Redis. Dit werkt correct zolang je **één** serverinstantie draait (zoals nu, lokaal of op Vercel als één functie), maar overleeft geen herstart en werkt niet betrouwbaar met meerdere gelijktijdige instanties. Een productierijpe versie heeft hiervoor een echte gedeelde store nodig.
-- **Tegoedregels (`credit_rules`) worden nog niet gevalideerd** bij redemption — de endpoints bestaan (via Prisma), maar de validatie (minimumbesteding, max-percentage, uitgesloten dagen/producten) uit sectie 6 van het ontwerp is nog niet in `WalletService.reserveRedemption()` geïmplementeerd.
-- **Apple/Google Wallet pass-endpoints zijn niet gebouwd** — het datamodel (`wallet_passes`) staat klaar, de pass-generatie/webhook-ontvangst (sectie 9) niet.
-- **Refund/void reward-reversal (Module 4) landt nog niet automatisch als `refund_reversal`-ledger entry** — die koppeling (Module 2/4's refund-events → Module 3's ledger) is nog niet gelegd.
-- **De expiratie-achtergrondjob draait niet** — het model ondersteunt expiratie volledig (zoals lokaal getest), maar er is geen scheduled job die hem in productie daadwerkelijk uitvoert.
-
-
-## 12. Module 5 (Campaign Manager) & Module 6 (Messaging) — database
-
-Toegevoegd via `20260816000000_campaign_messaging`: 15 nieuwe tabellen —
-`campaigns`, `campaign_templates`, `campaign_audience_snapshot`,
-`campaign_recipients`, `campaign_metrics_snapshots` (Module 5);
-`message_providers`, `message_templates`, `message_send_requests`,
-`message_queue_items`, `message_events`, `message_links`,
-`customer_push_tokens`, `message_frequency_caps`,
-`customer_message_send_log`, `brand_voice_profiles`, `ai_copy_requests`
-(Module 6).
-
-**Getest:** alle vier migraties samen (Module 1, 2+4, 3, 5+6) foutloos
-tegen een verse Postgres 16 — **56 tabellen** in totaal. Functioneel
-scenario doorlopen: een "Sunny Day"-campagne met een audience-snapshot die
-correct onderscheid maakt tussen de behandelde groep en de controlegroep,
-en een bericht dat het volledige pad template → gerenderde tekst → queue
-item → delivery-event doorloopt.
-
-```bash
-npx prisma generate
-npx prisma migrate deploy
-```
-
-**Nog te bouwen:** de NestJS API-laag voor Module 5/6 (campagne-wizard-
-endpoints, message-verzending, AI-copy-aanroep) staat nog niet — alleen
-schema + migratie zijn nu klaar. De koppeling tussen Module 5's
-campagne-incentive en Module 4's `reward_rules` (het `campaignId`-veld
-bestaat al in Module 4's schema) moet nog daadwerkelijk in code gelegd
-worden, evenals de in Module 5's ontwerp benoemde uitbreiding op de
-Reward Engine (audience-restrictie op campagne-gekoppelde regels).
-
-## 13. Module 7 (Segmentation Engine) — database
-
-Toegevoegd via `20260817000000_segmentation`: `segments`,
-`segment_membership`, `churn_risk_scores`. **Belangrijk:** deze migratie
-vervangt de vooruitkijkende `segments`/`customer_segment_memberships`-stub
-uit Module 1 door de echte implementatie (drop-and-recreate — de stub werd
-nooit door applicatiecode gebruikt, dus dit is veilig).
-
-**Getest:** alle vijf migraties samen foutloos — 57 tabellen. Functioneel
-scenario: het exacte churn-voorbeeld uit het ontwerp doorgerekend — een
-klant die normaliter elke 20 dagen komt en nu 35 dagen weg is (ratio 1,75)
-wordt terecht als "At Risk" gemarkeerd, terwijl een klant die normaliter
-elke 60 dagen komt en nu 50 dagen weg is (ratio 0,83, dus binnen zijn eigen
-patroon) dat terecht **niet** wordt — het bewijst dat persoonlijke cadans
-werkt zoals bedoeld, niet een vaste termijn. Ook getest: het AND-segment
-uit de opdracht (`lifetimeSpend > 1000 AND isAtRisk`) selecteert correct
-alleen de juiste klant.
-
-```bash
-npx prisma generate
-npx prisma migrate deploy
-```
-
-**Nog te bouwen:** de NestJS API-laag (segment-builder-endpoints, preview,
-de churn-batch-job zelf) staat nog niet — alleen schema + migratie.
-
-## 14. Module 8 (Automated Journeys) — database
-
-Toegevoegd via `20260818000000_automated_journeys`: `journeys`,
-`journey_versions`, `journey_nodes`, `journey_edges`,
-`journey_enrollments`, `journey_node_executions`, `journey_goals` — 7
-nieuwe tabellen, samen goed voor **64 tabellen totaal** in het platform.
-
-**Getest:** alle zes migraties samen foutloos. Functioneel het **exacte
-First Visit-voorbeeld uit het ontwerp** opgebouwd — trigger → send_push →
-wait 14 dagen → condition → send_push/end — als een echte graaf van nodes
-en edges in de database, en drie kernmechanismen bevestigd:
-1. Duplicate-enrollment-detectie vindt een reeds actieve inschrijving
-2. De scheduler-query vindt een `waiting`-enrollment terecht **niet** zolang
-   de wait-periode nog loopt
-3. Diezelfde query vindt de enrollment wél zodra de wait-periode voorbij is
-
-```bash
-npx prisma generate
-npx prisma migrate deploy
-```
-
-**Nog te bouwen:** de NestJS API-laag (flow-uitvoeringsengine, de
-scheduler-worker zelf, de builder-UI-endpoints) staat nog niet — alleen
-schema + migratie.
-
-## 15. Module 9 (Reservations & Occupancy Booster) — database
-
-Toegevoegd via `20260819000000_reservations_occupancy`: 8 nieuwe tabellen
-— `location_capacity_settings`, `reservation_connections`,
-`reservations`, `weather_forecasts`, `forecast_runs`,
-`occupancy_opportunities`, `occupancy_recommendations`,
-`occupancy_attribution_results` — samen goed voor **72 tabellen totaal**.
-
-**Getest:** alle zeven migraties samen foutloos. Functioneel het **exacte
-"Sunny Lunch Booster"-scenario uit het ontwerp** opgebouwd en geverifieerd:
-- Bezettingsberekening: 76 geboekte covers / 200 capaciteit = **38%**,
-  exact het cijfer uit de opdracht
-- Weer gekoppeld: 27°C, zonnig
-- Het volledige voorstel: naam, doelgroep (624), incentive (double credit),
-  geschatte max. reward-kosten (€1.248), status `pending_approval` — een
-  voorstel, nog geen actieve campagne, precies de vereiste scheiding
-  tussen recommendation en execution
-
-```bash
-npx prisma generate
-npx prisma migrate deploy
-```
-
-**Nog te bouwen:** de NestJS API-laag (forecast-berekening, opportunity-
-detectiejob, de koppeling die een goedgekeurd voorstel omzet in een
-Module 5-draft-campagne) staat nog niet — alleen schema + migratie.
-
-## 16. Module 10 (Analytics & AI Campaign Assistant) — database
-
-Toegevoegd via `20260820000000_analytics_ai_assistant`: `analytics_snapshots`,
-`cohort_retention_snapshots`, `ai_assistant_conversations`,
-`ai_assistant_messages`, `ai_tool_calls`, `ai_campaign_suggestions`,
-`proactive_insights` — 7 tabellen, en daarmee **compleet: 79 tabellen,
-alle 10 kernmodules van het platform.**
-
-**Getest:** alle acht migraties samen foutloos. Functioneel het **exacte
-AI-assistent-voorbeeld uit het ontwerp** opgebouwd: de vraag "Morgen
-slecht weer, lunch staat maar 30% vol" met drie echte tool-aanroepen
-(`getOccupancyForecast: 31%`, `getHistoricalOccupancy: 56%`,
-`getSegmentPreview: 412`), een AI-antwoord dat uitsluitend die cijfers
-citeert, en een voorstel — **412 klanten, €3.090 geschatte max. exposure,
-status `pending_approval`** — nooit een actieve campagne. Elk cijfer in
-het voorstel is herleidbaar tot een `ai_tool_calls`-rij; geen enkel
-verzonnen getal.
-
-```bash
-npx prisma generate
-npx prisma migrate deploy
-```
-
-**Nog te bouwen:** de NestJS API-laag (het dashboard, de KPI-berekeningsjobs,
-de daadwerkelijke AI-conversatie-engine met een LLM-koppeling) staat nog
-niet — alleen schema + migratie, net als bij de voorgaande modules.
-
-## 17. Nieuwe endpoints — Module 5 (Campaign Manager)
-
-```
-POST   /organizations/:orgId/campaigns
-GET    /organizations/:orgId/campaigns
-POST   /organizations/:orgId/campaigns/preview
-GET    /organizations/:orgId/campaigns/:id
-PATCH  /organizations/:orgId/campaigns/:id
-POST   /organizations/:orgId/campaigns/:id/launch
-POST   /organizations/:orgId/campaigns/:id/pause
-POST   /organizations/:orgId/campaigns/:id/resume
-POST   /organizations/:orgId/campaigns/:id/cancel
-GET    /organizations/:orgId/campaigns/:id/results
-```
-
-**Belangrijk:** `launch` doet echt werk — audience-resolutie, controlegroep-
-splitsing, en (indien een incentive is ingesteld) het aanmaken van de
-onderliggende Module 4-`reward_rule` met `campaignId` gevuld. Vanaf dat
-moment tellen nieuwe transacties van gasten in de doelgroep automatisch
-mee in de reward-berekening.
-
-### Eerlijk over de scope
-
-- **De audience-filter-evaluatie gebeurt in applicatiecode** (laadt tot
-  5.000 klanten van de organisatie en filtert in JavaScript), niet als
-  een geoptimaliseerde, geïndexeerde SQL-query. Dit is correct maar niet
-  geschikt voor zeer grote klantenbestanden — Module 7's "query
-  generator" (nog niet gebouwd) hoort dit uiteindelijk te vervangen.
-- **De audience-restrictie op campagne-gekoppelde reward-regels is NIET
-  geïmplementeerd** — het ontwerp benoemt expliciet dat de Reward Engine
-  hiervoor moet controleren of een klant in de campagne-snapshot zit
-  (sectie 6 van het ontwerp); die controle staat nu nog niet in
-  `RewardEngineService`. Dit betekent dat een gelanceerde campagne-
-  incentive **voor de hele organisatie** geldt, niet alleen de
-  doelgroep — een bekend gat, met de oplossing al ontworpen maar nog niet
-  gebouwd.
-- **Scheduling (period/recurring), approvals en daadwerkelijke
-  berichtverzending zijn niet geïmplementeerd** — `launch` ondersteunt
-  alleen directe uitvoering, en registreert ontvangers zonder iets te
-  versturen (Module 6's API staat er ook nog niet).
-
-## 18. Nieuwe endpoints — Module 6 (Messaging)
-
-```
-POST   /organizations/:orgId/messaging/send
-GET    /organizations/:orgId/messaging/templates
-POST   /organizations/:orgId/messaging/templates
-GET    /organizations/:orgId/messaging/queue
-GET    /organizations/:orgId/messaging/queue/:id
-```
-
-**Het "campagne → verzending"-pad werkt nu écht:** `POST
-/campaigns/:id/launch` roept intern `MessagingService.send()` aan voor
-elke gekozen kanaal, met échte consent- en frequency-cap-controle tegen
-Module 1's data. Dit is het eerste moment waarop een campagne meer doet
-dan alleen een reward-regel aanmaken — er gaat nu ook daadwerkelijk een
-bericht "uit" (gesimuleerd, zie hieronder).
-
-**Voorbeeld — een template aanmaken en een campagne ermee lanceren:**
-```bash
-# 1. Template aanmaken (templateGroupKey moet overeenkomen met de
-#    campagnenaam in lowercase-met-underscores)
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/messaging/templates \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
-  -H "x-permissions: message.template.write" \
-  -d '{"templateGroupKey":"sunny_day","channel":"push","category":"marketing","name":"Sunny Day","locale":"nl","body":"Hi {{first_name}}, je hebt nog {{credit_balance}} Beach Credit. {{#if credit_balance_raw > 10}}Genoeg voor een drankje!{{/if}}"}'
-
-# 2. Campagne aanmaken en lanceren (zie Module 5-voorbeelden)
-```
-
-### Eerlijk over de scope
-
-- **Geen echte provider-adapters** (APNs/FCM/Postmark/Twilio) — een
-  "verzending" schrijft direct een `message_queue_items`-rij met status
-  `sent`, zonder iets echt te versturen. De architectuur (provider-
-  abstractie, sectie 2 van het ontwerp) staat klaar, maar is niet
-  aangesloten op een echte dienst.
-- **Quiet hours (sectie 8) zijn niet geïmplementeerd** — berichten
-  worden nooit uitgesteld, ongeacht tijdstip.
-- **Retries (sectie 11), link tracking (sectie 13), push tokens (sectie 14)
-  en AI copy (sectie 16) zijn niet gebouwd** — alleen de kern: template-
-  rendering, consent-check, frequency-cap-check, en de wachtrij-registratie.
-- **Consent-check is een pragmatische aanname**: voor `wallet`-kanaal
-  wordt push-consent gebruikt (er is geen apart wallet-consenttype in
-  Module 1's schema) — een kleine, gedocumenteerde vereenvoudiging.
-
-## 19. Nieuwe endpoints — Module 7 (Segmentation Engine)
-
-```
-POST   /organizations/:orgId/segments
-GET    /organizations/:orgId/segments
-POST   /organizations/:orgId/segments/preview
-GET    /organizations/:orgId/segments/:id
-PATCH  /organizations/:orgId/segments/:id
-DELETE /organizations/:orgId/segments/:id
-GET    /organizations/:orgId/segments/:id/members
-POST   /organizations/:orgId/segments/:id/recompute
-POST   /organizations/:orgId/segments/:id/duplicate
-POST   /organizations/:orgId/churn-risk/recompute
-GET    /organizations/:orgId/customers/:customerId/churn-risk
-```
-
-**Belangrijk:** de audience-filter-evaluator uit Module 5 is uitgebreid met
-`isAtRisk`/`churnRiskScore`, en wordt nu door Module 5 én 7 **gedeeld**
-(`src/common/audience-filter.service.ts`) — precies zoals het ontwerp
-voorschreef: één definitie van wat een conditie betekent, niet twee.
-
-**Het churn-algoritme uit sectie 11 van het ontwerp draait nu écht:**
-`POST /churn-risk/recompute` berekent voor elke klant de persoonlijke
-cadans-ratio (`daysSinceLastVisit / averageVisitFrequencyDays`), markeert
-als `isAtRisk` bij een ratio > 1,5, en valt terug op een organisatie-
-gemiddelde voor klanten met minder dan 2 bezoeken — exact zoals lokaal al
-getest.
-
-**Voorbeeld:**
-```bash
-# Bereken churn-risico voor de hele organisatie
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/churn-risk/recompute \
-  -H "x-organization-id: <ORG_ID>" -H "x-permissions: segment.write"
-
-# Maak het "High Value At Risk"-segment uit het ontwerp
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/segments \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
-  -H "x-permissions: segment.write" \
-  -d '{"name":"High Value At Risk","segmentType":"custom","evaluationMode":"cached","definition":{"combinator":"AND","conditions":[{"field":"lifetimeSpend","operator":"gt","value":1000},{"field":"isAtRisk","operator":"isTrue"}]}}'
-```
-
-### Eerlijk over de scope
-
-- **`recompute` moet handmatig aangeroepen worden** — er is geen
-  achtergrondjob die dit periodiek (uurlijks/dagelijks, zoals het ontwerp
-  beschrijft) automatisch doet. Hetzelfde geldt voor churn-risk-
-  herberekening.
-- **Geen incrementele, event-gedreven herevaluatie** (sectie 10 van het
-  ontwerp) — elke `recompute` is een volledige herberekening.
-- **Standaardsegmenten (sectie 13) zijn niet vooraf geseed** — je moet ze
-  zelf aanmaken via `POST /segments`.
-- **Nested groups (sub-groepen binnen groepen) worden wel correct
-  geëvalueerd** door de gedeelde `AudienceFilterService`, maar zijn nog
-  niet apart getest via de API — alleen lokaal, in de Postgres-tests van
-  eerder.
-
-## 20. Nieuwe endpoints — Module 8 (Automated Journeys)
-
-```
-POST   /organizations/:orgId/journeys
-GET    /organizations/:orgId/journeys
-GET    /organizations/:orgId/journeys/:id
-POST   /organizations/:orgId/journeys/:id/publish
-POST   /organizations/:orgId/journeys/:id/pause
-POST   /organizations/:orgId/journeys/:id/resume
-POST   /organizations/:orgId/journeys/:id/stop
-GET    /organizations/:orgId/journeys/:id/enrollments
-POST   /organizations/:orgId/journeys/:id/test
-POST   /organizations/:orgId/journeys/scheduler/run
-```
-
-**Dit is de flow-uitvoeringsengine, geen simulatie.** Elke `POST
-/transactions` roept nu `JourneyEngineService.handleEvent(orgId,
-'transaction.completed', customerId)` aan, die alle gepubliceerde journeys
-met die trigger vindt en de klant inschrijft (mét duplicate-enrollment-
-preventie) — en direct begint met het doorlopen van de nodes.
-
-**Voorbeeld — het First Visit-voorbeeld uit het ontwerp, als échte
-API-aanroep** (gebruik `tempId`'s om nodes aan elkaar te knopen, de
-service zet ze om naar echte UUID's):
-```bash
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/journeys \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" \
-  -H "x-permissions: journey.write" \
-  -d '{
-    "name": "First Visit",
-    "triggerType": "event",
-    "eventName": "transaction.completed",
-    "nodes": [
-      {"tempId":"1","nodeType":"trigger"},
-      {"tempId":"2","nodeType":"send_push","config":{"templateGroupKey":"tegoed_check"}},
-      {"tempId":"3","nodeType":"end"}
-    ],
-    "edges": [
-      {"fromTempId":"1","toTempId":"2"},
-      {"fromTempId":"2","toTempId":"3"}
-    ]
-  }'
-
-# Publiceren (nodig, anders vuurt de trigger niet)
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/journeys/<JOURNEY_ID>/publish \
-  -H "x-organization-id: <ORG_ID>" -H "x-permissions: journey.publish"
-
-# Vanaf nu: elke nieuwe transactie voor een klant triggert deze journey
-```
-
-### Eerlijk over de scope
-
-- **Geen echte scheduler/cron** — `wait`-nodes zetten een enrollment
-  correct op `waiting` met een `resumeAt`, maar niets roept
-  `POST .../scheduler/run` automatisch aan. In productie hoort hier een
-  scheduled job (bv. elke 5 minuten) voor te draaien.
-- **`give_reward`- en `webhook`-nodes zijn niet geïmplementeerd** — ze
-  worden overgeslagen met een gelogde no-op, de flow loopt gewoon door.
-- **Versioning is vereenvoudigd**: `publish` markeert de enige bestaande
-  versie als gepubliceerd; het aanmaken van een *nieuwe* versie op een
-  al-gepubliceerde journey (sectie 10 van het ontwerp) is niet
-  geïmplementeerd — je kunt een journey nu niet bewerken ná publicatie.
-- **`condition`-nodes ondersteunen alleen `daysSinceLastVisit`** in deze
-  bouw-pas — niet de volledige AND/OR-DSL uit Module 7 (dat zou wel de
-  gedeelde `AudienceFilterService` kunnen hergebruiken, maar is nu nog
-  niet gekoppeld).
-
-## 21. Uitbreiding: puntensysteem met variabele wisselkoers
-
-Op verzoek toegevoegd — een alternatief voor het standaard euro-gebaseerde
-Beach Credit, geïnspireerd op een eerder puntensysteem: "1 punt per euro
-besteed, inwisselbaar vanaf 250 punten, waarbij 250 punten doordeweeks
-€10 waard is en in het weekend nog maar €5" — precies de yield-management-
-toepassing die al in de allereerste basisprincipes van het platform stond.
-
-**Nieuw:**
-- `credit_rules.minimumRedemptionBalance` — een harde drempel: onder dit
-  saldo is helemaal niets inwisselbaar, ook niet gedeeltelijk
-- `redemption_rate_rules` — dag-gebaseerde wisselkoersregels (punten per
-  euro), het spiegelbeeld van Module 4's dag/tijd-multipliers, maar dan
-  aan de inwissel-kant in plaats van de verdien-kant
-- `GET .../wallet/redemption-quote?euroAmount=X` — vertaalt een gewenst
-  euro-bedrag naar het benodigde aantal punten **tegen de koers van
-  vandaag**, en meldt of de drempel is gehaald
-
-**Getest (lokaal, tegen echte Postgres):** exact het scenario uit het
-oude systeem gereproduceerd — 250 punten leverden op een maandag €10,00
-op en op een vrijdag €5,00, en een saldo van 200 punten werd terecht
-geblokkeerd (`mag_inwisselen: false`) tegen de 250-drempel.
-
-**Ontwerpkeuze — géén organisatiebrede "modus"-schakelaar:** een
-organisatie die geen `redemption_rate_rules` instelt, krijgt automatisch
-de bestaande 1-punt-is-1-euro-werking (`pointsPerEuro` default `1`) —
-niets aan de huidige euro-gebaseerde flow verandert tenzij een organisatie
-bewust wisselkoersregels toevoegt.
-
-**Voorbeeld:**
-```bash
-# Wisselkoers-regels instellen (exact het oude systeem)
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/redemption-rate-rules \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: credit_rules.write" \
-  -d '{"name":"Weekdagen","appliesOnDays":["monday","tuesday","wednesday","thursday"],"pointsPerEuro":25}'
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/redemption-rate-rules \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: credit_rules.write" \
-  -d '{"name":"Weekend","appliesOnDays":["friday","saturday","sunday"],"pointsPerEuro":50}'
-
-# Drempel instellen
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/credit-rules \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: credit_rules.write" \
-  -d '{"minimumRedemptionBalance":250}'
-
-# Quote opvragen — hoeveel punten kost €10 vandaag?
-curl "http://localhost:3000/organizations/<ORG_ID>/customers/<CUSTOMER_ID>/wallet/redemption-quote?euroAmount=10" \
-  -H "x-organization-id: <ORG_ID>" -H "x-permissions: wallet.read"
-```
-
-### Eerlijk over de scope
-
-- **`reserveRedemption` gebruikt nog steeds "punten/wallet-eenheden" als
-  invoer**, niet een euro-bedrag — de bedoelde flow is: eerst een quote
-  opvragen (hoeveel punten voor dit euro-bedrag vandaag), en dát
-  puntenaantal aan `reserveRedemption` meegeven. Een geïntegreerde
-  "reserveer €10 tegen de koers van vandaag"-endpoint (die dit in één
-  stap doet) is niet gebouwd.
-- **Geen tijdvenster binnen een dag** (alleen dag-van-de-week) — het
-  ontwerp van Module 4 ondersteunt wel tijdvensters (`timeWindowStart/End`)
-  voor reward-multipliers; `redemption_rate_rules` heeft dat veld bewust
-  nog niet, kan later op dezelfde manier worden toegevoegd.
-
-## 22. Nieuwe endpoints — Module 9 (Reservations & Occupancy Booster)
-
-```
-POST   /organizations/:orgId/reservations
-GET    /organizations/:orgId/reservations
-PATCH  /organizations/:orgId/reservations/:id/status
-POST   /organizations/:orgId/location-capacity-settings
-GET    /organizations/:orgId/locations/:locationId/capacity-settings
-POST   /organizations/:orgId/weather-forecasts
-GET    /organizations/:orgId/locations/:locationId/occupancy?date=...&servicePeriod=...
-POST   /organizations/:orgId/locations/:locationId/occupancy/forecast
-POST   /organizations/:orgId/occupancy-opportunities/detect
-GET    /organizations/:orgId/occupancy-recommendations
-GET    /organizations/:orgId/occupancy-recommendations/:id
-POST   /organizations/:orgId/occupancy-recommendations/:id/approve
-POST   /organizations/:orgId/occupancy-recommendations/:id/dismiss
-```
-
-**De drie-staps-scheiding werkt écht:** `approve` maakt een echte Module
-5-campagne aan met `status: draft`, gebruikmakend van dezelfde
-`CampaignsService.create()` als een handmatig aangemaakte campagne — de
-daadwerkelijke lancering blijft een aparte, bewuste `POST
-/campaigns/:id/launch`-aanroep. Geen enkel pad in deze module kan een
-campagne automatisch starten.
-
-**Voorbeeld — het complete "Sunny Lunch Booster"-pad:**
-```bash
-# 1. Capaciteit instellen
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/location-capacity-settings \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
-  -d '{"locationId":"<LOC_ID>","servicePeriod":"lunch","maxCovers":200}'
-
-# 2. Reservering(en) invoeren
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/reservations \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
-  -d '{"locationId":"<LOC_ID>","dateTime":"2026-08-20T13:00:00Z","servicePeriod":"lunch","covers":76}'
-
-# 3. Weer invoeren
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/weather-forecasts \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
-  -d '{"locationId":"<LOC_ID>","forecastDate":"2026-08-20","temperatureCelsius":27,"condition":"sunny"}'
-
-# 4. Bezetting bekijken (het "MORGEN"-scherm)
-curl "http://localhost:3000/organizations/<ORG_ID>/locations/<LOC_ID>/occupancy?date=2026-08-20&servicePeriod=lunch" \
-  -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.read"
-
-# 5. Forecast berekenen
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/locations/<LOC_ID>/occupancy/forecast \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
-  -d '{"date":"2026-08-20","servicePeriod":"lunch"}'
-
-# 6. Opportunity detecteren (forecastRunId uit stap 5)
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/occupancy-opportunities/detect \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: reservation.write" \
-  -d '{"locationId":"<LOC_ID>","forecastRunId":"<RUN_ID>"}'
-
-# 7. Voorstel goedkeuren -> Module 5-draft-campagne
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/occupancy-recommendations/<REC_ID>/approve \
-  -H "x-organization-id: <ORG_ID>" -H "x-permissions: campaign.launch"
-```
-
-### Eerlijk over de scope
-
-- **Forecastmodel gebruikt alleen historisch gemiddelde + weer** — geen
-  seizoens-, events-, feestdag- of lead-time-correctie (ontwerp sectie 3).
-  Zonder genoeg historische data valt het terug op een neutrale 50%.
-- **Incentive-drempels zijn hardcoded** (< 30% → 3×, < 45% → 2×), niet de
-  configureerbare `occupancy_incentive_policy` uit het ontwerp.
-- **`estimatedMaxRewardExposure` gebruikt een vaste aanname** (€60
-  gemiddelde besteding) in plaats van de werkelijke gemiddelde besteding
-  per gematchte klant — een pragmatische versimpeling.
-- **Geen achtergrondjob** die periodiek automatisch forecasts/opportunities
-  genereert — elke stap wordt nu handmatig via de API getriggerd.
-
-## 23. Nieuwe endpoints — Module 10 (Analytics & AI Campaign Assistant)
-
-```
-GET    /organizations/:orgId/dashboard
-GET    /organizations/:orgId/analytics/credit
-GET    /organizations/:orgId/analytics/campaigns
-POST   /organizations/:orgId/ai-assistant/ask
-GET    /organizations/:orgId/ai-assistant/conversations/:id
-GET    /organizations/:orgId/ai-campaign-suggestions
-POST   /organizations/:orgId/ai-campaign-suggestions/:id/approve
-POST   /organizations/:orgId/ai-campaign-suggestions/:id/dismiss
-```
-
-**Alle dashboard-KPI's zijn live berekend uit echte data** — geen aparte
-analyticsdatabase: leden, nieuwe leden deze maand, loyalty-omzet, repeat
-visit rate, outstanding credit, credit dat binnen 14 dagen verloopt, At
-Risk-aantal — stuk voor stuk direct uit Module 1/2/3/7's eigen tabellen.
-
-**De AI-assistent gebruikt echte tool-aanroepen, volledig gelogd
-(`ai_tool_calls`) — nooit een verzonnen cijfer.** `POST
-/ai-assistant/ask` roept Module 9's forecastmodel en de gedeelde
-`AudienceFilterService` aan, en genereert alleen een voorstel als de
-cijfers dat rechtvaardigen. Ook hier: **approve** maakt een Module
-5-conceptcampagne aan, nooit een actieve.
-
-**Voorbeeld — het weer-en-bezetting-scenario uit het ontwerp:**
-```bash
-curl -X POST http://localhost:3000/organizations/<ORG_ID>/ai-assistant/ask \
-  -H "Content-Type: application/json" -H "x-organization-id: <ORG_ID>" -H "x-permissions: ai_assistant.use" \
-  -d '{"promptText":"Morgen slecht weer, lunch staat maar 30% vol. Wat kunnen we doen?","locationId":"<LOC_ID>","date":"2026-08-20"}'
-```
-
-### Eerlijk over de scope — dit is de belangrijkste nuance van deze module
-
-**Er wordt geen externe LLM aangeroepen om vrije tekst te interpreteren en
-zelf te bepalen welke tools nodig zijn.** In plaats daarvan draait `ask()`
-een **vaste, deterministische reeks tool-aanroepen** die past bij het
-canonieke weer-en-bezettingsscenario uit het ontwerp (forecast ophalen,
-doelgroep bepalen), en stelt het antwoord samen uit de **echte** resultaten
-van die aanroepen. De architectuur — tool-functies, volledige logging,
-nooit-verzonnen-cijfers, de recommendation/approval-scheiding — is wél
-precies zoals ontworpen. Wat ontbreekt is de taalbegrip-laag: een manager
-kan nu niet zomaar elke willekeurige vraag stellen ("waarom daalt repeat
-visit?", "welke VIP's zijn lang niet geweest?") en een zinvol antwoord
-verwachten — alleen de weer/bezetting-vraag wordt daadwerkelijk goed
-beantwoord. Een echte integratie met een taalmodel (dat zelf tools kiest
-op basis van de vraag) is de voor de hand liggende vervolgstap.
-
-## 24. Echte e-mailverzending voor campagnes/journeys (Module 6)
-
-Op verzoek toegevoegd: het `email`-kanaal in `MessagingService` stuurt nu
-**écht** een e-mail via Mailgun (dezelfde koppeling als de dagafsluiting),
-in plaats van alleen een database-registratie te maken. Push, wallet en
-SMS blijven gesimuleerd — die vereisen elk hun eigen, aparte
-providerkoppeling (native pushinfrastructuur, resp. een SMS-provider
-zoals MessageBird/Twilio) die nog niet is aangesloten.
-
-**Praktisch effect:** zodra een campagne of journey een `send_email`-actie
-uitvoert naar een klant met een bekend e-mailadres, komt dat bericht nu
-daadwerkelijk aan — mits `MAILGUN_API_KEY`/`MAILGUN_DOMAIN` zijn
-ingesteld (dezelfde variabelen als bij de dagafsluiting-e-mail). Als
-Mailgun niet geconfigureerd is, of de verzending faalt, wordt dat netjes
-vastgelegd in `message_queue_items.status = 'failed'` — de campagne/
-journey-flow zelf blokkeert of breekt daar nooit op.
-
-**`MailgunService` is verplaatst** van `src/analytics/` naar
-`src/common/` — nodig om een cirkelvormige module-afhankelijkheid te
-voorkomen (Analytics → Campaigns → Messaging → Analytics), aangezien
-zowel Messaging als Analytics deze service nu gebruiken.
-
-## 25. Echte WhatsApp-verzending (Module 6)
-
-Op verzoek toegevoegd: `WhatsAppService` (`src/common/whatsapp.service.ts`)
-verstuurt echte berichten via Meta's WhatsApp Cloud API, met dezelfde
-architectuur als de Mailgun-koppeling.
-
-**Belangrijk verschil met e-mail — dit is een echte beperking van
-WhatsApp zelf, niet van dit platform:** Meta staat alleen door het
-bedrijf-geïnitieerde berichten toe via een **vooraf goedgekeurd
-sjabloon** (buiten een actief 24-uurs klantcontact-venster om — en
-marketingberichten zoals "dubbele punten" vallen daar altijd onder).
-Vrije tekst versturen zoals bij e-mail is voor WhatsApp dus niet
-mogelijk.
-
-**Hoe dit hier is opgelost, met een bewuste vereenvoudiging:**
-`templateGroupKey` van het interne berichtsjabloon wordt ook gebruikt als
-de naam van het bij Meta goedgekeurde sjabloon (houd deze twee gelijk
-wanneer je een sjabloon specifiek voor WhatsApp aanmaakt), met een vaste
-parametervolgorde (voornaam, dan tegoedsaldo). Een volledig flexibele
-koppeling tussen willekeurige sjabloonvariabelen en Meta-sjabloonvelden
-is een grotere uitbreiding, pas zinvol zodra er echte, goedgekeurde
-sjablonen zijn om tegen te testen.
-
-**Benodigde omgevingsvariabelen bij Vercel:**
-- `WHATSAPP_ACCESS_TOKEN` — permanent access-token uit Meta Business Manager
-- `WHATSAPP_PHONE_NUMBER_ID` — ID van je geverifieerde WhatsApp-afzendernummer
-
-**Wat je zelf nog moet regelen bij Meta, vóórdat dit werkt:**
-1. Een Meta Business-account aanmaken/koppelen
-2. WhatsApp Business Platform activeren, telefoonnummer verifiëren
-3. Minstens één berichtsjabloon aanmaken en laten goedkeuren (kan uren tot dagen duren)
-
-## 26. Klanten-/tegoedimport (Piggy-migratie)
-
-Op verzoek toegevoegd: een importmodule voor het migreren van bestaande
-klanten en hun puntensaldo vanuit een ander systeem (bijv. Piggy), via
-een .csv- of .xlsx-bestand. Bouwt volledig voort op de bestaande
-Customer/Wallet/ledger-architectuur — **geen** los klant- of saldomodel.
-
-**Belangrijke, bewuste aanpassing aan de specificatie — serverloze
-omgeving:** dit platform draait op Vercel serverless functies (max. 30
-seconden per aanroep, geen achtergrond-wachtrij-infrastructuur zoals een
-Bull/Redis-queue). Een import van duizenden rijen kan dus niet in één
-lange HTTP-aanroep worden verwerkt. In plaats daarvan verwerkt het
-`/commit`-endpoint telkens een kleine batch (standaard 100 rijen), en
-roept de browser dit endpoint automatisch herhaald aan totdat alles
-verwerkt is — dat lost zowel het tijdslimiet-probleem als de gevraagde
-voortgangsindicatie in één keer op, zonder een aparte wachtrijserver.
-Bestandsgrootte is hierdoor ook begrensd (max. 5 MB, max. 10.000 rijen
-per bestand) — grotere bronbestanden moeten worden opgesplitst.
-
-**Datamodel:** `ImportJob` (één per geüpload bestand, met kolom-mapping,
-conversie-instellingen, voortgangstellingen) en `ImportRecord` (één per
-rij, met de bepaalde actie en — na boeking — de gekoppelde
-`WalletLedgerEntry`). `Customer` heeft twee nieuwe velden
-(`externalId`/`externalSource`) voor herkenning bij een latere
-heraanlevering — geen apart identificatiemodel.
-
-**Boeking:** elke gemigreerde balans wordt vastgelegd als een echte
-`WalletLedgerEntry` met `entryType: migration_import` (nieuwe waarde in
-het bestaande enum), inclusief metadata (bronklant-ID, oorspronkelijke
-punten, conversieratio, bestandsnaam) — nooit een rechtstreekse
-aanpassing van het wallet-saldo. Bij "vervang saldo" wordt eerst een
-`correction`-boeking gemaakt die het bestaande saldo naar nul terugzet,
-zodat de volledige geschiedenis intact blijft.
-
-**Matching:** uitsluitend op exact e-mailadres, genormaliseerd
-telefoonnummer, of eerder-opgeslagen externe klant-ID — nooit op naam of
-geboortedatum. Tegenstrijdige matches (e-mail wijst naar klant A,
-telefoon naar klant B) gaan altijd naar "controle nodig", nooit
-automatisch gekozen.
-
-**Bestandsverwerking:** gebruikt `exceljs` (niet het populairdere
-`xlsx`-pakket) — de npm-registry-versie van `xlsx` heeft twee bekende,
-ongepatchte kwetsbaarheden (prototype pollution, ReDoS) die specifiek
-relevant zijn bij het verwerken van geüploade, niet-vertrouwde bestanden;
-`exceljs` heeft dat probleem niet.
-
-**Bekende vereenvoudigingen t.o.v. de volledige specificatie:**
-- Geen malware-scan op geüploade bestanden (alleen bestandstype/-grootte-validatie) — een aparte antivirus-scandienst is niet aangesloten.
-- Ruwe bestandsdata wordt tijdelijk in de database bewaard (geen aparte objectopslag beschikbaar) en automatisch geleegd zodra een import voltooid is.
-- Rollback verwijdert door de import aangemaakte klanten alleen als ze werkelijk geen enkele andere activiteit hebben (transacties, reserveringen, overige ledgermutaties) — anders blijft het profiel bestaan en wordt alleen de saldomutatie teruggedraaid.
-
-## 27. Fysieke loyaltykaarten (QR-token → LoyaltyCard → Customer → Wallet)
-
-Op verzoek toegevoegd: ondersteuning voor vooraf gedrukte fysieke
-loyaltykaarten met een unieke QR-code, die géén persoonsgegevens bevat.
-Architectuurregel: een kaart bezit nooit het klantprofiel of saldo —
-alleen een verwijzing naar een Customer, wiens Wallet het echte saldo
-draagt. Zo kan een kaart altijd veilig vervangen/geblokkeerd/opnieuw
-gekoppeld worden zonder saldorisico.
-
-**Datamodel:** `LoyaltyCardBatch`, `LoyaltyCard`, `LoyaltyCardPendingEntry`
-(voor ongeregistreerd sparen vóórdat een kaart geclaimd is). Hergebruikt
-volledig het bestaande `AuditLog`-model (geen nieuw logmodel) en de
-bestaande `GuestAuthService`-e-mailcode-verificatie (geen nieuwe
-inlogflow) voor de "ik heb al een account"-stap bij het claimen.
-
-**Tokenbeveiliging:** de ruwe QR-token wordt NOOIT opgeslagen, alleen een
-SHA-256-hash — zelfde principe als bij inlogcodes/sessietokens elders in
-dit platform. **Praktisch, onomkeerbaar gevolg:** de ruwe tokens zijn
-uitsluitend zichtbaar in het antwoord van het batch-aanmaak-endpoint,
-op het moment van aanmaken zelf — dat moet dus meteen gedownload worden,
-ze kunnen daarna nooit meer worden teruggehaald (ook niet door een
-beheerder). Kaartnummers (bijv. "BC-000001") zijn wél oplopend, maar
-puur administratief — de beveiliging hangt daar nooit van af.
-
-**Ongeregistreerd sparen (sectie 9):** bewust géén los "tijdelijk
-wallet"-model — dat zou een parallel saldosysteem naast de bestaande
-Wallet-architectuur betekenen. In plaats daarvan: een lichte
-`pendingBalance` op de kaart zelf, die bij claim in één atomaire
-database-transactie wordt omgezet in een echte `WalletLedgerEntry`
-(`entryType: transfer`) op de Wallet van de nu-gekoppelde klant, en
-tegelijk op nul gezet — dit is expliciet getest tegen een echte database
-om dubbel-tellen uit te sluiten (zie testlog: €38,20 bestaand + €5,00
-pending = exact €43,20, nooit €48,20 of €5,00 verlies).
-
-**Bekende, bewuste vereenvoudigingen t.o.v. de volledige specificatie:**
-- Geen dedicated rate-limiter tegen enumeratie/scraping (geen Redis-achtige infrastructuur beschikbaar in deze serverloze omgeving) — bescherming komt uit de 96-bits-tokens zelf (praktisch niet te raden) en een generieke "niet gevonden"-respons die nooit onderscheid maakt tussen "bestaat niet" en "hoort bij een andere organisatie".
-- Redemption-beveiliging bij hoge bedragen (sectie 14) is een **configureerbare drempel + waarschuwingsvlag** (`cardRedemptionThreshold` op `CreditRule`) die het kassa-lookup-endpoint meegeeft — een volledige PIN/OTP-verificatie-UI op het moment van inwisselen zelf is (nog) niet gebouwd; dat is een logische vervolgstap zodra dit in de praktijk nodig blijkt.
-- QR-afbeeldingen (PNG/SVG) worden niet server-side voorgerenderd/gebundeld in een ZIP — de CSV-export bevat de kant-en-klare QR-URL's, die een drukker of de bestaande qrserver.com-aanpak (elders al gebruikt in dit platform) direct kan omzetten naar afbeeldingen.
-- Apple/Google Wallet-passen blijven een aparte, al bestaande `WalletPass`-structuur — bewust niet samengevoegd met dit fysieke-kaartmodel, zoals de opdracht zelf ook aangeeft.
-
-## 28. Geboortedatum consequent doorgevoerd + verbeterde klantzoekfunctie
-
-Op verzoek — analyse vooraf bevestigde dat `Customer.dateOfBirth` en de
-Piggy-import-mapping al bestonden sinds de oorspronkelijke opzet; dit was
-dus vooral een kwestie van het veld overal daadwerkelijk **zichtbaar en
-bruikbaar** maken, niet van een nieuw datamodel.
-
-**Toegevoegd:**
-- Geboortedatum zichtbaar in het klantprofiel (`customers.html`)
-- Invoerveld bij inschrijven (`inschrijven.html`) én bij het claimen van een fysieke kaart als nieuwe klant (publieke claim-pagina) — beide optioneel
-- Nieuw segmentatie-/campagneveld `daysUntilBirthday` in `AudienceFilterService` (0 = vandaag jarig, telt af naar de eerstvolgende verjaardag, altijd toekomstgericht) — getest tegen echte datums inclusief jaargrens-scenario's, voor gebruik in verjaardagscampagnes/-journeys
-- Klantzoekfunctie uitgebreid: volledige-naam-matching (bijv. "Henny Schaap" matcht ook als geen los veld de hele zoekterm bevat) én kaartnummer-matching (zoeken op "BC-000123" vindt de gekoppelde klant) — hergebruikt het bestaande `/customers`-zoek-endpoint, geen nieuw, dubbel endpoint
-- Nieuw zoek-en-selecteer-venster in `loyalty-cards.html` (het "koppelen aan bestaande klant"-scherm), ter vervanging van een reeks losse `prompt()`-vensters — toont volledige naam, e-mail, telefoon én geboortedatum per resultaat, zodat klanten met dezelfde naam te onderscheiden zijn
-
-**Privacy (bewust zo ontworpen, niet later toegevoegd):** geboortedatum
-wordt **nooit** getoond op de publieke, ongeauthenticeerde kaart-
-statuspagina, en **nooit** meegegeven in het snelle kassa/POS-
-identificatie-antwoord (`posLookup`) — alleen in de al-permissie-
-gated backoffice-schermen (klantprofiel, klant-zoekvenster). Wordt
-nergens gebruikt om identiteit te verifiëren, alleen als informatief/
-segmentatieveld.
-
-**Tijdens het bouwen zelf gevonden en gecorrigeerd:** de eerste versie
-van de kaartnummer-zoekuitbreiding zou bij een lege zoekterm-treffer
-(`{ id: undefined }` binnen een OR-voorwaarde) per ongeluk **alle**
-klanten hebben laten matchen — Prisma behandelt een lege voorwaarde in
-een OR-lijst als altijd-waar. Getest tegen een echte database vóór
-oplevering; hersteld door de voorwaarde conditioneel helemaal weg te
-laten in plaats van op `undefined` te zetten.
-
-## 29. Admin-instellingenscherm
-
-Op verzoek — een nieuw scherm (`instellingen.html`) dat alles bij elkaar
-brengt wat al wél aan de backend bestond, maar nergens bedienbaar was:
-
-- **Puntenregels** (`CreditRule`, al sinds Module 3 in het datamodel
-  aanwezig maar zonder UI): geldigheidsduur van tegoed vóór het vervalt,
-  minimale bestedingsdrempel om te sparen, minimaal saldo om in te
-  wisselen, maximumpercentage van een aankoop met tegoed, "pas bruikbaar
-  vanaf volgend bezoek", tegoed overdragen toestaan
-- **Klantenbeheer**: zoeken (hergebruikt het bestaande `/customers`-zoek-
-  endpoint) en daadwerkelijk **verwijderen** of **anonimiseren**
-  (AVG-verzoek) — beide endpoints bestonden al (`DELETE :id` en
-  `POST :id/anonymize`), maar waren nergens bereikbaar vanuit de
-  backoffice
-- **Audit-log-viewer**: nieuw, klein leesendpoint (`AdminController`) op
-  het al bestaande `AuditLog`-model — dat werd de hele sessie al overal
-  gevuld (elke kaartclaim, elke import, elke klantwijziging), maar was
-  tot nu toe volledig onzichtbaar voor een beheerder
-- **Organisatie-overzicht**: naam, ID, aantal klanten, aantal actieve
-  loyaltykaarten — handig als snel referentiepunt
-
-Geen enkel nieuw datamodel nodig — dit was uitsluitend het zichtbaar en
-bedienbaar maken van bestaande backend-capaciteit.
-
-## 30. Cadeaukaarten (Gift Cards) — met echte Mollie-betalingen
-
-Op verzoek toegevoegd: een volledig eigen cadeaukaartmodule, bewust en
-volledig gescheiden van het loyaltytegoed:
-
-```
-Customer -> Wallet -> WalletLedgerEntry        (loyaltytegoed)
-GiftCard -> GiftCardLedgerEntry                (cadeaukaart-saldo, eigen boekhouding)
-```
-
-**Belangrijkste architectuurkeuze — hoe dubbele beloning wordt
-voorkomen:** het *verkopen* van een cadeaukaart loopt bewust nooit via
-het bestaande `/transactions`-endpoint (dat de reward engine aanroept).
-Daardoor is er geen speciale uitzondering nodig diep in de reward-
-engine-code om "geen loyaltytegoed bij aankoop van een cadeaukaart" af
-te dwingen — het raakt die code simpelweg nooit. Het latere *gebruik*
-van een cadeaukaart als betaalmiddel loopt wél via een normale
-transactie (net als contant/pin), en verdient dus heel gewoon
-loyaltytegoed over het volledige aankoopbedrag.
-
-**Ledger-architectuur:** exact hetzelfde bewezen patroon als bij het
-loyaltytegoed en de fysieke loyaltykaarten — elke saldowijziging is een
-aparte `GiftCardLedgerEntry`, nooit een directe aanpassing van
-`currentBalance`. Getest tegen een echte database: verkoop, gedeeltelijk
-inwisselen, volledig inwisselen, refund/reversal, en vervanging (saldo
-verplaatst nooit gekopieerd) — steeds met bevestiging dat het saldo
-exact de som van de ledger blijft.
-
-**QR-tokenbeveiliging:** zelfde principe als de fysieke loyaltykaarten
-— alleen een SHA-256-hash opgeslagen, nooit de ruwe token.
-
-### Echte online betalingen via Mollie (iDEAL e.d.)
-
-Op expliciet verzoek een **echte** betaalprovider-koppeling, niet
-gesimuleerd. Nieuw: `MollieService` (`src/common/mollie.service.ts`).
-
-**Omgevingsvariabelen (bij Vercel instellen, nooit committen):**
-- `MOLLIE_API_KEY` — een `test_` of `live_` sleutel uit het Mollie-dashboard
-- `PUBLIC_APP_URL` — de publieke basis-URL van deze deploy (voor de redirect/webhook-URL's die Mollie moet aanroepen); valt terug op `https://loyalty-platform-live.vercel.app` als niet ingesteld
-
-**Kritieke beveiligingsregel (rechtstreeks uit Mollie's eigen
-documentatie):** de webhook die Mollie aanroept bevat **uitsluitend een
-`id`**, nooit een betrouwbare status — iedereen zou in theorie een
-willekeurige `id` naar diezelfde URL kunnen sturen. De **enige** veilige
-manier om te weten of een betaling echt gelukt is: de status vers
-opvragen bij Mollie zelf, met onze eigen API-sleutel, elke keer opnieuw
-— nooit vertrouwen op de webhook-inhoud zelf. Dit is precies hoe
-`GiftCardsService.confirmMolliePayment` werkt, en is ook de reden dat
-een cadeaukaart tijdens het betaalproces op status `draft` blijft staan
-(geen saldo, geen ledger-entry) totdat die verse statusopvraag
-`'paid'` teruggeeft.
-
-**Ruwe token nooit in onze database, ook niet tijdelijk:** voor het
-versturen van de digitale kaart per e-mail is het ruwe token nodig,
-maar dat wordt nooit opgeslagen. Oplossing: het ruwe token gaat mee in
-Mollie's eigen `metadata`-veld bij het aanmaken van de betaling, en komt
-pas terug op het moment dat de betaling bevestigd wordt — het bestaat
-dus alleen kortstondig in het geheugen op het moment van versturen, nooit
-persistent in onze eigen database.
-
-**Endpoints:**
-- `GET /gift-cards/buy/:orgId` — publieke koop-pagina (bedrag kiezen, ontvanger, boodschap)
-- `POST /gift-cards/buy/:orgId` — start de Mollie-betaling, geeft `checkoutUrl` terug
-- `POST /gift-cards/mollie-webhook` — door Mollie aangeroepen, publiek, geen permissies (kan niet, Mollie kent onze permissiestructuur niet)
-- `GET /gift-cards/thank-you/:giftCardId` — bedankpagina na terugkeer vanuit Mollie
-
-**Belangrijke, eerlijke beperking:** `api.mollie.com` staat niet op de
-toegestane netwerklijst van de bouwsandbox waarin dit gebouwd is — de
-daadwerkelijke live API-aanroepen zijn dus **niet** vanuit die sandbox
-getest (net als bij de WhatsApp/Meta-koppeling eerder). De code is met
-de hand grondig gecontroleerd tegen Mollie's officiële documentatie
-(bevestigd via web search tijdens het bouwen), maar de eerste échte test
-met een Mollie-testsleutel moet nog gebeuren.
-
-**Overige bewuste vereenvoudigingen:**
-- Geplande verzending van een digitale kaart (`scheduledSendAt`, bijv. op iemands verjaardag) wordt wel opgeslagen, maar er is geen achtergrond-scheduler die dat veld daadwerkelijk afvuurt op de juiste dag — zou, net als de dagafsluiting-e-mail, een eigen cron-endpoint nodig hebben.
-- "Koop een cadeaukaart, krijg loyaltytegoed cadeau"-promoties (expliciet als "later" aangemerkt in de opdracht) zijn niet gebouwd — de architectuur (aparte boekhoudingen die bewust nooit automatisch met elkaar communiceren) maakt dit later wel veilig toevoegbaar zonder dubbele boekingen.
-- Geen dedicated fraude-detectie/rate-limiting (zelfde, eerder al toegelichte beperking als bij de fysieke loyaltykaarten — geen Redis-achtige infrastructuur in deze omgeving).
-
-## 31. Klantportal "Mijn Tegoed" — één centrale omgeving, gebrand per website
-
-Op verzoek (na een eerdere, veel uitgebreidere Apple/Google Wallet-
-specificatie die bewust vereenvoudigd werd): een veilige mobiele
-webpagina waarmee een gast zonder app zijn Beach Credit, punten,
-cadeaukaarten, rewards en historie kan bekijken — toegankelijk vanaf de
-bestaande websites van zowel Het Strand als Zomers.
-
-**Architectuur — precies zoals gevraagd, één codebase:** `GET /portal`
-met een `?brand=het-strand` of `?brand=zomers` query-parameter bepaalt
-de merknaam en accentkleur; de onderliggende data (klant, saldo,
-cadeaukaarten, rewards, historie) komt voor beide altijd uit **dezelfde**
-centrale database en hetzelfde Customer-account. Geen tweede codebase,
-geen apart account per website.
-
-### Hoe koppel je dit aan de bestaande websites?
-
-Ik heb geen toegang tot de bestaande codebases van het-strand.nl en
-zomersbeachclub.nl (die staan niet in dit project) — dat moet je (of je
-webbouwer) zelf koppelen. De eenvoudigste, veiligste manier:
-
-**Optie A — een simpele link/knop** (aanbevolen, minste werk):
-Maak op beide sites een pagina op het gevraagde pad (`/mijn-tegoed`) die
-simpelweg doorverwijst naar:
-- Het Strand: `https://loyalty-platform-live.vercel.app/portal?brand=het-strand`
-- Zomers: `https://loyalty-platform-live.vercel.app/portal?brand=zomers`
-
-**Optie B — inladen in een iframe** op die bestaande pagina's, met
-dezelfde URL's als hierboven — dan blijft de eigen site-navigatie
-zichtbaar eromheen.
-
-**Optie C — reverse proxy** (voor een meer naadloze ervaring, technisch
-iets meer werk): laat `/mijn-tegoed` op beide sites zelf serverside naar
-bovenstaande URL's doorproxyen, zodat de bezoeker nooit een ander domein
-in de adresbalk ziet.
-
-### Inloggen zonder wachtwoord — nieuw, subtiel probleempje opgelost
-
-Het bestaande e-mailcode-systeem (`GuestAuthService`) geeft **bewust
-altijd hetzelfde antwoord**, of een e-mailadres nu wel of niet een
-account heeft — een normale, goede beveiligingsmaatregel tegen account-
-enumeratie. Dat betekende wel dat de frontend nooit vooraf kon weten of
-iemand nieuw is. Opgelost door de nieuwe-klant-vraag **na** de
-codeverificatie te stellen, niet ervoor: iedereen krijgt een code op
-hetzelfde soort verzoek, en pas na een juiste code blijkt of er een
-account bestaat (dan meteen inloggen) of niet (dan het korte
-registratieformulier). Dit raakt de al-bewezen bestaande inlogflow (o.a.
-gebruikt door de Expo-app) op geen enkele manier — een volledig aparte,
-nieuwe tabel (`GuestRegistrationCode`) regelt dit.
-
-**Telefoon/SMS-inloggen is niet gebouwd** — dit platform heeft nergens
-een SMS-providerkoppeling (zoals Twilio), in tegenstelling tot e-mail
-(Mailgun) en betalingen (Mollie). E-mail werkt volledig; SMS-OTP is een
-eerlijk benoemde, latere uitbreiding die een nieuwe providerkoppeling
-vereist — exact hetzelfde patroon als eerder bij Mailgun/Mollie.
-
-### QR-beveiliging — een nieuw, apart tokensysteem
-
-De portal-QR gebruikt bewust **niet** het bestaande fysieke-
-loyaltykaart-tokensysteem: dat token is maar één keer zichtbaar (bij
-aanmaken), wat prima is voor een fysieke kaart maar niet werkt voor een
-webportal-QR die bij elke keer inloggen opnieuw getoond moet worden.
-In plaats daarvan: `CustomerQrToken`, een kortlevend (24 uur), apart,
-willekeurig token — bevat geen naam/e-mail/saldo/database-ID, en geeft
-bij een gefotografeerde/gekopieerde QR **nooit** toegang tot het volledige
-account (alleen identificatie, geen sessie). Personeel kan 'm opzoeken via
-een nieuw endpoint (`GET /customers/qr-lookup/:token`).
-
-**Ook meteen een bestaande bug hersteld:** het klantsaldo werd
-afgerond naar hele euro's (`Math.round`) in de bestaande `/me`-endpoint
-— €18,40 werd getoond als "18". Nu twee decimalen, exact zoals de
-ledger het vastlegt.
-
-### Saldi blijven gescheiden
-
-Precies zoals gevraagd: geen nieuw gecombineerd saldoveld. Het dashboard
-haalt Beach Credit uit de bestaande `Wallet`, cadeaukaarten uit de
-bestaande `GiftCard`-ledger, en toont ze in dezelfde pagina zonder ze
-ooit samen te voegen tot één getal. De nieuwe `/me/activity`-tijdlijn is
-puur een leesweergave die beide naast elkaar toont, gesorteerd op datum
-— elk bedrag blijft herleidbaar naar zijn eigen bron.
-
-### Locatiegebonden rewards
-
-De bestaande `RewardCatalogItem.locationId` (al aanwezig, nooit
-gebruikt in de klant-app) bepaalt of een reward organisatiebreed of aan
-één locatie gebonden is — het dashboard toont dan een duidelijk label
-("Alleen geldig bij Zomers Beachclub").
-
-### Bewuste vereenvoudigingen, eerlijk benoemd
-
-- Geen PWA-infrastructuur (geen manifest.json/service-worker) — bewust, precies zoals gevraagd: "bouw geen zware PWA-structuur als dit niet nodig is."
-- Profielgegevens wijzigen (e-mail/telefoon met verificatie) is nu alleen-lezen in de portal; wijzigen kan voorlopig via de bestaande backoffice. Een latere uitbreiding.
-- "Persoonlijke aanbiedingen" (sectie 12 van de oorspronkelijke, uitgebreidere specificatie) is niet gebouwd in deze vereenvoudigde versie — de Rewards-catalogus wél.
-- Apple/Google Wallet-groundwork (`WalletPassService`, `GoogleWalletService`) staat er al uit een eerdere sessie, blijft ongebruikt-maar-aanwezig voor een latere uitbreiding — precies zoals de nieuwe, vereenvoudigde opdracht vroeg.
-
-## 32. Strategiekeuze: Expo-app op een laag pitje, klantportal + fysieke QR + e-mail als hoofdpijlers
-
-Op verzoek — bewuste, niet-technische beslissing: de mobiele Expo-app
-(`strand-tegoed-app`, apart project) blijft **onaangeroerd bestaan** en
-functioneert nog volledig (alle endpoints die hij gebruikt zijn
-gecontroleerd en ongewijzigd), maar wordt niet langer actief
-doorontwikkeld. De focus ligt voortaan op drie pijlers, die allemaal al
-dezelfde centrale Customer/Wallet-data delen:
-
-1. **Klantportal** (`/portal?brand=...`) — "de app zonder app"
-2. **Fysieke QR-kaarten** (`LoyaltyCard`) — kassa-herkenning
-3. **E-mail** (Mailgun) — inloggen én communicatie
-
-### Nieuw: "e-mail mijn QR om te printen"
-
-Vanuit de portal kan een klant zijn QR-code direct naar zichzelf laten
-e-mailen, om uit te printen of te bewaren. Bewust **niet** het
-kortlevende portal-QR-token (`CustomerQrToken`, 24 uur geldig — een
-geprinte kaart zou de volgende dag al niet meer werken), maar een
-volwaardige, nooit-verlopende fysieke loyaltykaart uit het al bestaande,
-beproefde `LoyaltyCard`-systeem — nu alleen direct uitgegeven aan een
-al-ingelogde klant in plaats van via de scan-en-claim-flow.
-
-**Technische kanttekening:** dit introduceerde een echte cirkelverwijzing
-tussen `GuestAuthModule` en `LoyaltyCardsModule` (de een gebruikt de
-ander al voor de kaart-claimflow, en nu andersom ook voor het direct
-uitgeven van een kaart) — opgelost met NestJS' eigen `forwardRef()`,
-de standaardoplossing hiervoor.
-
-## Alle tien modules — overzicht
-
-| # | Module | Ontwerp | Schema/migratie | API |
-|---|---|---|---|---|
-| 1 | Customer & CRM | ✅ | ✅ getest, live | ✅ getest, live |
-| 2 | Transactions & POS | ✅ | ✅ getest, live | ✅ getest, live |
-| 3 | Wallet & Credit | ✅ | ✅ getest, live | ✅ getest, live |
-| 4 | Reward Engine | ✅ | ✅ getest, live | ✅ getest, live |
-| 5 | Campaign Manager | ✅ | ✅ getest | — |
-| 6 | Messaging | ✅ | ✅ getest | — |
-| 7 | Segmentation Engine | ✅ | ✅ getest | — |
-| 8 | Automated Journeys | ✅ | ✅ getest | — |
-| 9 | Reservations & Occupancy | ✅ | ✅ getest | — |
-| 10 | Analytics & AI Assistant | ✅ | ✅ getest | — |
-
-## Projectstructuur
-
-```
-loyalty-platform/
-├── api/
-│   └── index.ts              # Vercel serverless entrypoint
-├── src/
-│   ├── audit/                 # Gedeelde audit-log service (sectie 13)
-│   ├── common/
-│   │   ├── decorators/         # @RequirePermissions, @Ctx (auth-stub)
-│   │   ├── guards/              # PermissionsGuard
-│   │   └── filters/             # Prisma error → HTTP response mapping
-│   ├── customers/               # Module 1 kern: CRUD, identity, consent, merge, AVG
-│   ├── org-resources/            # Tags & custom fields (organisatiebreed)
-│   ├── prisma/                    # Injectable PrismaService
-│   ├── app.module.ts
-│   └── main.ts
-├── prisma/
-│   ├── schema.prisma
-│   ├── seed.ts
-│   └── migrations/
-├── .env.example
-├── .gitignore
-├── nest-cli.json
-├── vercel.json
-├── package.json
-├── tsconfig.json
-└── README.md
-```
+# Loyalty Platform — Module 1: Customer \& CRMFundament van het horeca/hospitality loyaltyplatform. Deze repo bevat op ditmoment het **database schema en de migraties** voor Module 1. Volgendemodules (Transactions \& POS, Wallet \& Credit, Reward Engine, ...) wordenhier als vervolg-migraties en later als NestJS-modules aan toegevoegd.**Stack:** Node.js/TypeScript · Prisma · Supabase (Postgres) · GitHub · Vercel\---## Belangrijk: status van dit schemaHet `prisma/schema.prisma`-bestand en de SQL-migratie in`prisma/migrations/20260813000000\\\\\\\_init\\\\\\\_customer\\\\\\\_crm/` zijn **met de handgeschreven en op elkaar afgestemd**, niet automatisch gegenereerd — desandbox waarin dit is gebouwd had geen netwerktoegang tot`binaries.prisma.sh` (waar Prisma's engine-binaries vandaan komen), dus`prisma generate` / `prisma migrate dev` konden daar niet draaien.Dat is geen probleem voor gebruik — de SQL is functioneel identiek aan watPrisma zelf zou genereren — maar doe **lokaal** wel eerst een validatie-checkvoordat je naar productie migreert (stap 3 hieronder).\---## 1\. Supabase-project aanmaken1. Ga naar [supabase.com](https://supabase.com) → **New project**.2. Kies een sterk database-wachtwoord en bewaar dit.3. Ga naar **Project Settings → Database → Connection string**.4. Je hebt twee connectiestrings nodig:   * **Connection pooling (Transaction mode, poort 6543)** → wordt `DATABASE\\\\\\\_URL`   * **Direct connection (poort 5432)** → wordt `DIRECT\\\\\\\_URL`   Waarom beide: serverless functies (Vercel) openen bij elke aanroep eennieuwe databaseverbinding — zonder pooling loop je snel tegen Postgres'connectielimiet aan. Prisma Migrate heeft daarentegen eensessie-connectie nodig, vandaar de directe URL apart.5. Kopieer `.env.example` naar `.env` en vul beide URL's in.```bashcp .env.example .env```\---## 2\. Lokaal installeren```bashnpm install```Dit installeert Prisma en genereert **geen** engine-download-problemen opeen normale (niet-gesandboxde) machine.\---## 3\. Schema valideren en client genereren```bashnpx prisma validate      # controleert schema.prisma op syntaxfoutennpx prisma generate      # genereert de TypeScript Prisma Client```\---## 4\. Migratie naar Supabase uitvoerenOmdat de migratie-SQL al klaarstaat, hoef je niets te "diffen" — je pasthem direct toe:```bashnpx prisma migrate deploy```Dit voert `prisma/migrations/20260813000000\\\\\\\_init\\\\\\\_customer\\\\\\\_crm/migration.sql`uit tegen je Supabase-database en registreert de migratie in de`\\\\\\\_prisma\\\\\\\_migrations`-tabel, zodat toekomstige migraties (Module 2, 3, ...)hierop voortbouwen.> Werk je liever met `prisma migrate dev` tijdens verdere ontwikkeling> (met shadow database, automatische diff-generatie)? Dat kan vanaf hier> gewoon — de bestaande migratie wordt dan als startpunt herkend.**Controle:** open **Supabase → Table Editor** en check dat alle tabellen(`organizations`, `customers`, `customer\\\\\\\_identities`, `customer\\\\\\\_consents`,`customer\\\\\\\_timeline\\\\\\\_events`, `audit\\\\\\\_log`, ...) er staan.\---## 5\. Sanity-check met het seedscript```bashnpm run db:seed```Dit maakt een testorganisatie ("Beach Hospitality Group"), een locatie("Beachclub Noordwijk") en het voorbeeldklantprofiel (Jan de Vries) aanzoals in de moduleopdracht beschreven — inclusief identities, consent eneen eerste timeline-event. Handig om te verifiëren dat alle relatiescorrect staan vóórdat je de API erbovenop bouwt.\---## 6\. Naar GitHub```bashgit initgit add .git commit -m "Module 1: Customer \\\\\\\& CRM — schema en migratie"git branch -M maingit remote add origin https://github.com/<jouw-account>/loyalty-platform.gitgit push -u origin main````.env` staat in `.gitignore` — commit nooit je database-credentials.\---## 7\. Koppelen aan Vercel1. Ga naar [vercel.com/new](https://vercel.com/new) → importeer de GitHub-repo.2. Zet de environment variables (`DATABASE\\\\\\\_URL`, `DIRECT\\\\\\\_URL`) in**Project Settings → Environment Variables** — zelfde waarden als in jelokale `.env`.3. Voeg in `package.json` een `postinstall`-script toe zodra er ook eenNestJS-app in de repo staat, zodat Vercel bij elke deploy automatisch dePrisma Client genereert:```json   "postinstall": "prisma generate"   ```(Dit script staat er nu nog niet in, omdat er nog geen deploybare app-laagis — dat komt met de eerste API-endpoints.)Op dit moment bevat de repo alleen schema/migraties, dus er is nog niets"live" te draaien op Vercel — dat wordt relevant zodra we de NestJS API(resolve-identity, CRUD-endpoints, etc.) uit Module 1 sectie 9 toevoegen.\---## 8\. NestJS API draaienDe API-laag implementeert de endpoints uit sectie 9 van het Module 1-ontwerp(`/customers`, `/resolve-identity`, `/merge`, consent-beheer, timeline,notes, tags, custom fields) met de permissiematrix uit sectie 10 als guards.```bashnpm installnpx prisma generatenpm run buildnpm run start:dev```De server draait dan op `http://localhost:3000`.### Auth-stub (belangrijk om te weten)Er is nog geen Users/Roles/authenticatie-module gebouwd — dat hoort bij eengedeelde platform/auth-module die nog niet bestaat. Tot die er is, wordt detenant- en actor-context uit request-headers gelezen:|Header|Betekenis||-|-||`x-organization-id`|UUID van de organisatie (**verplicht** op elk endpoint)||`x-actor-id`|UUID van de staff-user of API-key (optioneel)||`x-actor-type`|`staff` \| `system` \| `api\\\\\\\_key` \| `customer\\\\\\\_self\\\\\\\_service`||`x-permissions`|komma-gescheiden lijst, bv. `customer.read,customer.write`|Voorbeeld met `curl`:```bashcurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/customers \\\\\\\\  -H "Content-Type: application/json" \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" \\\\\\\\  -H "x-actor-type: staff" \\\\\\\\  -H "x-permissions: customer.write" \\\\\\\\  -d '{"firstName":"Jan","lastName":"de Vries","email":"jan@example.nl","sourceChannel":"pos"}'```Zodra de echte auth-module er is, vervang je alleen`src/common/decorators/current-context.decorator.ts` — de rest van decodebase leest context via die ene decorator.### Belangrijkste endpoints```POST   /organizations/:orgId/customersGET    /organizations/:orgId/customersGET    /organizations/:orgId/customers/duplicatesPOST   /organizations/:orgId/customers/resolve-identityGET    /organizations/:orgId/customers/:idPATCH  /organizations/:orgId/customers/:idDELETE /organizations/:orgId/customers/:idPOST   /organizations/:orgId/customers/:id/identitiesDELETE /organizations/:orgId/customers/:id/identities/:identityIdGET    /organizations/:orgId/customers/:id/timelinePOST   /organizations/:orgId/customers/:id/notesGET    /organizations/:orgId/customers/:id/notesPOST   /organizations/:orgId/customers/:id/tags/:tagIdDELETE /organizations/:orgId/customers/:id/tags/:tagIdGET    /organizations/:orgId/customers/:id/consentsPOST   /organizations/:orgId/customers/:id/consentsGET    /organizations/:orgId/customers/:id/consents/historyPOST   /organizations/:orgId/customers/:id/mergePOST   /organizations/:orgId/customers/:id/exportPOST   /organizations/:orgId/customers/:id/anonymizeGET    /organizations/:orgId/customers/:id/locationsGET    /organizations/:orgId/tagsPOST   /organizations/:orgId/tagsGET    /organizations/:orgId/custom-fieldsPOST   /organizations/:orgId/custom-fields```## 9\. Deployen naar Vercel### Nieuwe endpoints — Module 2 \& 4```POST   /organizations/:orgId/transactionsGET    /organizations/:orgId/transactionsGET    /organizations/:orgId/transactions/:idPOST   /organizations/:orgId/transactions/:id/refundPOST   /organizations/:orgId/transactions/:id/voidGET    /organizations/:orgId/pos-connectionsPOST   /organizations/:orgId/pos-connectionsGET    /organizations/:orgId/pos-connections/:id/healthGET    /organizations/:orgId/reward-rulesPOST   /organizations/:orgId/reward-rulesPATCH  /organizations/:orgId/reward-rules/:idDELETE /organizations/:orgId/reward-rules/:idPOST   /organizations/:orgId/reward-simulationsGET    /organizations/:orgId/reward-calculationsGET    /organizations/:orgId/reward-calculations/:idPOST   /organizations/:orgId/reward-calculations/:id/resimulate```**Voorbeeld — het doorgerekende voorbeeld uit het Module 4-ontwerp, live via de simulator:**```bashcurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/reward-simulations \\\\\\\\  -H "Content-Type: application/json" \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" \\\\\\\\  -H "x-permissions: reward\\\\\\\_rule.read" \\\\\\\\  -d '{"amount": 100, "tierId": "<GOLD\\\\\\\_TIER\\\\\\\_ID>"}'```### Eerlijk over de scope van deze API-laagGebouwd en (na jouw lokale `npm run build`) compileerbaar:* **Transacties invoeren** (`POST /transactions`) — berekent automatisch de eligible amount uit regel-items en triggert de Reward Engine synchroon, in-process (niet via een echte event-bus/message-queue — dat is een architecturale vereenvoudiging t.o.v. het ontwerp, prima voor één-proces-deployment, maar zou in een groter systeem via een echte queue moeten lopen)* **Refund/void** met proportionele reward-reversal — een **vereenvoudigde** reversal (het bedrag wordt proportioneel teruggerekend zonder de volledige multi-stage berekening opnieuw te doorlopen op het verlaagde bedrag); een productierijpe versie zou dat wel moeten doen* **Reward-regels CRUD**, inclusief versioning zodra een regel al gebruikt is (sectie 15 van het ontwerp)* **Rule Simulator** (`POST /reward-simulations`) — hergebruikt exact dezelfde rekencode als een live transactie, precies zoals het ontwerp vereist* **Calculation trace** — elke berekening (live of simulatie) bevat het volledige stap-voor-stap logboek**Bewust niet gebouwd in deze stap** (wel volledig ontworpen in de bijbehorende markdown-documenten):* Webhook-ontvangst per POS-provider, polling-worker, bulk/CSV-import* Reconciliation-job en het volledige integration-dashboard* Customer-caps en location-caps worden nog niet gehandhaafd in de berekening (staan als tabellen klaar in het schema, sectie 6, maar de cap-check in stadium 4 is nog niet geïmplementeerd — alleen `maximumRewardPerTransaction` werkt al)* Challenge-regels (stadium 5) — aparte pijplijn, nog niet gebouwdDe repo bevat nu `api/index.ts` (serverless entrypoint, wrapt de NestJS-appin een gecachete Express-handler) en `vercel.json` (routeert alle requestsdaarnaartoe).1. Importeer de GitHub-repo op [vercel.com/new](https://vercel.com/new)2. Zet `DATABASE\\\\\\\_URL` en `DIRECT\\\\\\\_URL` in **Project Settings → EnvironmentVariables**3. Deploy — Vercel draait automatisch `npm install` (met `postinstall: prisma generate`) en `npm run build`> \\\\\\\*\\\\\\\*Let op:\\\\\\\*\\\\\\\* de Prisma Client-engine wordt bij `npm install` gedownload> van `binaries.prisma.sh`. Dat werkt gewoon op Vercel's build-servers en> op een normale ontwikkelmachine met internettoegang — alleen deze> specifieke ontwikkel-sandbox waarin dit project is opgezet had daar geen> toegang toe. Test dus altijd eerst lokaal (stap 8) vóór je naar Vercel> pusht.## Volgende stap**Module 2 (Transactions \& POS) en Module 4 (Reward Engine)** zijn nu ook alsdatabase-migratie toegevoegd (`20260814000000\\\\\\\_transactions\\\\\\\_pos\\\\\\\_reward\\\\\\\_engine`).Deze migratie is **echt getest**, op dezelfde manier als de eerste: lokaaltegen een verse Postgres 16-installatie gedraaid, met een concretedataset die exact het doorgerekende voorbeeld uit het Module 4-ontwerpreproduceert (base 5% + Gold-tier 1% = 6%, ×2 Double Credit-campagne =**€12,00** reward op een transactie van €100) — en de idempotency-constraintuit Module 2 (geen dubbele transactie met hetzelfde extern ID op dezelfdePOS-koppeling) is expliciet gecontroleerd: een duplicaat-insert gaf terechteen database-fout.**Om deze migratie ook bij jou uit te voeren:**```bashnpx prisma generatenpx prisma migrate deploynpm run db:seed:rewards```> `db:seed:rewards` hergebruikt de organisatie uit de eerste seed> (`beach-hospitality-group`) — draai dus eerst `npm run db:seed` als je dat> nog niet had gedaan, of het script maakt 'm alsnog aan (upsert).**Wat deze migratie toevoegt (21 nieuwe tabellen):*** Module 2: `pos\\\\\\\_connections`, `pos\\\\\\\_events`, `transactions`,`transaction\\\\\\\_line\\\\\\\_items` (+ modifiers), `transaction\\\\\\\_refunds`,`transaction\\\\\\\_voids`, `transaction\\\\\\\_chargebacks`, `pos\\\\\\\_product\\\\\\\_mappings`,`pos\\\\\\\_customer\\\\\\\_mappings`, `failed\\\\\\\_transactions`, `pos\\\\\\\_sync\\\\\\\_runs`* Module 4: `reward\\\\\\\_rules`, `reward\\\\\\\_customer\\\\\\\_caps`, `reward\\\\\\\_location\\\\\\\_caps`,`reward\\\\\\\_calculations`, `reward\\\\\\\_challenge\\\\\\\_progress`**Nog te bouwen:** de NestJS API-laag voor deze twee modules (endpoints uitModule 2 sectie 5 en Module 4 sectie 11), en de webhook-adapter voor eeneerste concrete POS-provider zodra dat relevant wordt.## 10\. Module 3 (Wallet \& Credit) — databaseToegevoegd via `20260815000000\\\\\\\_wallet\\\\\\\_credit`: `wallets`,`wallet\\\\\\\_ledger\\\\\\\_entries`, `wallet\\\\\\\_ledger\\\\\\\_allocations`, `wallet\\\\\\\_passes`,`credit\\\\\\\_rules` — het lot-based ledger-model uit het Module 3-ontwerp.**Getest, net als de vorige migraties:** lokaal tegen een verse Postgres 16,met een concreet scenario dat het hele pad doorloopt:1. Transactie van €184 → earn-lot van €9,20 (10 dagen geleden)2. Een *volgend* bezoek (andere transactie) → gedeeltelijke besteding van€5,00, met een allocatie-rij die expliciet naar de oorspronkelijke lotverwijst — traceerbaarheidsquery bevestigd: je kunt van elke bestedingexact aanwijzen uit welke verdien-gebeurtenis hij kwam3. Een verlopen lot van €3,00 → expiratie-flow, lot netjes afgesloten4. Reconciliatie: de ledger herberekenen en vergelijken met dedenormalized cache — dit ving zelfs een fout in mijn eigen testscriptop (een vergeten cache-update), precies zoals sectie 15 bedoeld is```bashnpx prisma generatenpx prisma migrate deploy```**Nog te bouwen:** de NestJS API-laag voor Module 3 (redemptionreserve/confirm-flow, admin-correcties, Wallet-pas-endpoints) staat nogniet — alleen schema + migratie zijn nu klaar, net als bij Module 2/4 ineerste instantie.## 11\. Nieuwe endpoints — Module 3 (Wallet \& Credit)```GET    /organizations/:orgId/customers/:customerId/walletGET    /organizations/:orgId/customers/:customerId/wallet/ledgerGET    /organizations/:orgId/customers/:customerId/wallet/ledger/:entryIdPOST   /organizations/:orgId/customers/:customerId/wallet/redemptions/reservePOST   /organizations/:orgId/customers/:customerId/wallet/redemptions/:reservationId/confirmPOST   /organizations/:orgId/customers/:customerId/wallet/redemptions/:reservationId/cancelPOST   /organizations/:orgId/customers/:customerId/wallet/adjustments```**Belangrijk:** het aanmaken van een transactie (`POST /transactions`) boektnu automatisch een `earn`-ledger entry op de wallet van de klant, als deReward Engine een positief bedrag berekent — precies het "transactie →reward → zichtbaar tegoed"-pad waar we naartoe hebben gewerkt.**Voorbeeld — volledige cyclus testen:**```bash# 1. Transactie invoeren (levert reward op, boekt automatisch een earn)curl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/transactions \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" \\\\\\\\  -H "x-permissions: transaction.write" \\\\\\\\  -d '{"locationId":"<LOCATION\\\\\\\_ID>","customerId":"<CUSTOMER\\\\\\\_ID>","grossAmount":100,"netAmount":100,"totalAmount":100,"paymentMethod":"card"}'# 2. Saldo bekijkencurl http://localhost:3000/organizations/<ORG\\\\\\\_ID>/customers/<CUSTOMER\\\\\\\_ID>/wallet \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: wallet.read"# 3. Tegoed reserveren voor besteding bij een ANDERE (volgende) transactiecurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/customers/<CUSTOMER\\\\\\\_ID>/wallet/redemptions/reserve \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: wallet.redeem" \\\\\\\\  -d '{"amount":5,"transactionId":"<EEN\\\\\\\_ANDERE\\\\\\\_TRANSACTIE\\\\\\\_ID>","idempotencyKey":"test-1"}'# 4. Bevestigen (reservationId uit de vorige response)curl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/customers/<CUSTOMER\\\\\\\_ID>/wallet/redemptions/<RESERVATION\\\\\\\_ID>/confirm \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: wallet.redeem"```### Eerlijk over de scope van deze wallet-API* **Redemption-reserveringen staan in-memory** (een `Map` in de service), niet in een database-tabel of Redis. Dit werkt correct zolang je **één** serverinstantie draait (zoals nu, lokaal of op Vercel als één functie), maar overleeft geen herstart en werkt niet betrouwbaar met meerdere gelijktijdige instanties. Een productierijpe versie heeft hiervoor een echte gedeelde store nodig.* **Tegoedregels (`credit\\\\\\\_rules`) worden nog niet gevalideerd** bij redemption — de endpoints bestaan (via Prisma), maar de validatie (minimumbesteding, max-percentage, uitgesloten dagen/producten) uit sectie 6 van het ontwerp is nog niet in `WalletService.reserveRedemption()` geïmplementeerd.* **Apple/Google Wallet pass-endpoints zijn niet gebouwd** — het datamodel (`wallet\\\\\\\_passes`) staat klaar, de pass-generatie/webhook-ontvangst (sectie 9) niet.* **Refund/void reward-reversal (Module 4) landt nog niet automatisch als `refund\\\\\\\_reversal`-ledger entry** — die koppeling (Module 2/4's refund-events → Module 3's ledger) is nog niet gelegd.* **De expiratie-achtergrondjob draait niet** — het model ondersteunt expiratie volledig (zoals lokaal getest), maar er is geen scheduled job die hem in productie daadwerkelijk uitvoert.## 12\. Module 5 (Campaign Manager) \& Module 6 (Messaging) — databaseToegevoegd via `20260816000000\\\\\\\_campaign\\\\\\\_messaging`: 15 nieuwe tabellen —`campaigns`, `campaign\\\\\\\_templates`, `campaign\\\\\\\_audience\\\\\\\_snapshot`,`campaign\\\\\\\_recipients`, `campaign\\\\\\\_metrics\\\\\\\_snapshots` (Module 5);`message\\\\\\\_providers`, `message\\\\\\\_templates`, `message\\\\\\\_send\\\\\\\_requests`,`message\\\\\\\_queue\\\\\\\_items`, `message\\\\\\\_events`, `message\\\\\\\_links`,`customer\\\\\\\_push\\\\\\\_tokens`, `message\\\\\\\_frequency\\\\\\\_caps`,`customer\\\\\\\_message\\\\\\\_send\\\\\\\_log`, `brand\\\\\\\_voice\\\\\\\_profiles`, `ai\\\\\\\_copy\\\\\\\_requests`(Module 6).**Getest:** alle vier migraties samen (Module 1, 2+4, 3, 5+6) foutloostegen een verse Postgres 16 — **56 tabellen** in totaal. Functioneelscenario doorlopen: een "Sunny Day"-campagne met een audience-snapshot diecorrect onderscheid maakt tussen de behandelde groep en de controlegroep,en een bericht dat het volledige pad template → gerenderde tekst → queueitem → delivery-event doorloopt.```bashnpx prisma generatenpx prisma migrate deploy```**Nog te bouwen:** de NestJS API-laag voor Module 5/6 (campagne-wizard-endpoints, message-verzending, AI-copy-aanroep) staat nog niet — alleenschema + migratie zijn nu klaar. De koppeling tussen Module 5'scampagne-incentive en Module 4's `reward\\\\\\\_rules` (het `campaignId`-veldbestaat al in Module 4's schema) moet nog daadwerkelijk in code gelegdworden, evenals de in Module 5's ontwerp benoemde uitbreiding op deReward Engine (audience-restrictie op campagne-gekoppelde regels).## 13\. Module 7 (Segmentation Engine) — databaseToegevoegd via `20260817000000\\\\\\\_segmentation`: `segments`,`segment\\\\\\\_membership`, `churn\\\\\\\_risk\\\\\\\_scores`. **Belangrijk:** deze migratievervangt de vooruitkijkende `segments`/`customer\\\\\\\_segment\\\\\\\_memberships`-stubuit Module 1 door de echte implementatie (drop-and-recreate — de stub werdnooit door applicatiecode gebruikt, dus dit is veilig).**Getest:** alle vijf migraties samen foutloos — 57 tabellen. Functioneelscenario: het exacte churn-voorbeeld uit het ontwerp doorgerekend — eenklant die normaliter elke 20 dagen komt en nu 35 dagen weg is (ratio 1,75)wordt terecht als "At Risk" gemarkeerd, terwijl een klant die normaliterelke 60 dagen komt en nu 50 dagen weg is (ratio 0,83, dus binnen zijn eigenpatroon) dat terecht **niet** wordt — het bewijst dat persoonlijke cadanswerkt zoals bedoeld, niet een vaste termijn. Ook getest: het AND-segmentuit de opdracht (`lifetimeSpend > 1000 AND isAtRisk`) selecteert correctalleen de juiste klant.```bashnpx prisma generatenpx prisma migrate deploy```**Nog te bouwen:** de NestJS API-laag (segment-builder-endpoints, preview,de churn-batch-job zelf) staat nog niet — alleen schema + migratie.## 14\. Module 8 (Automated Journeys) — databaseToegevoegd via `20260818000000\\\\\\\_automated\\\\\\\_journeys`: `journeys`,`journey\\\\\\\_versions`, `journey\\\\\\\_nodes`, `journey\\\\\\\_edges`,`journey\\\\\\\_enrollments`, `journey\\\\\\\_node\\\\\\\_executions`, `journey\\\\\\\_goals` — 7nieuwe tabellen, samen goed voor **64 tabellen totaal** in het platform.**Getest:** alle zes migraties samen foutloos. Functioneel het **exacteFirst Visit-voorbeeld uit het ontwerp** opgebouwd — trigger → send\_push →wait 14 dagen → condition → send\_push/end — als een echte graaf van nodesen edges in de database, en drie kernmechanismen bevestigd:1. Duplicate-enrollment-detectie vindt een reeds actieve inschrijving2. De scheduler-query vindt een `waiting`-enrollment terecht **niet** zolangde wait-periode nog loopt3. Diezelfde query vindt de enrollment wél zodra de wait-periode voorbij is```bashnpx prisma generatenpx prisma migrate deploy```**Nog te bouwen:** de NestJS API-laag (flow-uitvoeringsengine, descheduler-worker zelf, de builder-UI-endpoints) staat nog niet — alleenschema + migratie.## 15\. Module 9 (Reservations \& Occupancy Booster) — databaseToegevoegd via `20260819000000\\\\\\\_reservations\\\\\\\_occupancy`: 8 nieuwe tabellen— `location\\\\\\\_capacity\\\\\\\_settings`, `reservation\\\\\\\_connections`,`reservations`, `weather\\\\\\\_forecasts`, `forecast\\\\\\\_runs`,`occupancy\\\\\\\_opportunities`, `occupancy\\\\\\\_recommendations`,`occupancy\\\\\\\_attribution\\\\\\\_results` — samen goed voor **72 tabellen totaal**.**Getest:** alle zeven migraties samen foutloos. Functioneel het **exacte"Sunny Lunch Booster"-scenario uit het ontwerp** opgebouwd en geverifieerd:* Bezettingsberekening: 76 geboekte covers / 200 capaciteit = **38%**,exact het cijfer uit de opdracht* Weer gekoppeld: 27°C, zonnig* Het volledige voorstel: naam, doelgroep (624), incentive (double credit),geschatte max. reward-kosten (€1.248), status `pending\\\\\\\_approval` — eenvoorstel, nog geen actieve campagne, precies de vereiste scheidingtussen recommendation en execution```bashnpx prisma generatenpx prisma migrate deploy```**Nog te bouwen:** de NestJS API-laag (forecast-berekening, opportunity-detectiejob, de koppeling die een goedgekeurd voorstel omzet in eenModule 5-draft-campagne) staat nog niet — alleen schema + migratie.## 16\. Module 10 (Analytics \& AI Campaign Assistant) — databaseToegevoegd via `20260820000000\\\\\\\_analytics\\\\\\\_ai\\\\\\\_assistant`: `analytics\\\\\\\_snapshots`,`cohort\\\\\\\_retention\\\\\\\_snapshots`, `ai\\\\\\\_assistant\\\\\\\_conversations`,`ai\\\\\\\_assistant\\\\\\\_messages`, `ai\\\\\\\_tool\\\\\\\_calls`, `ai\\\\\\\_campaign\\\\\\\_suggestions`,`proactive\\\\\\\_insights` — 7 tabellen, en daarmee **compleet: 79 tabellen,alle 10 kernmodules van het platform.****Getest:** alle acht migraties samen foutloos. Functioneel het **exacteAI-assistent-voorbeeld uit het ontwerp** opgebouwd: de vraag "Morgenslecht weer, lunch staat maar 30% vol" met drie echte tool-aanroepen(`getOccupancyForecast: 31%`, `getHistoricalOccupancy: 56%`,`getSegmentPreview: 412`), een AI-antwoord dat uitsluitend die cijfersciteert, en een voorstel — **412 klanten, €3.090 geschatte max. exposure,status `pending\\\\\\\_approval`** — nooit een actieve campagne. Elk cijfer inhet voorstel is herleidbaar tot een `ai\\\\\\\_tool\\\\\\\_calls`-rij; geen enkelverzonnen getal.```bashnpx prisma generatenpx prisma migrate deploy```**Nog te bouwen:** de NestJS API-laag (het dashboard, de KPI-berekeningsjobs,de daadwerkelijke AI-conversatie-engine met een LLM-koppeling) staat nogniet — alleen schema + migratie, net als bij de voorgaande modules.## 17\. Nieuwe endpoints — Module 5 (Campaign Manager)```POST   /organizations/:orgId/campaignsGET    /organizations/:orgId/campaignsPOST   /organizations/:orgId/campaigns/previewGET    /organizations/:orgId/campaigns/:idPATCH  /organizations/:orgId/campaigns/:idPOST   /organizations/:orgId/campaigns/:id/launchPOST   /organizations/:orgId/campaigns/:id/pausePOST   /organizations/:orgId/campaigns/:id/resumePOST   /organizations/:orgId/campaigns/:id/cancelGET    /organizations/:orgId/campaigns/:id/results```**Belangrijk:** `launch` doet echt werk — audience-resolutie, controlegroep-splitsing, en (indien een incentive is ingesteld) het aanmaken van deonderliggende Module 4-`reward\\\\\\\_rule` met `campaignId` gevuld. Vanaf datmoment tellen nieuwe transacties van gasten in de doelgroep automatischmee in de reward-berekening.### Eerlijk over de scope* **De audience-filter-evaluatie gebeurt in applicatiecode** (laadt tot5.000 klanten van de organisatie en filtert in JavaScript), niet alseen geoptimaliseerde, geïndexeerde SQL-query. Dit is correct maar nietgeschikt voor zeer grote klantenbestanden — Module 7's "querygenerator" (nog niet gebouwd) hoort dit uiteindelijk te vervangen.* **De audience-restrictie op campagne-gekoppelde reward-regels is NIETgeïmplementeerd** — het ontwerp benoemt expliciet dat de Reward Enginehiervoor moet controleren of een klant in de campagne-snapshot zit(sectie 6 van het ontwerp); die controle staat nu nog niet in`RewardEngineService`. Dit betekent dat een gelanceerde campagne-incentive **voor de hele organisatie** geldt, niet alleen dedoelgroep — een bekend gat, met de oplossing al ontworpen maar nog nietgebouwd.* **Scheduling (period/recurring), approvals en daadwerkelijkeberichtverzending zijn niet geïmplementeerd** — `launch` ondersteuntalleen directe uitvoering, en registreert ontvangers zonder iets teversturen (Module 6's API staat er ook nog niet).## 18\. Nieuwe endpoints — Module 6 (Messaging)```POST   /organizations/:orgId/messaging/sendGET    /organizations/:orgId/messaging/templatesPOST   /organizations/:orgId/messaging/templatesGET    /organizations/:orgId/messaging/queueGET    /organizations/:orgId/messaging/queue/:id```**Het "campagne → verzending"-pad werkt nu écht:** `POST /campaigns/:id/launch` roept intern `MessagingService.send()` aan voorelke gekozen kanaal, met échte consent- en frequency-cap-controle tegenModule 1's data. Dit is het eerste moment waarop een campagne meer doetdan alleen een reward-regel aanmaken — er gaat nu ook daadwerkelijk eenbericht "uit" (gesimuleerd, zie hieronder).**Voorbeeld — een template aanmaken en een campagne ermee lanceren:**```bash# 1. Template aanmaken (templateGroupKey moet overeenkomen met de#    campagnenaam in lowercase-met-underscores)curl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/messaging/templates \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" \\\\\\\\  -H "x-permissions: message.template.write" \\\\\\\\  -d '{"templateGroupKey":"sunny\\\\\\\_day","channel":"push","category":"marketing","name":"Sunny Day","locale":"nl","body":"Hi {{first\\\\\\\_name}}, je hebt nog {{credit\\\\\\\_balance}} Beach Credit. {{#if credit\\\\\\\_balance\\\\\\\_raw > 10}}Genoeg voor een drankje!{{/if}}"}'# 2. Campagne aanmaken en lanceren (zie Module 5-voorbeelden)```### Eerlijk over de scope* **Geen echte provider-adapters** (APNs/FCM/Postmark/Twilio) — een"verzending" schrijft direct een `message\\\\\\\_queue\\\\\\\_items`-rij met status`sent`, zonder iets echt te versturen. De architectuur (provider-abstractie, sectie 2 van het ontwerp) staat klaar, maar is nietaangesloten op een echte dienst.* **Quiet hours (sectie 8) zijn niet geïmplementeerd** — berichtenworden nooit uitgesteld, ongeacht tijdstip.* **Retries (sectie 11), link tracking (sectie 13), push tokens (sectie 14)en AI copy (sectie 16) zijn niet gebouwd** — alleen de kern: template-rendering, consent-check, frequency-cap-check, en de wachtrij-registratie.* **Consent-check is een pragmatische aanname**: voor `wallet`-kanaalwordt push-consent gebruikt (er is geen apart wallet-consenttype inModule 1's schema) — een kleine, gedocumenteerde vereenvoudiging.## 19\. Nieuwe endpoints — Module 7 (Segmentation Engine)```POST   /organizations/:orgId/segmentsGET    /organizations/:orgId/segmentsPOST   /organizations/:orgId/segments/previewGET    /organizations/:orgId/segments/:idPATCH  /organizations/:orgId/segments/:idDELETE /organizations/:orgId/segments/:idGET    /organizations/:orgId/segments/:id/membersPOST   /organizations/:orgId/segments/:id/recomputePOST   /organizations/:orgId/segments/:id/duplicatePOST   /organizations/:orgId/churn-risk/recomputeGET    /organizations/:orgId/customers/:customerId/churn-risk```**Belangrijk:** de audience-filter-evaluator uit Module 5 is uitgebreid met`isAtRisk`/`churnRiskScore`, en wordt nu door Module 5 én 7 **gedeeld**(`src/common/audience-filter.service.ts`) — precies zoals het ontwerpvoorschreef: één definitie van wat een conditie betekent, niet twee.**Het churn-algoritme uit sectie 11 van het ontwerp draait nu écht:**`POST /churn-risk/recompute` berekent voor elke klant de persoonlijkecadans-ratio (`daysSinceLastVisit / averageVisitFrequencyDays`), markeertals `isAtRisk` bij een ratio > 1,5, en valt terug op een organisatie-gemiddelde voor klanten met minder dan 2 bezoeken — exact zoals lokaal algetest.**Voorbeeld:**```bash# Bereken churn-risico voor de hele organisatiecurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/churn-risk/recompute \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: segment.write"# Maak het "High Value At Risk"-segment uit het ontwerpcurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/segments \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" \\\\\\\\  -H "x-permissions: segment.write" \\\\\\\\  -d '{"name":"High Value At Risk","segmentType":"custom","evaluationMode":"cached","definition":{"combinator":"AND","conditions":\\\\\\\[{"field":"lifetimeSpend","operator":"gt","value":1000},{"field":"isAtRisk","operator":"isTrue"}]}}'```### Eerlijk over de scope* **`recompute` moet handmatig aangeroepen worden** — er is geenachtergrondjob die dit periodiek (uurlijks/dagelijks, zoals het ontwerpbeschrijft) automatisch doet. Hetzelfde geldt voor churn-risk-herberekening.* **Geen incrementele, event-gedreven herevaluatie** (sectie 10 van hetontwerp) — elke `recompute` is een volledige herberekening.* **Standaardsegmenten (sectie 13) zijn niet vooraf geseed** — je moet zezelf aanmaken via `POST /segments`.* **Nested groups (sub-groepen binnen groepen) worden wel correctgeëvalueerd** door de gedeelde `AudienceFilterService`, maar zijn nogniet apart getest via de API — alleen lokaal, in de Postgres-tests vaneerder.## 20\. Nieuwe endpoints — Module 8 (Automated Journeys)```POST   /organizations/:orgId/journeysGET    /organizations/:orgId/journeysGET    /organizations/:orgId/journeys/:idPOST   /organizations/:orgId/journeys/:id/publishPOST   /organizations/:orgId/journeys/:id/pausePOST   /organizations/:orgId/journeys/:id/resumePOST   /organizations/:orgId/journeys/:id/stopGET    /organizations/:orgId/journeys/:id/enrollmentsPOST   /organizations/:orgId/journeys/:id/testPOST   /organizations/:orgId/journeys/scheduler/run```**Dit is de flow-uitvoeringsengine, geen simulatie.** Elke `POST /transactions` roept nu `JourneyEngineService.handleEvent(orgId, 'transaction.completed', customerId)` aan, die alle gepubliceerde journeysmet die trigger vindt en de klant inschrijft (mét duplicate-enrollment-preventie) — en direct begint met het doorlopen van de nodes.**Voorbeeld — het First Visit-voorbeeld uit het ontwerp, als échteAPI-aanroep** (gebruik `tempId`'s om nodes aan elkaar te knopen, deservice zet ze om naar echte UUID's):```bashcurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/journeys \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" \\\\\\\\  -H "x-permissions: journey.write" \\\\\\\\  -d '{    "name": "First Visit",    "triggerType": "event",    "eventName": "transaction.completed",    "nodes": \\\\\\\[      {"tempId":"1","nodeType":"trigger"},      {"tempId":"2","nodeType":"send\\\\\\\_push","config":{"templateGroupKey":"tegoed\\\\\\\_check"}},      {"tempId":"3","nodeType":"end"}    ],    "edges": \\\\\\\[      {"fromTempId":"1","toTempId":"2"},      {"fromTempId":"2","toTempId":"3"}    ]  }'# Publiceren (nodig, anders vuurt de trigger niet)curl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/journeys/<JOURNEY\\\\\\\_ID>/publish \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: journey.publish"# Vanaf nu: elke nieuwe transactie voor een klant triggert deze journey```### Eerlijk over de scope* **Geen echte scheduler/cron** — `wait`-nodes zetten een enrollmentcorrect op `waiting` met een `resumeAt`, maar niets roept`POST .../scheduler/run` automatisch aan. In productie hoort hier eenscheduled job (bv. elke 5 minuten) voor te draaien.* **`give\\\\\\\_reward`- en `webhook`-nodes zijn niet geïmplementeerd** — zeworden overgeslagen met een gelogde no-op, de flow loopt gewoon door.* **Versioning is vereenvoudigd**: `publish` markeert de enige bestaandeversie als gepubliceerd; het aanmaken van een *nieuwe* versie op eenal-gepubliceerde journey (sectie 10 van het ontwerp) is nietgeïmplementeerd — je kunt een journey nu niet bewerken ná publicatie.* **`condition`-nodes ondersteunen alleen `daysSinceLastVisit`** in dezebouw-pas — niet de volledige AND/OR-DSL uit Module 7 (dat zou wel degedeelde `AudienceFilterService` kunnen hergebruiken, maar is nu nogniet gekoppeld).## 21\. Uitbreiding: puntensysteem met variabele wisselkoersOp verzoek toegevoegd — een alternatief voor het standaard euro-gebaseerdeBeach Credit, geïnspireerd op een eerder puntensysteem: "1 punt per eurobesteed, inwisselbaar vanaf 250 punten, waarbij 250 punten doordeweeks€10 waard is en in het weekend nog maar €5" — precies de yield-management-toepassing die al in de allereerste basisprincipes van het platform stond.**Nieuw:*** `credit\\\\\\\_rules.minimumRedemptionBalance` — een harde drempel: onder ditsaldo is helemaal niets inwisselbaar, ook niet gedeeltelijk* `redemption\\\\\\\_rate\\\\\\\_rules` — dag-gebaseerde wisselkoersregels (punten pereuro), het spiegelbeeld van Module 4's dag/tijd-multipliers, maar danaan de inwissel-kant in plaats van de verdien-kant* `GET .../wallet/redemption-quote?euroAmount=X` — vertaalt een gewensteuro-bedrag naar het benodigde aantal punten **tegen de koers vanvandaag**, en meldt of de drempel is gehaald**Getest (lokaal, tegen echte Postgres):** exact het scenario uit hetoude systeem gereproduceerd — 250 punten leverden op een maandag €10,00op en op een vrijdag €5,00, en een saldo van 200 punten werd terechtgeblokkeerd (`mag\\\\\\\_inwisselen: false`) tegen de 250-drempel.**Ontwerpkeuze — géén organisatiebrede "modus"-schakelaar:** eenorganisatie die geen `redemption\\\\\\\_rate\\\\\\\_rules` instelt, krijgt automatischde bestaande 1-punt-is-1-euro-werking (`pointsPerEuro` default `1`) —niets aan de huidige euro-gebaseerde flow verandert tenzij een organisatiebewust wisselkoersregels toevoegt.**Voorbeeld:**```bash# Wisselkoers-regels instellen (exact het oude systeem)curl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/redemption-rate-rules \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: credit\\\\\\\_rules.write" \\\\\\\\  -d '{"name":"Weekdagen","appliesOnDays":\\\\\\\["monday","tuesday","wednesday","thursday"],"pointsPerEuro":25}'curl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/redemption-rate-rules \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: credit\\\\\\\_rules.write" \\\\\\\\  -d '{"name":"Weekend","appliesOnDays":\\\\\\\["friday","saturday","sunday"],"pointsPerEuro":50}'# Drempel instellencurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/credit-rules \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: credit\\\\\\\_rules.write" \\\\\\\\  -d '{"minimumRedemptionBalance":250}'# Quote opvragen — hoeveel punten kost €10 vandaag?curl "http://localhost:3000/organizations/<ORG\\\\\\\_ID>/customers/<CUSTOMER\\\\\\\_ID>/wallet/redemption-quote?euroAmount=10" \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: wallet.read"```### Eerlijk over de scope* **`reserveRedemption` gebruikt nog steeds "punten/wallet-eenheden" alsinvoer**, niet een euro-bedrag — de bedoelde flow is: eerst een quoteopvragen (hoeveel punten voor dit euro-bedrag vandaag), en dátpuntenaantal aan `reserveRedemption` meegeven. Een geïntegreerde"reserveer €10 tegen de koers van vandaag"-endpoint (die dit in éénstap doet) is niet gebouwd.* **Geen tijdvenster binnen een dag** (alleen dag-van-de-week) — hetontwerp van Module 4 ondersteunt wel tijdvensters (`timeWindowStart/End`)voor reward-multipliers; `redemption\\\\\\\_rate\\\\\\\_rules` heeft dat veld bewustnog niet, kan later op dezelfde manier worden toegevoegd.## 22\. Nieuwe endpoints — Module 9 (Reservations \& Occupancy Booster)```POST   /organizations/:orgId/reservationsGET    /organizations/:orgId/reservationsPATCH  /organizations/:orgId/reservations/:id/statusPOST   /organizations/:orgId/location-capacity-settingsGET    /organizations/:orgId/locations/:locationId/capacity-settingsPOST   /organizations/:orgId/weather-forecastsGET    /organizations/:orgId/locations/:locationId/occupancy?date=...\\\\\\\&servicePeriod=...POST   /organizations/:orgId/locations/:locationId/occupancy/forecastPOST   /organizations/:orgId/occupancy-opportunities/detectGET    /organizations/:orgId/occupancy-recommendationsGET    /organizations/:orgId/occupancy-recommendations/:idPOST   /organizations/:orgId/occupancy-recommendations/:id/approvePOST   /organizations/:orgId/occupancy-recommendations/:id/dismiss```**De drie-staps-scheiding werkt écht:** `approve` maakt een echte Module5-campagne aan met `status: draft`, gebruikmakend van dezelfde`CampaignsService.create()` als een handmatig aangemaakte campagne — dedaadwerkelijke lancering blijft een aparte, bewuste `POST /campaigns/:id/launch`-aanroep. Geen enkel pad in deze module kan eencampagne automatisch starten.**Voorbeeld — het complete "Sunny Lunch Booster"-pad:**```bash# 1. Capaciteit instellencurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/location-capacity-settings \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: reservation.write" \\\\\\\\  -d '{"locationId":"<LOC\\\\\\\_ID>","servicePeriod":"lunch","maxCovers":200}'# 2. Reservering(en) invoerencurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/reservations \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: reservation.write" \\\\\\\\  -d '{"locationId":"<LOC\\\\\\\_ID>","dateTime":"2026-08-20T13:00:00Z","servicePeriod":"lunch","covers":76}'# 3. Weer invoerencurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/weather-forecasts \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: reservation.write" \\\\\\\\  -d '{"locationId":"<LOC\\\\\\\_ID>","forecastDate":"2026-08-20","temperatureCelsius":27,"condition":"sunny"}'# 4. Bezetting bekijken (het "MORGEN"-scherm)curl "http://localhost:3000/organizations/<ORG\\\\\\\_ID>/locations/<LOC\\\\\\\_ID>/occupancy?date=2026-08-20\\\\\\\&servicePeriod=lunch" \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: reservation.read"# 5. Forecast berekenencurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/locations/<LOC\\\\\\\_ID>/occupancy/forecast \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: reservation.write" \\\\\\\\  -d '{"date":"2026-08-20","servicePeriod":"lunch"}'# 6. Opportunity detecteren (forecastRunId uit stap 5)curl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/occupancy-opportunities/detect \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: reservation.write" \\\\\\\\  -d '{"locationId":"<LOC\\\\\\\_ID>","forecastRunId":"<RUN\\\\\\\_ID>"}'# 7. Voorstel goedkeuren -> Module 5-draft-campagnecurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/occupancy-recommendations/<REC\\\\\\\_ID>/approve \\\\\\\\  -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: campaign.launch"```### Eerlijk over de scope* **Forecastmodel gebruikt alleen historisch gemiddelde + weer** — geenseizoens-, events-, feestdag- of lead-time-correctie (ontwerp sectie 3).Zonder genoeg historische data valt het terug op een neutrale 50%.* **Incentive-drempels zijn hardcoded** (< 30% → 3×, < 45% → 2×), niet deconfigureerbare `occupancy\\\\\\\_incentive\\\\\\\_policy` uit het ontwerp.* **`estimatedMaxRewardExposure` gebruikt een vaste aanname** (€60gemiddelde besteding) in plaats van de werkelijke gemiddelde bestedingper gematchte klant — een pragmatische versimpeling.* **Geen achtergrondjob** die periodiek automatisch forecasts/opportunitiesgenereert — elke stap wordt nu handmatig via de API getriggerd.## 23\. Nieuwe endpoints — Module 10 (Analytics \& AI Campaign Assistant)```GET    /organizations/:orgId/dashboardGET    /organizations/:orgId/analytics/creditGET    /organizations/:orgId/analytics/campaignsPOST   /organizations/:orgId/ai-assistant/askGET    /organizations/:orgId/ai-assistant/conversations/:idGET    /organizations/:orgId/ai-campaign-suggestionsPOST   /organizations/:orgId/ai-campaign-suggestions/:id/approvePOST   /organizations/:orgId/ai-campaign-suggestions/:id/dismiss```**Alle dashboard-KPI's zijn live berekend uit echte data** — geen aparteanalyticsdatabase: leden, nieuwe leden deze maand, loyalty-omzet, repeatvisit rate, outstanding credit, credit dat binnen 14 dagen verloopt, AtRisk-aantal — stuk voor stuk direct uit Module 1/2/3/7's eigen tabellen.**De AI-assistent gebruikt echte tool-aanroepen, volledig gelogd(`ai\\\\\\\_tool\\\\\\\_calls`) — nooit een verzonnen cijfer.** `POST /ai-assistant/ask` roept Module 9's forecastmodel en de gedeelde`AudienceFilterService` aan, en genereert alleen een voorstel als decijfers dat rechtvaardigen. Ook hier: **approve** maakt een Module5-conceptcampagne aan, nooit een actieve.**Voorbeeld — het weer-en-bezetting-scenario uit het ontwerp:**```bashcurl -X POST http://localhost:3000/organizations/<ORG\\\\\\\_ID>/ai-assistant/ask \\\\\\\\  -H "Content-Type: application/json" -H "x-organization-id: <ORG\\\\\\\_ID>" -H "x-permissions: ai\\\\\\\_assistant.use" \\\\\\\\  -d '{"promptText":"Morgen slecht weer, lunch staat maar 30% vol. Wat kunnen we doen?","locationId":"<LOC\\\\\\\_ID>","date":"2026-08-20"}'```### Eerlijk over de scope — dit is de belangrijkste nuance van deze module**Er wordt geen externe LLM aangeroepen om vrije tekst te interpreteren enzelf te bepalen welke tools nodig zijn.** In plaats daarvan draait `ask()`een **vaste, deterministische reeks tool-aanroepen** die past bij hetcanonieke weer-en-bezettingsscenario uit het ontwerp (forecast ophalen,doelgroep bepalen), en stelt het antwoord samen uit de **echte** resultatenvan die aanroepen. De architectuur — tool-functies, volledige logging,nooit-verzonnen-cijfers, de recommendation/approval-scheiding — is wélprecies zoals ontworpen. Wat ontbreekt is de taalbegrip-laag: een managerkan nu niet zomaar elke willekeurige vraag stellen ("waarom daalt repeatvisit?", "welke VIP's zijn lang niet geweest?") en een zinvol antwoordverwachten — alleen de weer/bezetting-vraag wordt daadwerkelijk goedbeantwoord. Een echte integratie met een taalmodel (dat zelf tools kiestop basis van de vraag) is de voor de hand liggende vervolgstap.## 24\. Echte e-mailverzending voor campagnes/journeys (Module 6)Op verzoek toegevoegd: het `email`-kanaal in `MessagingService` stuurt nu**écht** een e-mail via Mailgun (dezelfde koppeling als de dagafsluiting),in plaats van alleen een database-registratie te maken. Push, wallet enSMS blijven gesimuleerd — die vereisen elk hun eigen, aparteproviderkoppeling (native pushinfrastructuur, resp. een SMS-providerzoals MessageBird/Twilio) die nog niet is aangesloten.**Praktisch effect:** zodra een campagne of journey een `send\\\\\\\_email`-actieuitvoert naar een klant met een bekend e-mailadres, komt dat bericht nudaadwerkelijk aan — mits `MAILGUN\\\\\\\_API\\\\\\\_KEY`/`MAILGUN\\\\\\\_DOMAIN` zijningesteld (dezelfde variabelen als bij de dagafsluiting-e-mail). AlsMailgun niet geconfigureerd is, of de verzending faalt, wordt dat netjesvastgelegd in `message\\\\\\\_queue\\\\\\\_items.status = 'failed'` — de campagne/journey-flow zelf blokkeert of breekt daar nooit op.**`MailgunService` is verplaatst** van `src/analytics/` naar`src/common/` — nodig om een cirkelvormige module-afhankelijkheid tevoorkomen (Analytics → Campaigns → Messaging → Analytics), aangezienzowel Messaging als Analytics deze service nu gebruiken.## 25\. Echte WhatsApp-verzending (Module 6)Op verzoek toegevoegd: `WhatsAppService` (`src/common/whatsapp.service.ts`)verstuurt echte berichten via Meta's WhatsApp Cloud API, met dezelfdearchitectuur als de Mailgun-koppeling.**Belangrijk verschil met e-mail — dit is een echte beperking vanWhatsApp zelf, niet van dit platform:** Meta staat alleen door hetbedrijf-geïnitieerde berichten toe via een **vooraf goedgekeurdsjabloon** (buiten een actief 24-uurs klantcontact-venster om — enmarketingberichten zoals "dubbele punten" vallen daar altijd onder).Vrije tekst versturen zoals bij e-mail is voor WhatsApp dus nietmogelijk.**Hoe dit hier is opgelost, met een bewuste vereenvoudiging:**`templateGroupKey` van het interne berichtsjabloon wordt ook gebruikt alsde naam van het bij Meta goedgekeurde sjabloon (houd deze twee gelijkwanneer je een sjabloon specifiek voor WhatsApp aanmaakt), met een vasteparametervolgorde (voornaam, dan tegoedsaldo). Een volledig flexibelekoppeling tussen willekeurige sjabloonvariabelen en Meta-sjabloonveldenis een grotere uitbreiding, pas zinvol zodra er echte, goedgekeurdesjablonen zijn om tegen te testen.**Benodigde omgevingsvariabelen bij Vercel:*** `WHATSAPP\\\\\\\_ACCESS\\\\\\\_TOKEN` — permanent access-token uit Meta Business Manager* `WHATSAPP\\\\\\\_PHONE\\\\\\\_NUMBER\\\\\\\_ID` — ID van je geverifieerde WhatsApp-afzendernummer**Wat je zelf nog moet regelen bij Meta, vóórdat dit werkt:**1. Een Meta Business-account aanmaken/koppelen2. WhatsApp Business Platform activeren, telefoonnummer verifiëren3. Minstens één berichtsjabloon aanmaken en laten goedkeuren (kan uren tot dagen duren)## 26\. Klanten-/tegoedimport (Piggy-migratie)Op verzoek toegevoegd: een importmodule voor het migreren van bestaandeklanten en hun puntensaldo vanuit een ander systeem (bijv. Piggy), viaeen .csv- of .xlsx-bestand. Bouwt volledig voort op de bestaandeCustomer/Wallet/ledger-architectuur — **geen** los klant- of saldomodel.**Belangrijke, bewuste aanpassing aan de specificatie — serverlozeomgeving:** dit platform draait op Vercel serverless functies (max. 30seconden per aanroep, geen achtergrond-wachtrij-infrastructuur zoals eenBull/Redis-queue). Een import van duizenden rijen kan dus niet in éénlange HTTP-aanroep worden verwerkt. In plaats daarvan verwerkt het`/commit`-endpoint telkens een kleine batch (standaard 100 rijen), enroept de browser dit endpoint automatisch herhaald aan totdat allesverwerkt is — dat lost zowel het tijdslimiet-probleem als de gevraagdevoortgangsindicatie in één keer op, zonder een aparte wachtrijserver.Bestandsgrootte is hierdoor ook begrensd (max. 5 MB, max. 10.000 rijenper bestand) — grotere bronbestanden moeten worden opgesplitst.**Datamodel:** `ImportJob` (één per geüpload bestand, met kolom-mapping,conversie-instellingen, voortgangstellingen) en `ImportRecord` (één perrij, met de bepaalde actie en — na boeking — de gekoppelde`WalletLedgerEntry`). `Customer` heeft twee nieuwe velden(`externalId`/`externalSource`) voor herkenning bij een latereheraanlevering — geen apart identificatiemodel.**Boeking:** elke gemigreerde balans wordt vastgelegd als een echte`WalletLedgerEntry` met `entryType: migration\\\\\\\_import` (nieuwe waarde inhet bestaande enum), inclusief metadata (bronklant-ID, oorspronkelijkepunten, conversieratio, bestandsnaam) — nooit een rechtstreekseaanpassing van het wallet-saldo. Bij "vervang saldo" wordt eerst een`correction`-boeking gemaakt die het bestaande saldo naar nul terugzet,zodat de volledige geschiedenis intact blijft.**Matching:** uitsluitend op exact e-mailadres, genormaliseerdtelefoonnummer, of eerder-opgeslagen externe klant-ID — nooit op naam ofgeboortedatum. Tegenstrijdige matches (e-mail wijst naar klant A,telefoon naar klant B) gaan altijd naar "controle nodig", nooitautomatisch gekozen.**Bestandsverwerking:** gebruikt `exceljs` (niet het populairdere`xlsx`-pakket) — de npm-registry-versie van `xlsx` heeft twee bekende,ongepatchte kwetsbaarheden (prototype pollution, ReDoS) die specifiekrelevant zijn bij het verwerken van geüploade, niet-vertrouwde bestanden;`exceljs` heeft dat probleem niet.**Bekende vereenvoudigingen t.o.v. de volledige specificatie:*** Geen malware-scan op geüploade bestanden (alleen bestandstype/-grootte-validatie) — een aparte antivirus-scandienst is niet aangesloten.* Ruwe bestandsdata wordt tijdelijk in de database bewaard (geen aparte objectopslag beschikbaar) en automatisch geleegd zodra een import voltooid is.* Rollback verwijdert door de import aangemaakte klanten alleen als ze werkelijk geen enkele andere activiteit hebben (transacties, reserveringen, overige ledgermutaties) — anders blijft het profiel bestaan en wordt alleen de saldomutatie teruggedraaid.## 27\. Fysieke loyaltykaarten (QR-token → LoyaltyCard → Customer → Wallet)Op verzoek toegevoegd: ondersteuning voor vooraf gedrukte fysiekeloyaltykaarten met een unieke QR-code, die géén persoonsgegevens bevat.Architectuurregel: een kaart bezit nooit het klantprofiel of saldo —alleen een verwijzing naar een Customer, wiens Wallet het echte saldodraagt. Zo kan een kaart altijd veilig vervangen/geblokkeerd/opnieuwgekoppeld worden zonder saldorisico.**Datamodel:** `LoyaltyCardBatch`, `LoyaltyCard`, `LoyaltyCardPendingEntry`(voor ongeregistreerd sparen vóórdat een kaart geclaimd is). Hergebruiktvolledig het bestaande `AuditLog`-model (geen nieuw logmodel) en debestaande `GuestAuthService`-e-mailcode-verificatie (geen nieuweinlogflow) voor de "ik heb al een account"-stap bij het claimen.**Tokenbeveiliging:** de ruwe QR-token wordt NOOIT opgeslagen, alleen eenSHA-256-hash — zelfde principe als bij inlogcodes/sessietokens elders indit platform. **Praktisch, onomkeerbaar gevolg:** de ruwe tokens zijnuitsluitend zichtbaar in het antwoord van het batch-aanmaak-endpoint,op het moment van aanmaken zelf — dat moet dus meteen gedownload worden,ze kunnen daarna nooit meer worden teruggehaald (ook niet door eenbeheerder). Kaartnummers (bijv. "BC-000001") zijn wél oplopend, maarpuur administratief — de beveiliging hangt daar nooit van af.**Ongeregistreerd sparen (sectie 9):** bewust géén los "tijdelijkwallet"-model — dat zou een parallel saldosysteem naast de bestaandeWallet-architectuur betekenen. In plaats daarvan: een lichte`pendingBalance` op de kaart zelf, die bij claim in één atomairedatabase-transactie wordt omgezet in een echte `WalletLedgerEntry`(`entryType: transfer`) op de Wallet van de nu-gekoppelde klant, entegelijk op nul gezet — dit is expliciet getest tegen een echte databaseom dubbel-tellen uit te sluiten (zie testlog: €38,20 bestaand + €5,00pending = exact €43,20, nooit €48,20 of €5,00 verlies).**Bekende, bewuste vereenvoudigingen t.o.v. de volledige specificatie:*** Geen dedicated rate-limiter tegen enumeratie/scraping (geen Redis-achtige infrastructuur beschikbaar in deze serverloze omgeving) — bescherming komt uit de 96-bits-tokens zelf (praktisch niet te raden) en een generieke "niet gevonden"-respons die nooit onderscheid maakt tussen "bestaat niet" en "hoort bij een andere organisatie".* Redemption-beveiliging bij hoge bedragen (sectie 14) is een **configureerbare drempel + waarschuwingsvlag** (`cardRedemptionThreshold` op `CreditRule`) die het kassa-lookup-endpoint meegeeft — een volledige PIN/OTP-verificatie-UI op het moment van inwisselen zelf is (nog) niet gebouwd; dat is een logische vervolgstap zodra dit in de praktijk nodig blijkt.* QR-afbeeldingen (PNG/SVG) worden niet server-side voorgerenderd/gebundeld in een ZIP — de CSV-export bevat de kant-en-klare QR-URL's, die een drukker of de bestaande qrserver.com-aanpak (elders al gebruikt in dit platform) direct kan omzetten naar afbeeldingen.* Apple/Google Wallet-passen blijven een aparte, al bestaande `WalletPass`-structuur — bewust niet samengevoegd met dit fysieke-kaartmodel, zoals de opdracht zelf ook aangeeft.## 28\. Geboortedatum consequent doorgevoerd + verbeterde klantzoekfunctieOp verzoek — analyse vooraf bevestigde dat `Customer.dateOfBirth` en dePiggy-import-mapping al bestonden sinds de oorspronkelijke opzet; dit wasdus vooral een kwestie van het veld overal daadwerkelijk **zichtbaar enbruikbaar** maken, niet van een nieuw datamodel.**Toegevoegd:*** Geboortedatum zichtbaar in het klantprofiel (`customers.html`)* Invoerveld bij inschrijven (`inschrijven.html`) én bij het claimen van een fysieke kaart als nieuwe klant (publieke claim-pagina) — beide optioneel* Nieuw segmentatie-/campagneveld `daysUntilBirthday` in `AudienceFilterService` (0 = vandaag jarig, telt af naar de eerstvolgende verjaardag, altijd toekomstgericht) — getest tegen echte datums inclusief jaargrens-scenario's, voor gebruik in verjaardagscampagnes/-journeys* Klantzoekfunctie uitgebreid: volledige-naam-matching (bijv. "Henny Schaap" matcht ook als geen los veld de hele zoekterm bevat) én kaartnummer-matching (zoeken op "BC-000123" vindt de gekoppelde klant) — hergebruikt het bestaande `/customers`-zoek-endpoint, geen nieuw, dubbel endpoint* Nieuw zoek-en-selecteer-venster in `loyalty-cards.html` (het "koppelen aan bestaande klant"-scherm), ter vervanging van een reeks losse `prompt()`-vensters — toont volledige naam, e-mail, telefoon én geboortedatum per resultaat, zodat klanten met dezelfde naam te onderscheiden zijn**Privacy (bewust zo ontworpen, niet later toegevoegd):** geboortedatumwordt **nooit** getoond op de publieke, ongeauthenticeerde kaart-statuspagina, en **nooit** meegegeven in het snelle kassa/POS-identificatie-antwoord (`posLookup`) — alleen in de al-permissie-gated backoffice-schermen (klantprofiel, klant-zoekvenster). Wordtnergens gebruikt om identiteit te verifiëren, alleen als informatief/segmentatieveld.**Tijdens het bouwen zelf gevonden en gecorrigeerd:** de eerste versievan de kaartnummer-zoekuitbreiding zou bij een lege zoekterm-treffer(`{ id: undefined }` binnen een OR-voorwaarde) per ongeluk **alle**klanten hebben laten matchen — Prisma behandelt een lege voorwaarde ineen OR-lijst als altijd-waar. Getest tegen een echte database vóóroplevering; hersteld door de voorwaarde conditioneel helemaal weg telaten in plaats van op `undefined` te zetten.## 29\. Admin-instellingenschermOp verzoek — een nieuw scherm (`instellingen.html`) dat alles bij elkaarbrengt wat al wél aan de backend bestond, maar nergens bedienbaar was:* **Puntenregels** (`CreditRule`, al sinds Module 3 in het datamodelaanwezig maar zonder UI): geldigheidsduur van tegoed vóór het vervalt,minimale bestedingsdrempel om te sparen, minimaal saldo om in tewisselen, maximumpercentage van een aankoop met tegoed, "pas bruikbaarvanaf volgend bezoek", tegoed overdragen toestaan* **Klantenbeheer**: zoeken (hergebruikt het bestaande `/customers`-zoek-endpoint) en daadwerkelijk **verwijderen** of **anonimiseren**(AVG-verzoek) — beide endpoints bestonden al (`DELETE :id` en`POST :id/anonymize`), maar waren nergens bereikbaar vanuit debackoffice* **Audit-log-viewer**: nieuw, klein leesendpoint (`AdminController`) ophet al bestaande `AuditLog`-model — dat werd de hele sessie al overalgevuld (elke kaartclaim, elke import, elke klantwijziging), maar wastot nu toe volledig onzichtbaar voor een beheerder* **Organisatie-overzicht**: naam, ID, aantal klanten, aantal actieveloyaltykaarten — handig als snel referentiepuntGeen enkel nieuw datamodel nodig — dit was uitsluitend het zichtbaar enbedienbaar maken van bestaande backend-capaciteit.## 30\. Cadeaukaarten (Gift Cards) — met echte Mollie-betalingenOp verzoek toegevoegd: een volledig eigen cadeaukaartmodule, bewust envolledig gescheiden van het loyaltytegoed:```Customer -> Wallet -> WalletLedgerEntry        (loyaltytegoed)GiftCard -> GiftCardLedgerEntry                (cadeaukaart-saldo, eigen boekhouding)```**Belangrijkste architectuurkeuze — hoe dubbele beloning wordtvoorkomen:** het *verkopen* van een cadeaukaart loopt bewust nooit viahet bestaande `/transactions`-endpoint (dat de reward engine aanroept).Daardoor is er geen speciale uitzondering nodig diep in de reward-engine-code om "geen loyaltytegoed bij aankoop van een cadeaukaart" afte dwingen — het raakt die code simpelweg nooit. Het latere *gebruik*van een cadeaukaart als betaalmiddel loopt wél via een normaletransactie (net als contant/pin), en verdient dus heel gewoonloyaltytegoed over het volledige aankoopbedrag.**Ledger-architectuur:** exact hetzelfde bewezen patroon als bij hetloyaltytegoed en de fysieke loyaltykaarten — elke saldowijziging is eenaparte `GiftCardLedgerEntry`, nooit een directe aanpassing van`currentBalance`. Getest tegen een echte database: verkoop, gedeeltelijkinwisselen, volledig inwisselen, refund/reversal, en vervanging (saldoverplaatst nooit gekopieerd) — steeds met bevestiging dat het saldoexact de som van de ledger blijft.**QR-tokenbeveiliging:** zelfde principe als de fysieke loyaltykaarten— alleen een SHA-256-hash opgeslagen, nooit de ruwe token.### Echte online betalingen via Mollie (iDEAL e.d.)Op expliciet verzoek een **echte** betaalprovider-koppeling, nietgesimuleerd. Nieuw: `MollieService` (`src/common/mollie.service.ts`).**Omgevingsvariabelen (bij Vercel instellen, nooit committen):*** `MOLLIE\\\\\\\_API\\\\\\\_KEY` — een `test\\\\\\\_` of `live\\\\\\\_` sleutel uit het Mollie-dashboard* `PUBLIC\\\\\\\_APP\\\\\\\_URL` — de publieke basis-URL van deze deploy (voor de redirect/webhook-URL's die Mollie moet aanroepen); valt terug op `https://loyalty-platform-live.vercel.app` als niet ingesteld**Kritieke beveiligingsregel (rechtstreeks uit Mollie's eigendocumentatie):** de webhook die Mollie aanroept bevat **uitsluitend een`id`**, nooit een betrouwbare status — iedereen zou in theorie eenwillekeurige `id` naar diezelfde URL kunnen sturen. De **enige** veiligemanier om te weten of een betaling echt gelukt is: de status versopvragen bij Mollie zelf, met onze eigen API-sleutel, elke keer opnieuw— nooit vertrouwen op de webhook-inhoud zelf. Dit is precies hoe`GiftCardsService.confirmMolliePayment` werkt, en is ook de reden dateen cadeaukaart tijdens het betaalproces op status `draft` blijft staan(geen saldo, geen ledger-entry) totdat die verse statusopvraag`'paid'` teruggeeft.**Ruwe token nooit in onze database, ook niet tijdelijk:** voor hetversturen van de digitale kaart per e-mail is het ruwe token nodig,maar dat wordt nooit opgeslagen. Oplossing: het ruwe token gaat mee inMollie's eigen `metadata`-veld bij het aanmaken van de betaling, en komtpas terug op het moment dat de betaling bevestigd wordt — het bestaatdus alleen kortstondig in het geheugen op het moment van versturen, nooitpersistent in onze eigen database.**Endpoints:*** `GET /gift-cards/buy/:orgId` — publieke koop-pagina (bedrag kiezen, ontvanger, boodschap)* `POST /gift-cards/buy/:orgId` — start de Mollie-betaling, geeft `checkoutUrl` terug* `POST /gift-cards/mollie-webhook` — door Mollie aangeroepen, publiek, geen permissies (kan niet, Mollie kent onze permissiestructuur niet)* `GET /gift-cards/thank-you/:giftCardId` — bedankpagina na terugkeer vanuit Mollie**Belangrijke, eerlijke beperking:** `api.mollie.com` staat niet op detoegestane netwerklijst van de bouwsandbox waarin dit gebouwd is — dedaadwerkelijke live API-aanroepen zijn dus **niet** vanuit die sandboxgetest (net als bij de WhatsApp/Meta-koppeling eerder). De code is metde hand grondig gecontroleerd tegen Mollie's officiële documentatie(bevestigd via web search tijdens het bouwen), maar de eerste échte testmet een Mollie-testsleutel moet nog gebeuren.**Overige bewuste vereenvoudigingen:*** Geplande verzending van een digitale kaart (`scheduledSendAt`, bijv. op iemands verjaardag) wordt wel opgeslagen, maar er is geen achtergrond-scheduler die dat veld daadwerkelijk afvuurt op de juiste dag — zou, net als de dagafsluiting-e-mail, een eigen cron-endpoint nodig hebben.* "Koop een cadeaukaart, krijg loyaltytegoed cadeau"-promoties (expliciet als "later" aangemerkt in de opdracht) zijn niet gebouwd — de architectuur (aparte boekhoudingen die bewust nooit automatisch met elkaar communiceren) maakt dit later wel veilig toevoegbaar zonder dubbele boekingen.* Geen dedicated fraude-detectie/rate-limiting (zelfde, eerder al toegelichte beperking als bij de fysieke loyaltykaarten — geen Redis-achtige infrastructuur in deze omgeving).## 31\. Klantportal "Mijn Tegoed" — één centrale omgeving, gebrand per websiteOp verzoek (na een eerdere, veel uitgebreidere Apple/Google Wallet-specificatie die bewust vereenvoudigd werd): een veilige mobielewebpagina waarmee een gast zonder app zijn Beach Credit, punten,cadeaukaarten, rewards en historie kan bekijken — toegankelijk vanaf debestaande websites van zowel Het Strand als Zomers.**Architectuur — precies zoals gevraagd, één codebase:** `GET /portal`met een `?brand=het-strand` of `?brand=zomers` query-parameter bepaaltde merknaam en accentkleur; de onderliggende data (klant, saldo,cadeaukaarten, rewards, historie) komt voor beide altijd uit **dezelfde**centrale database en hetzelfde Customer-account. Geen tweede codebase,geen apart account per website.### Hoe koppel je dit aan de bestaande websites?Ik heb geen toegang tot de bestaande codebases van het-strand.nl enzomersbeachclub.nl (die staan niet in dit project) — dat moet je (of jewebbouwer) zelf koppelen. De eenvoudigste, veiligste manier:**Optie A — een simpele link/knop** (aanbevolen, minste werk):Maak op beide sites een pagina op het gevraagde pad (`/mijn-tegoed`) diesimpelweg doorverwijst naar:* Het Strand: `https://loyalty-platform-live.vercel.app/portal?brand=het-strand`* Zomers: `https://loyalty-platform-live.vercel.app/portal?brand=zomers`**Optie B — inladen in een iframe** op die bestaande pagina's, metdezelfde URL's als hierboven — dan blijft de eigen site-navigatiezichtbaar eromheen.**Optie C — reverse proxy** (voor een meer naadloze ervaring, technischiets meer werk): laat `/mijn-tegoed` op beide sites zelf serverside naarbovenstaande URL's doorproxyen, zodat de bezoeker nooit een ander domeinin de adresbalk ziet.### Inloggen zonder wachtwoord — nieuw, subtiel probleempje opgelostHet bestaande e-mailcode-systeem (`GuestAuthService`) geeft **bewustaltijd hetzelfde antwoord**, of een e-mailadres nu wel of niet eenaccount heeft — een normale, goede beveiligingsmaatregel tegen account-enumeratie. Dat betekende wel dat de frontend nooit vooraf kon weten ofiemand nieuw is. Opgelost door de nieuwe-klant-vraag **na** decodeverificatie te stellen, niet ervoor: iedereen krijgt een code ophetzelfde soort verzoek, en pas na een juiste code blijkt of er eenaccount bestaat (dan meteen inloggen) of niet (dan het korteregistratieformulier). Dit raakt de al-bewezen bestaande inlogflow (o.a.gebruikt door de Expo-app) op geen enkele manier — een volledig aparte,nieuwe tabel (`GuestRegistrationCode`) regelt dit.**Telefoon/SMS-inloggen is niet gebouwd** — dit platform heeft nergenseen SMS-providerkoppeling (zoals Twilio), in tegenstelling tot e-mail(Mailgun) en betalingen (Mollie). E-mail werkt volledig; SMS-OTP is eeneerlijk benoemde, latere uitbreiding die een nieuwe providerkoppelingvereist — exact hetzelfde patroon als eerder bij Mailgun/Mollie.### QR-beveiliging — een nieuw, apart tokensysteemDe portal-QR gebruikt bewust **niet** het bestaande fysieke-loyaltykaart-tokensysteem: dat token is maar één keer zichtbaar (bijaanmaken), wat prima is voor een fysieke kaart maar niet werkt voor eenwebportal-QR die bij elke keer inloggen opnieuw getoond moet worden.In plaats daarvan: `CustomerQrToken`, een kortlevend (24 uur), apart,willekeurig token — bevat geen naam/e-mail/saldo/database-ID, en geeftbij een gefotografeerde/gekopieerde QR **nooit** toegang tot het volledigeaccount (alleen identificatie, geen sessie). Personeel kan 'm opzoeken viaeen nieuw endpoint (`GET /customers/qr-lookup/:token`).**Ook meteen een bestaande bug hersteld:** het klantsaldo werdafgerond naar hele euro's (`Math.round`) in de bestaande `/me`-endpoint— €18,40 werd getoond als "18". Nu twee decimalen, exact zoals deledger het vastlegt.### Saldi blijven gescheidenPrecies zoals gevraagd: geen nieuw gecombineerd saldoveld. Het dashboardhaalt Beach Credit uit de bestaande `Wallet`, cadeaukaarten uit debestaande `GiftCard`-ledger, en toont ze in dezelfde pagina zonder zeooit samen te voegen tot één getal. De nieuwe `/me/activity`-tijdlijn ispuur een leesweergave die beide naast elkaar toont, gesorteerd op datum— elk bedrag blijft herleidbaar naar zijn eigen bron.### Locatiegebonden rewardsDe bestaande `RewardCatalogItem.locationId` (al aanwezig, nooitgebruikt in de klant-app) bepaalt of een reward organisatiebreed of aanéén locatie gebonden is — het dashboard toont dan een duidelijk label("Alleen geldig bij Zomers Beachclub").### Bewuste vereenvoudigingen, eerlijk benoemd* Geen PWA-infrastructuur (geen manifest.json/service-worker) — bewust, precies zoals gevraagd: "bouw geen zware PWA-structuur als dit niet nodig is."* Profielgegevens wijzigen (e-mail/telefoon met verificatie) is nu alleen-lezen in de portal; wijzigen kan voorlopig via de bestaande backoffice. Een latere uitbreiding.* "Persoonlijke aanbiedingen" (sectie 12 van de oorspronkelijke, uitgebreidere specificatie) is niet gebouwd in deze vereenvoudigde versie — de Rewards-catalogus wél.* Apple/Google Wallet-groundwork (`WalletPassService`, `GoogleWalletService`) staat er al uit een eerdere sessie, blijft ongebruikt-maar-aanwezig voor een latere uitbreiding — precies zoals de nieuwe, vereenvoudigde opdracht vroeg.## Alle tien modules — overzicht|#|Module|Ontwerp|Schema/migratie|API||-|-|-|-|-||1|Customer \& CRM|✅|✅ getest, live|✅ getest, live||2|Transactions \& POS|✅|✅ getest, live|✅ getest, live||3|Wallet \& Credit|✅|✅ getest, live|✅ getest, live||4|Reward Engine|✅|✅ getest, live|✅ getest, live||5|Campaign Manager|✅|✅ getest|—||6|Messaging|✅|✅ getest|—||7|Segmentation Engine|✅|✅ getest|—||8|Automated Journeys|✅|✅ getest|—||9|Reservations \& Occupancy|✅|✅ getest|—||10|Analytics \& AI Assistant|✅|✅ getest|—|## Projectstructuur```loyalty-platform/├── api/│   └── index.ts              # Vercel serverless entrypoint├── src/│   ├── audit/                 # Gedeelde audit-log service (sectie 13)│   ├── common/│   │   ├── decorators/         # @RequirePermissions, @Ctx (auth-stub)│   │   ├── guards/              # PermissionsGuard│   │   └── filters/             # Prisma error → HTTP response mapping│   ├── customers/               # Module 1 kern: CRUD, identity, consent, merge, AVG│   ├── org-resources/            # Tags \\\\\\\& custom fields (organisatiebreed)│   ├── prisma/                    # Injectable PrismaService│   ├── app.module.ts│   └── main.ts├── prisma/│   ├── schema.prisma│   ├── seed.ts│   └── migrations/├── .env.example├── .gitignore├── nest-cli.json├── vercel.json├── package.json├── tsconfig.json└── README.md```

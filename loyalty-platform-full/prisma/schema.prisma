@@ -1,0 +1,2976 @@
+// ============================================================================
+// Loyalty Platform — Prisma Schema
+// Module 1: Customer & CRM
+//
+// Stack: Node.js/TypeScript + Prisma + Supabase (Postgres) + Vercel
+//
+// Conventions used throughout this schema (kept consistent for future
+// modules — Transactions, Wallet & Credit, Reward Engine, etc.):
+//   - snake_case in the database (via @map / @@map), camelCase in TS
+//   - UUID primary keys (gen_random_uuid(), Supabase has pgcrypto enabled)
+//   - Soft delete via `deletedAt` where AVG/right-to-be-forgotten applies
+//   - Money fields use Decimal(10,2)
+//   - Multi-tenant: every table that isn't purely global carries
+//     organizationId, either directly or via its parent relation
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  // Supabase: use the pooled (pgbouncer) connection for the app at runtime,
+  // and the direct connection for migrations. See README for setup.
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ----------------------------------------------------------------------------
+// Tenancy
+// ----------------------------------------------------------------------------
+
+model Organization {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  locations           Location[]
+  customers           Customer[]
+  customerTags        CustomerTag[]
+  customerCustomFields CustomerCustomField[]
+  auditLogs           AuditLog[]
+  staffUsers          StaffUser[]
+  voucherTemplates    VoucherTemplate[]
+  customerVouchers    CustomerVoucher[]
+
+  @@map("organizations")
+}
+
+// Echte, geverifieerde backoffice-gebruikers — vervangt de vorige
+// "auth-stub" waarbij organizationId/permissions/actorId zomaar uit
+// client-headers werden overgenomen zonder enige controle. Wachtwoord
+// wordt altijd als bcrypt-hash opgeslagen, nooit als platte tekst.
+// `permissions` is bewust een losse lijst strings (zelfde policy-based
+// aanpak als de rest van het systeem al gebruikte) i.p.v. een vaste
+// rollentabel — een organisatie kan zo zelf rollen samenstellen.
+model StaffUser {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String    @map("organization_id") @db.Uuid
+  email                 String
+  passwordHash          String    @map("password_hash")
+  firstName             String    @map("first_name")
+  lastName              String?   @map("last_name")
+  permissions           String[]
+  isActive              Boolean   @default(true) @map("is_active")
+  failedLoginAttempts   Int       @default(0) @map("failed_login_attempts")
+  lockedUntil           DateTime? @map("locked_until")
+  lastLoginAt           DateTime? @map("last_login_at")
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+  // Vaste locatie voor kassamedewerkers — is dit gezet, dan bepaalt DEZE
+  // koppeling server-side en onwrikbaar alles wat de medewerker boekt
+  // (kadobon-uitgifte/-inwisseling, tegoed-afboeking, voucher-
+  // inwisseling, etc.), ongeacht wat een client als locationId meestuurt.
+  // Zie common/location-resolution.ts. Leeg = medewerker kiest zelf per
+  // handeling een locatie (kantoor/administratie-rol).
+  homeLocationId        String?   @map("home_location_id") @db.Uuid
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  homeLocation Location?      @relation(fields: [homeLocationId], references: [id])
+  sessions     StaffSession[]
+
+  @@unique([organizationId, email])
+  @@map("staff_users")
+}
+
+model StaffSession {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  staffUserId String    @map("staff_user_id") @db.Uuid
+  tokenHash   String    @unique @map("token_hash")
+  deviceInfo  String?   @map("device_info")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  expiresAt   DateTime  @map("expires_at")
+  revokedAt   DateTime? @map("revoked_at")
+
+  staffUser StaffUser @relation(fields: [staffUserId], references: [id], onDelete: Cascade)
+
+  @@index([staffUserId])
+  @@map("staff_sessions")
+}
+
+model Location {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  // Onderscheidt de merken (Het Strand / Zomers) die dezelfde centrale
+  // klantomgeving delen — bepaalt branding op de klantportal-pagina.
+  // Bepaalt óók welk Mollie-account (via de MOLLIE_API_KEY__<SLUG>
+  // environment variable, zie MollieService) online kadobon-betalingen
+  // voor deze locatie verwerkt.
+  mollieProfileId String? @map("mollie_profile_id") // Mollie's EIGEN profiel-ID (bijv. "pfl_xxx") — géén geheim, puur ter herkenning/rapportage. De echte API-sleutel staat bewust NOOIT in de database, alleen in environment variables.
+  slug           String?  @unique
+  timezone       String   @default("Europe/Amsterdam")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization        Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerLocations   CustomerLocation[]
+  timelineEvents      CustomerTimelineEvent[]
+  favoriteOfCustomers Customer[]          @relation("FavoriteLocation")
+  giftCardsAsBrandOrigin GiftCard[]       @relation("GiftCardBrandLocation")
+
+  // Module 2 — Transactions & POS
+  posConnections PosConnection[]
+  transactions   Transaction[]
+
+  // Module 4 — Reward Engine
+  rewardRules        RewardRule[]
+  rewardLocationCaps RewardLocationCap[]
+
+  // Module 3 — Wallet & Credit
+  creditRules CreditRule[]
+  redemptionRateRules RedemptionRateRule[]
+  // rewardCatalogItems verwijderd — RewardCatalogItem gebruikt nu
+  // locationIds: String[] (geen FK-relatie meer), zelfde patroon als
+  // VoucherTemplate.locationIds.
+
+  // Module 9 — Reservations & Occupancy Booster
+  capacitySettings       LocationCapacitySetting[]
+  reservationConnections ReservationConnection[]
+  reservations           Reservation[]
+  weatherForecasts       WeatherForecast[]
+  forecastRuns           ForecastRun[]
+  occupancyOpportunities OccupancyOpportunity[]
+
+  // Kassamedewerkers met deze locatie als vaste locatie (zie
+  // StaffUser.homeLocationId).
+  staffUsersWithHomeLocation StaffUser[]
+
+  @@index([organizationId])
+  @@map("locations")
+}
+
+// ----------------------------------------------------------------------------
+// Core customer profile
+// ----------------------------------------------------------------------------
+
+enum LoyaltyStatus {
+  active
+  inactive
+  blocked
+  merged
+}
+
+enum SourceChannel {
+  pos
+  qr
+  website
+  reservation
+  wallet
+  manual
+  import
+}
+
+model Customer {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+
+  firstName   String? @map("first_name")
+  lastName    String? @map("last_name")
+  email       String?
+  phone       String?
+  dateOfBirth DateTime? @map("date_of_birth") @db.Date
+  language    String    @default("nl")
+
+  // Optioneel wachtwoord voor de klantportal — NAAST de bestaande
+  // e-mailcode-login, nooit als vervanging. Nullable: klanten die nooit
+  // een wachtwoord instellen blijven gewoon de codeflow gebruiken. Enkel
+  // een bcrypt-hash wordt opgeslagen, nooit het wachtwoord zelf.
+  passwordHash String? @map("password_hash")
+  passwordFailedAttempts Int       @default(0) @map("password_failed_attempts")
+  passwordLockedUntil    DateTime? @map("password_locked_until")
+
+  // Herkomst-identificatie voor migraties (bijv. Piggy-import) — maakt
+  // toekomstige heraanlevering van dezelfde bron veilig herkenbaar,
+  // zonder een apart identificatie-model te introduceren.
+  externalId     String? @map("external_id")
+  externalSource String? @map("external_source")
+
+  loyaltyStatus LoyaltyStatus @default(active) @map("loyalty_status")
+
+  // Forward-looking: full tier system is designed in a later module.
+  // Kept nullable + FK-ready so we don't need a breaking migration then.
+  tierId String? @map("tier_id") @db.Uuid
+  tier   LoyaltyTier? @relation(fields: [tierId], references: [id])
+
+  // Denormalized read-cache. Source of truth lives in Module 2 (Transactions)
+  // and Module 3 (Wallet & Credit). Never written to directly by the API —
+  // only updated by event consumers. See README "Event-driven cache fields".
+  currentBalance             Decimal  @default(0) @map("current_balance") @db.Decimal(10, 2)
+  lifetimeEarned              Decimal  @default(0) @map("lifetime_earned") @db.Decimal(10, 2)
+  lifetimeRedeemed            Decimal  @default(0) @map("lifetime_redeemed") @db.Decimal(10, 2)
+  visitCount                  Int      @default(0) @map("visit_count")
+  lifetimeSpend                Decimal  @default(0) @map("lifetime_spend") @db.Decimal(10, 2)
+  averageSpend                 Decimal? @map("average_spend") @db.Decimal(10, 2)
+  firstVisitAt                 DateTime? @map("first_visit_at")
+  lastVisitAt                  DateTime? @map("last_visit_at")
+  averageVisitFrequencyDays    Int?      @map("average_visit_frequency_days")
+
+  favoriteLocationId String?   @map("favorite_location_id") @db.Uuid
+  favoriteLocation   Location? @relation("FavoriteLocation", fields: [favoriteLocationId], references: [id])
+
+  favoriteVisitDay        String? @map("favorite_visit_day")
+  favoriteVisitTimeWindow String? @map("favorite_visit_time_window")
+  favoritePartySize        Int?    @map("favorite_party_size")
+
+  interests   Json @default("[]") @map("interests")
+  preferences Json @default("{}") @map("preferences")
+
+  sourceChannel SourceChannel @default(manual) @map("source_channel")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  identities         CustomerIdentity[]
+  locationsBreakdown CustomerLocation[]
+  consents           CustomerConsent[]
+  consentHistory     CustomerConsentHistory[]
+  timelineEvents     CustomerTimelineEvent[]
+  notes              CustomerNote[]
+  tags               CustomerTagMap[]
+  customFieldValues  CustomerCustomFieldValue[]
+
+  mergedInto   CustomerMergeLog[] @relation("SurvivingCustomer")
+  mergedFrom   CustomerMergeLog[] @relation("MergedCustomer")
+
+  // Module 2 — Transactions & POS
+  transactions           Transaction[]
+  posCustomerMappings    PosCustomerMapping[]
+
+  // Module 4 — Reward Engine
+  rewardCustomerCaps       RewardCustomerCap[]
+  rewardCalculations       RewardCalculation[]
+  rewardChallengeProgress  RewardChallengeProgress[]
+
+  // Module 3 — Wallet & Credit
+  wallet Wallet?
+
+  // Module 5 — Campaign Manager
+  campaignAudienceSnapshots CampaignAudienceSnapshot[]
+  campaignRecipients        CampaignRecipient[]
+
+  // Module 6 — Messaging
+  pushTokens          CustomerPushToken[]
+  messageQueueItems   MessageQueueItem[]
+  messageSendLogs     CustomerMessageSendLog[]
+
+  // Module 7 — Segmentation Engine
+  segmentMemberships SegmentMembership[]
+  churnRiskScore     ChurnRiskScore?
+
+  // Module 8 — Automated Journeys
+  journeyEnrollments JourneyEnrollment[]
+
+  // Module 9 — Reservations & Occupancy Booster
+  reservations Reservation[]
+
+  // Guest App Authentication
+  guestLoginCodes GuestLoginCode[]
+  guestSessions   GuestSession[]
+  guestPushTokens GuestPushToken[]
+
+  // Fysieke loyaltykaarten
+  loyaltyCards LoyaltyCard[]
+
+  // Cadeaukaarten — apart van loyaltytegoed
+  giftCardsPurchased GiftCard[] @relation("GiftCardPurchaser")
+  giftCardsReceived  GiftCard[] @relation("GiftCardRecipient")
+  vouchers           CustomerVoucher[]
+
+  // Klantportal-QR (Mijn Tegoed)
+  qrTokens CustomerQrToken[]
+
+  // Unique identity per organization — enforced at the identity table level
+  // (email/phone can be null here; the real uniqueness constraint that
+  // prevents duplicate people lives on CustomerIdentity).
+  @@index([organizationId])
+  @@index([organizationId, email])
+  @@index([organizationId, phone])
+  @@index([organizationId, loyaltyStatus])
+  @@index([organizationId, externalSource, externalId])
+  @@map("customers")
+}
+
+// Forward-looking stub for the future tier system (not fully designed yet —
+// referenced here only so Customer.tierId has a valid, non-breaking target).
+model LoyaltyTier {
+  id             String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String @map("organization_id") @db.Uuid
+  name           String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  customers Customer[]
+  rewardRules RewardRule[]
+
+  @@map("loyalty_tiers")
+}
+
+// ----------------------------------------------------------------------------
+// Identity resolution
+// ----------------------------------------------------------------------------
+
+enum IdentityType {
+  email
+  phone
+  qr_code
+  wallet_pass_id
+  pos_customer_ref
+  external_crm_id
+}
+
+model CustomerIdentity {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  customerId     String       @map("customer_id") @db.Uuid
+  identityType   IdentityType @map("identity_type")
+  identityValue  String       @map("identity_value") // normalized (lowercase email, E.164 phone)
+  isPrimary      Boolean      @default(false) @map("is_primary")
+  verified       Boolean      @default(false)
+  source         SourceChannel
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // Core anti-duplicate rule: one identity value can only belong to one
+  // customer within an organization.
+  @@unique([organizationId, identityType, identityValue])
+  @@index([customerId])
+  @@map("customer_identities")
+}
+
+// ----------------------------------------------------------------------------
+// Per-location statistics
+// ----------------------------------------------------------------------------
+
+model CustomerLocation {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId    String   @map("customer_id") @db.Uuid
+  locationId    String   @map("location_id") @db.Uuid
+  visitCount    Int      @default(0) @map("visit_count")
+  spendTotal    Decimal  @default(0) @map("spend_total") @db.Decimal(10, 2)
+  firstVisitAt  DateTime? @map("first_visit_at")
+  lastVisitAt   DateTime? @map("last_visit_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, locationId])
+  @@index([locationId])
+  @@map("customer_locations")
+}
+
+// ----------------------------------------------------------------------------
+// Consent / AVG
+// ----------------------------------------------------------------------------
+
+enum ConsentType {
+  marketing
+  email
+  sms
+  push
+  profiling
+  data_sharing_partners
+}
+
+enum ConsentSource {
+  signup_form
+  pos_prompt
+  wallet_signup
+  website
+  import
+  manual_staff
+  api
+}
+
+enum ConsentAction {
+  granted
+  revoked
+}
+
+model CustomerConsent {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String        @map("customer_id") @db.Uuid
+  consentType           ConsentType   @map("consent_type")
+  granted               Boolean
+  grantedAt             DateTime?     @map("granted_at")
+  revokedAt             DateTime?     @map("revoked_at")
+  source                ConsentSource
+  privacyPolicyVersion  String        @map("privacy_policy_version")
+  ipAddress             String?       @map("ip_address")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // One current-state row per customer per consent channel.
+  @@unique([customerId, consentType])
+  @@map("customer_consents")
+}
+
+model CustomerConsentHistory {
+  id                   String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId           String        @map("customer_id") @db.Uuid
+  consentType          ConsentType   @map("consent_type")
+  action               ConsentAction
+  timestamp            DateTime      @default(now())
+  source               ConsentSource
+  privacyPolicyVersion String        @map("privacy_policy_version")
+  actor                String        // "customer" or a staff user id
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, consentType])
+  @@map("customer_consent_history")
+}
+
+// ----------------------------------------------------------------------------
+// Timeline
+// ----------------------------------------------------------------------------
+
+enum TimelineEventType {
+  account_created
+  profile_updated
+  visit
+  transaction
+  credit_earned
+  credit_redeemed
+  credit_expired
+  credit_manual_adjustment
+  reward_granted
+  reward_used
+  reservation_created
+  reservation_completed
+  reservation_no_show
+  push_sent
+  push_opened
+  email_sent
+  email_opened
+  sms_sent
+  campaign_targeted
+  coupon_issued
+  coupon_redeemed
+  manual_change
+  cs_note_added
+  consent_changed
+  merge_performed
+  segment_entered
+  segment_left
+}
+
+model CustomerTimelineEvent {
+  id                  String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId          String            @map("customer_id") @db.Uuid
+  organizationId      String            @map("organization_id") @db.Uuid
+  locationId          String?           @map("location_id") @db.Uuid
+  eventType           TimelineEventType @map("event_type")
+  eventSourceModule   String            @map("event_source_module") // 'crm' | 'transactions' | 'wallet' | ...
+  eventSourceId       String?           @map("event_source_id") @db.Uuid
+  payload             Json              @default("{}")
+  occurredAt          DateTime          @map("occurred_at")
+  createdAt           DateTime          @default(now()) @map("created_at")
+
+  customer Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([customerId, occurredAt])
+  @@index([organizationId, eventType])
+  @@map("customer_timeline_events")
+}
+
+// ----------------------------------------------------------------------------
+// Notes
+// ----------------------------------------------------------------------------
+
+enum NoteType {
+  general
+  complaint
+  preference
+  allergy
+  vip_flag
+}
+
+enum NoteVisibility {
+  organization
+  location_only
+}
+
+model CustomerNote {
+  id            String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId    String         @map("customer_id") @db.Uuid
+  authorUserId  String         @map("author_user_id") @db.Uuid
+  noteType      NoteType       @default(general) @map("note_type")
+  content       String
+  visibility    NoteVisibility @default(organization)
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_notes")
+}
+
+// ----------------------------------------------------------------------------
+// Tags
+// ----------------------------------------------------------------------------
+
+model CustomerTag {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  label          String
+  color          String   @default("#64748B")
+  createdBy      String?  @map("created_by") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customers    CustomerTagMap[]
+
+  @@unique([organizationId, label])
+  @@map("customer_tags")
+}
+
+model CustomerTagMap {
+  customerId String   @map("customer_id") @db.Uuid
+  tagId      String   @map("tag_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tag      CustomerTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, tagId])
+  @@map("customer_tag_map")
+}
+
+// ----------------------------------------------------------------------------
+// Custom fields (per-organization, no schema migration needed)
+// ----------------------------------------------------------------------------
+
+enum CustomFieldType {
+  text
+  number
+  boolean
+  date
+  select
+}
+
+model CustomerCustomField {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  fieldKey       String          @map("field_key")
+  fieldLabel     String          @map("field_label")
+  fieldType      CustomFieldType @map("field_type")
+  options        Json?           // used when fieldType = select
+  deletedAt      DateTime?       @map("deleted_at") // soft delete, see Edge case #10
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  organization Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  values       CustomerCustomFieldValue[]
+
+  @@unique([organizationId, fieldKey])
+  @@map("customer_custom_fields")
+}
+
+model CustomerCustomFieldValue {
+  customerId    String @map("customer_id") @db.Uuid
+  customFieldId String @map("custom_field_id") @db.Uuid
+  value         Json
+
+  customer    Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  customField CustomerCustomField @relation(fields: [customFieldId], references: [id], onDelete: Cascade)
+
+  @@id([customerId, customFieldId])
+  @@map("customer_custom_field_values")
+}
+
+// ----------------------------------------------------------------------------
+// Merge log
+// ----------------------------------------------------------------------------
+
+enum MergeType {
+  automatic
+  manual
+}
+
+model CustomerMergeLog {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  survivingCustomerId    String    @map("surviving_customer_id") @db.Uuid
+  mergedCustomerId       String    @map("merged_customer_id") @db.Uuid
+  mergedFieldsSnapshot   Json      @map("merged_fields_snapshot")
+  matchScore             Decimal   @map("match_score") @db.Decimal(5, 4)
+  mergeType              MergeType @map("merge_type")
+  performedBy            String?   @map("performed_by") @db.Uuid
+  performedAt            DateTime  @default(now()) @map("performed_at")
+
+  survivingCustomer Customer @relation("SurvivingCustomer", fields: [survivingCustomerId], references: [id])
+  mergedCustomer    Customer @relation("MergedCustomer", fields: [mergedCustomerId], references: [id])
+
+  @@index([survivingCustomerId])
+  @@index([mergedCustomerId])
+  @@map("customer_merge_log")
+}
+
+// ----------------------------------------------------------------------------
+// Segmentation is fully implemented in Module 7 (see below). The forward-
+// looking stub that used to live here has been replaced by the real
+// Segment/SegmentMembership models further down this file.
+// ----------------------------------------------------------------------------
+
+
+// ----------------------------------------------------------------------------
+// Audit log (shared infrastructure, used by all modules)
+// ----------------------------------------------------------------------------
+
+enum AuditAction {
+  create
+  update
+  delete
+  merge
+  anonymize
+  export
+}
+
+enum ActorType {
+  staff
+  system
+  api_key
+  customer_self_service
+}
+
+model AuditLog {
+  id             String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String      @map("organization_id") @db.Uuid
+  entityType     String      @map("entity_type") // e.g. 'customer', 'customer_consent', 'customer_note'
+  entityId       String      @map("entity_id") @db.Uuid
+  action         AuditAction
+  actorType      ActorType   @map("actor_type")
+  actorId        String?     @map("actor_id") @db.Uuid
+  // Locatie waarop deze mutatie geboekt is — bij kassamedewerkers met
+  // een vaste locatie (StaffUser.homeLocationId) is dit ALTIJD hun eigen
+  // locatie, nooit een door de client opgegeven waarde. Bewust een los
+  // scalair veld, geen Prisma-relatie — zelfde patroon als de
+  // performedByUserId-velden elders in dit schema.
+  locationId     String?     @map("location_id") @db.Uuid
+  beforeState    Json?       @map("before_state")
+  afterState     Json?       @map("after_state")
+  reason         String?
+  ipAddress      String?     @map("ip_address")
+  timestamp      DateTime    @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, entityType, entityId])
+  @@index([organizationId, timestamp])
+  @@map("audit_log")
+}
+
+// ============================================================================
+// Module 2 — Transactions & POS
+// ============================================================================
+
+enum PosConnectionMode {
+  webhook
+  polling
+  bulk_only
+}
+
+enum PosConnectionStatus {
+  active
+  paused
+  error
+  not_configured
+}
+
+model PosConnection {
+  id             String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String              @map("organization_id") @db.Uuid
+  locationId     String              @map("location_id") @db.Uuid
+  // Deliberately a free-form string, not a fixed enum — new POS providers
+  // must be addable without a schema migration (see Module 2 design doc,
+  // section 9: "geen hardcoded enum-limiet").
+  provider              String
+  connectionMode        PosConnectionMode   @map("connection_mode")
+  apiCredentialsRef     String?             @map("api_credentials_ref")
+  webhookSecretRef      String?             @map("webhook_secret_ref")
+  pollingIntervalSeconds Int?               @map("polling_interval_seconds")
+  lastSyncedAt          DateTime?           @map("last_synced_at")
+  lastSuccessfulSyncAt  DateTime?           @map("last_successful_sync_at")
+  status                PosConnectionStatus @default(not_configured)
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  location             Location              @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  events               PosEvent[]
+  transactions         Transaction[]
+  productMappings      PosProductMapping[]
+  customerMappings     PosCustomerMapping[]
+  syncRuns             PosSyncRun[]
+
+  @@index([organizationId])
+  @@index([locationId])
+  @@map("pos_connections")
+}
+
+enum IngestionMethod {
+  webhook
+  poll
+  bulk_import
+  csv_upload
+}
+
+enum PosEventProcessingStatus {
+  pending
+  processed
+  failed
+  ignored_duplicate
+}
+
+model PosEvent {
+  id                String                    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posConnectionId   String                    @map("pos_connection_id") @db.Uuid
+  ingestionMethod   IngestionMethod           @map("ingestion_method")
+  rawPayload        Json                      @map("raw_payload")
+  payloadHash       String                    @map("payload_hash")
+  receivedAt        DateTime                  @default(now()) @map("received_at")
+  processingStatus  PosEventProcessingStatus  @default(pending) @map("processing_status")
+  transactionId     String?                   @map("transaction_id") @db.Uuid
+
+  posConnection PosConnection @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+  transaction   Transaction?  @relation(fields: [transactionId], references: [id])
+  failedTransactions FailedTransaction[]
+
+  @@index([posConnectionId, payloadHash])
+  @@index([posConnectionId, receivedAt])
+  @@map("pos_events")
+}
+
+enum TransactionSource {
+  pos
+  manual
+  csv_import
+}
+
+enum TransactionStatus {
+  pending
+  completed
+  failed
+  voided
+  partially_refunded
+  refunded
+  charged_back
+}
+
+enum PaymentMethod {
+  cash
+  card
+  ideal
+  voucher
+  split
+  other
+}
+
+model Transaction {
+  id                     String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String             @map("organization_id") @db.Uuid
+  locationId             String             @map("location_id") @db.Uuid
+  posConnectionId        String?            @map("pos_connection_id") @db.Uuid
+  source                 TransactionSource  @default(manual)
+  externalTransactionId  String?            @map("external_transaction_id")
+  customerId             String?            @map("customer_id") @db.Uuid
+  tableReference         String?            @map("table_reference")
+  reservationId          String?            @map("reservation_id") @db.Uuid
+  status                 TransactionStatus  @default(pending)
+  grossAmount            Decimal            @map("gross_amount") @db.Decimal(10, 2)
+  discountAmount         Decimal            @default(0) @map("discount_amount") @db.Decimal(10, 2)
+  serviceAmount          Decimal            @default(0) @map("service_amount") @db.Decimal(10, 2)
+  vatAmount              Decimal            @default(0) @map("vat_amount") @db.Decimal(10, 2)
+  netAmount              Decimal            @map("net_amount") @db.Decimal(10, 2)
+  totalAmount            Decimal            @map("total_amount") @db.Decimal(10, 2)
+  paymentMethod          PaymentMethod      @map("payment_method")
+  occurredAt             DateTime           @map("occurred_at")
+  posCreatedAt           DateTime?          @map("pos_created_at")
+  createdAt              DateTime           @default(now()) @map("created_at")
+
+  location      Location           @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  posConnection PosConnection?     @relation(fields: [posConnectionId], references: [id])
+  customer      Customer?          @relation(fields: [customerId], references: [id])
+
+  lineItems     TransactionLineItem[]
+  refunds       TransactionRefund[]
+  voids         TransactionVoid[]
+  chargebacks   TransactionChargeback[]
+  posEvents     PosEvent[]
+  rewardCalculations RewardCalculation[]
+  walletLedgerEntries WalletLedgerEntry[]
+  giftCardLedgerEntries GiftCardLedgerEntry[]
+
+  @@unique([posConnectionId, externalTransactionId])
+  @@index([organizationId])
+  @@index([locationId, occurredAt])
+  @@index([customerId])
+  @@map("transactions")
+}
+
+model TransactionLineItem {
+  id                        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId             String   @map("transaction_id") @db.Uuid
+  posProductId              String?  @map("pos_product_id")
+  internalProductMappingId  String?  @map("internal_product_mapping_id") @db.Uuid
+  description                String
+  category                   String?
+  quantity                    Int
+  unitPrice                   Decimal @map("unit_price") @db.Decimal(10, 2)
+  lineGrossAmount              Decimal @map("line_gross_amount") @db.Decimal(10, 2)
+  lineDiscountAmount            Decimal @default(0) @map("line_discount_amount") @db.Decimal(10, 2)
+  lineNetAmount                  Decimal @map("line_net_amount") @db.Decimal(10, 2)
+  lineVatAmount                   Decimal @default(0) @map("line_vat_amount") @db.Decimal(10, 2)
+  rewardEligible                   Boolean @default(true) @map("reward_eligible")
+
+  transaction     Transaction         @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  productMapping  PosProductMapping?  @relation(fields: [internalProductMappingId], references: [id])
+  modifiers       TransactionLineItemModifier[]
+
+  @@index([transactionId])
+  @@map("transaction_line_items")
+}
+
+model TransactionLineItemModifier {
+  id                String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  lineItemId        String  @map("line_item_id") @db.Uuid
+  name              String
+  priceAdjustment   Decimal @map("price_adjustment") @db.Decimal(10, 2)
+
+  lineItem TransactionLineItem @relation(fields: [lineItemId], references: [id], onDelete: Cascade)
+
+  @@map("transaction_line_item_modifiers")
+}
+
+enum RefundType {
+  partial
+  full
+}
+
+enum RefundInitiator {
+  pos
+  manual_staff
+}
+
+model TransactionRefund {
+  id                    String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId         String          @map("transaction_id") @db.Uuid
+  refundType            RefundType      @map("refund_type")
+  refundedAmount        Decimal         @map("refunded_amount") @db.Decimal(10, 2)
+  refundedLineItems     Json?           @map("refunded_line_items")
+  reason                String
+  externalRefundId      String?         @map("external_refund_id")
+  initiatedBy           RefundInitiator @map("initiated_by")
+  performedByUserId     String?         @map("performed_by_user_id") @db.Uuid
+  occurredAt            DateTime        @map("occurred_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@map("transaction_refunds")
+}
+
+model TransactionVoid {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId      String    @map("transaction_id") @db.Uuid
+  reason             String
+  performedByUserId  String?   @map("performed_by_user_id") @db.Uuid
+  occurredAt         DateTime  @map("occurred_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@map("transaction_voids")
+}
+
+enum ChargebackStatus {
+  received
+  disputed
+  lost
+  won
+}
+
+model TransactionChargeback {
+  id                String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  transactionId     String           @map("transaction_id") @db.Uuid
+  chargebackAmount  Decimal          @map("chargeback_amount") @db.Decimal(10, 2)
+  reasonCode        String?          @map("reason_code")
+  status            ChargebackStatus @default(received)
+  receivedAt        DateTime         @map("received_at")
+
+  transaction Transaction @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([transactionId])
+  @@map("transaction_chargebacks")
+}
+
+enum MappingStatus {
+  mapped
+  unmapped
+  needs_review
+}
+
+model PosProductMapping {
+  id                        String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId            String        @map("organization_id") @db.Uuid
+  posConnectionId           String        @map("pos_connection_id") @db.Uuid
+  externalProductId         String        @map("external_product_id")
+  externalProductName       String?       @map("external_product_name")
+  internalCategory          String?       @map("internal_category")
+  rewardEligibleOverride    Boolean?      @map("reward_eligible_override")
+  mappingStatus             MappingStatus @default(unmapped) @map("mapping_status")
+  createdAt                 DateTime      @default(now()) @map("created_at")
+  updatedAt                 DateTime      @updatedAt @map("updated_at")
+
+  posConnection PosConnection          @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+  lineItems     TransactionLineItem[]
+
+  @@unique([posConnectionId, externalProductId])
+  @@map("pos_product_mappings")
+}
+
+enum MatchedVia {
+  external_id_direct
+  phone
+  email
+  manual
+}
+
+model PosCustomerMapping {
+  id                 String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posConnectionId    String      @map("pos_connection_id") @db.Uuid
+  externalCustomerId String      @map("external_customer_id")
+  customerId         String      @map("customer_id") @db.Uuid
+  matchedVia         MatchedVia  @map("matched_via")
+  createdAt          DateTime    @default(now()) @map("created_at")
+
+  posConnection PosConnection @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+  customer      Customer      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([posConnectionId, externalCustomerId])
+  @@map("pos_customer_mappings")
+}
+
+enum FailureStage {
+  normalization
+  validation
+  matching
+  storage
+}
+
+enum FailedTxStatus {
+  pending_retry
+  retrying
+  resolved
+  abandoned
+}
+
+enum ResolvedBy {
+  automatic_retry
+  manual_staff
+}
+
+model FailedTransaction {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posEventId     String           @map("pos_event_id") @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  locationId     String?          @map("location_id") @db.Uuid
+  failureStage   FailureStage     @map("failure_stage")
+  errorMessage   String           @map("error_message")
+  errorDetails   Json?            @map("error_details")
+  retryCount     Int              @default(0) @map("retry_count")
+  maxRetries     Int              @default(5) @map("max_retries")
+  nextRetryAt    DateTime?        @map("next_retry_at")
+  status         FailedTxStatus   @default(pending_retry)
+  resolvedAt     DateTime?        @map("resolved_at")
+  resolvedBy     ResolvedBy?      @map("resolved_by")
+
+  posEvent PosEvent @relation(fields: [posEventId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("failed_transactions")
+}
+
+enum SyncRunType {
+  polling
+  reconciliation
+  manual_trigger
+}
+
+enum SyncRunStatus {
+  success
+  partial_success
+  failed
+}
+
+model PosSyncRun {
+  id                          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  posConnectionId             String        @map("pos_connection_id") @db.Uuid
+  runType                     SyncRunType   @map("run_type")
+  startedAt                   DateTime      @map("started_at")
+  completedAt                 DateTime?     @map("completed_at")
+  transactionsFoundAtPos      Int?          @map("transactions_found_at_pos")
+  transactionsIngested        Int           @default(0) @map("transactions_ingested")
+  discrepancyCount             Int           @default(0) @map("discrepancy_count")
+  discrepancyDetails            Json?         @map("discrepancy_details")
+  status                        SyncRunStatus @default(success)
+
+  posConnection PosConnection @relation(fields: [posConnectionId], references: [id], onDelete: Cascade)
+
+  @@index([posConnectionId, startedAt])
+  @@map("pos_sync_runs")
+}
+
+// ============================================================================
+// Module 4 — Reward Engine
+// ============================================================================
+
+enum RewardRuleType {
+  base
+  tier
+  day
+  time
+  location
+  product
+  campaign
+  bonus
+  challenge
+}
+
+enum RewardBucket {
+  percentage
+  multiplier
+  flat_bonus
+  challenge
+}
+
+enum StackingMode {
+  additive
+  exclusive
+  highest_only
+}
+
+model RewardRule {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String          @map("organization_id") @db.Uuid
+  locationId             String?         @map("location_id") @db.Uuid
+  ruleType               RewardRuleType  @map("rule_type")
+  bucket                 RewardBucket
+  name                   String
+  priority               Int             @default(0)
+  stackingMode           StackingMode    @map("stacking_mode")
+  percentageValue        Decimal?        @map("percentage_value") @db.Decimal(5, 2)
+  multiplierValue        Decimal?        @map("multiplier_value") @db.Decimal(4, 2)
+  flatBonusAmount        Decimal?        @map("flat_bonus_amount") @db.Decimal(10, 2)
+  flatBonusThreshold     Decimal?        @map("flat_bonus_threshold") @db.Decimal(10, 2)
+  challengeCondition     Json?           @map("challenge_condition")
+  challengeRewardAmount  Decimal?        @map("challenge_reward_amount") @db.Decimal(10, 2)
+  tierId                 String?         @map("tier_id") @db.Uuid
+  appliesOnDay           Json?           @map("applies_on_day")
+  timeWindowStart        DateTime?       @map("time_window_start") @db.Time
+  timeWindowEnd          DateTime?       @map("time_window_end") @db.Time
+  productCategories      Json?           @map("product_categories")
+  isExclusion            Boolean         @default(false) @map("is_exclusion")
+  campaignId             String?         @map("campaign_id") @db.Uuid
+  maximumRewardPerTransaction Decimal?   @map("maximum_reward_per_transaction") @db.Decimal(10, 2)
+  activeFrom             DateTime?       @map("active_from")
+  activeUntil            DateTime?       @map("active_until")
+  isActive               Boolean         @default(true) @map("is_active")
+  version                Int             @default(1)
+  parentRuleId           String?         @map("parent_rule_id") @db.Uuid
+  supersededByRuleId     String?         @map("superseded_by_rule_id") @db.Uuid
+  createdAt              DateTime        @default(now()) @map("created_at")
+  updatedAt              DateTime        @updatedAt @map("updated_at")
+
+  location Location? @relation(fields: [locationId], references: [id])
+  tier     LoyaltyTier? @relation(fields: [tierId], references: [id])
+
+  @@index([organizationId, isActive, bucket])
+  @@index([locationId])
+  @@map("reward_rules")
+}
+
+enum CapPeriodType {
+  daily
+  weekly
+  monthly
+}
+
+model RewardCustomerCap {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String        @map("organization_id") @db.Uuid
+  customerId            String        @map("customer_id") @db.Uuid
+  periodType            CapPeriodType @map("period_type")
+  maxAmount             Decimal       @map("max_amount") @db.Decimal(10, 2)
+  currentPeriodSpent    Decimal       @default(0) @map("current_period_spent") @db.Decimal(10, 2)
+  currentPeriodStart    DateTime      @map("current_period_start") @db.Date
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("reward_customer_caps")
+}
+
+model RewardLocationCap {
+  id                    String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId        String        @map("organization_id") @db.Uuid
+  locationId            String        @map("location_id") @db.Uuid
+  periodType            CapPeriodType @map("period_type")
+  maxAmount             Decimal       @map("max_amount") @db.Decimal(10, 2)
+  currentPeriodSpent    Decimal       @default(0) @map("current_period_spent") @db.Decimal(10, 2)
+  currentPeriodStart    DateTime      @map("current_period_start") @db.Date
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+  @@map("reward_location_caps")
+}
+
+model RewardCalculation {
+  id                       String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String    @map("organization_id") @db.Uuid
+  transactionId             String?   @map("transaction_id") @db.Uuid
+  customerId                 String?   @map("customer_id") @db.Uuid
+  eligibleAmount               Decimal   @map("eligible_amount") @db.Decimal(10, 2)
+  combinedPercentage             Decimal?  @map("combined_percentage") @db.Decimal(5, 2)
+  percentageSubtotal               Decimal?  @map("percentage_subtotal") @db.Decimal(10, 2)
+  effectiveMultiplier                 Decimal?  @map("effective_multiplier") @db.Decimal(4, 2)
+  multipliedSubtotal                   Decimal?  @map("multiplied_subtotal") @db.Decimal(10, 2)
+  flatBonusTotal                         Decimal   @default(0) @map("flat_bonus_total") @db.Decimal(10, 2)
+  preCapTotal                             Decimal   @map("pre_cap_total") @db.Decimal(10, 2)
+  appliedCaps                              Json?     @map("applied_caps")
+  finalRewardAmount                          Decimal   @map("final_reward_amount") @db.Decimal(10, 2)
+  calculationTrace                            Json      @map("calculation_trace")
+  appliedRuleIds                               Json      @map("applied_rule_ids")
+  isSimulation                                  Boolean   @default(false) @map("is_simulation")
+  supersededByCorrectionId                       String?   @map("superseded_by_correction_id") @db.Uuid
+  createdAt                                       DateTime  @default(now()) @map("created_at")
+
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+  customer    Customer?    @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId])
+  @@index([transactionId])
+  @@index([customerId])
+  @@map("reward_calculations")
+}
+
+model RewardChallengeProgress {
+  id                    String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  rewardRuleId          String    @map("reward_rule_id") @db.Uuid
+  customerId            String    @map("customer_id") @db.Uuid
+  progressCount         Int       @default(0) @map("progress_count")
+  windowStartedAt       DateTime  @map("window_started_at")
+  completedAt           DateTime? @map("completed_at")
+  rewardCalculationId   String?   @map("reward_calculation_id") @db.Uuid
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([rewardRuleId, customerId])
+  @@map("reward_challenge_progress")
+}
+
+// ============================================================================
+// Module 3 — Wallet & Credit
+// ============================================================================
+
+model Wallet {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String   @map("organization_id") @db.Uuid
+  customerId        String   @unique @map("customer_id") @db.Uuid
+  availableBalance  Decimal  @default(0) @map("available_balance") @db.Decimal(10, 2)
+  pendingBalance    Decimal  @default(0) @map("pending_balance") @db.Decimal(10, 2)
+  reservedBalance   Decimal  @default(0) @map("reserved_balance") @db.Decimal(10, 2)
+  lifetimeExpired   Decimal  @default(0) @map("lifetime_expired") @db.Decimal(10, 2)
+  lifetimeEarned    Decimal  @default(0) @map("lifetime_earned") @db.Decimal(10, 2)
+  lifetimeRedeemed  Decimal  @default(0) @map("lifetime_redeemed") @db.Decimal(10, 2)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  customer     Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  ledgerEntries WalletLedgerEntry[]
+  passes        WalletPass[]
+
+  @@index([organizationId])
+  @@map("wallets")
+}
+
+enum WalletLedgerEntryType {
+  earn
+  redeem
+  bonus
+  campaign_bonus
+  manual_adjustment
+  refund_reversal
+  expiration
+  transfer
+  correction
+  migration_import
+}
+
+enum WalletLedgerEntryStatus {
+  pending
+  available
+  reserved
+  redeemed
+  expired
+  reversed
+}
+
+enum WalletLedgerSource {
+  pos
+  manual
+  campaign
+  system
+}
+
+enum PerformedByType {
+  system
+  staff
+  customer_self_service
+}
+
+model WalletLedgerEntry {
+  id                    String                     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId              String                     @map("wallet_id") @db.Uuid
+  organizationId        String                     @map("organization_id") @db.Uuid
+  entryType             WalletLedgerEntryType      @map("entry_type")
+  amount                Decimal                    @db.Decimal(10, 2)
+  remainingAmount       Decimal?                   @map("remaining_amount") @db.Decimal(10, 2)
+  status                WalletLedgerEntryStatus?
+  source                WalletLedgerSource
+  transactionId         String?                    @map("transaction_id") @db.Uuid
+  rewardCalculationId   String?                    @map("reward_calculation_id") @db.Uuid
+  campaignId            String?                    @map("campaign_id") @db.Uuid
+  performedByUserId     String?                    @map("performed_by_user_id") @db.Uuid
+  performedByType       PerformedByType            @map("performed_by_type")
+  relatedLedgerEntryId  String?                    @map("related_ledger_entry_id") @db.Uuid
+  reason                String?
+  metadata              Json?
+  expiresAt             DateTime?                  @map("expires_at")
+  occurredAt            DateTime                   @map("occurred_at")
+  createdAt             DateTime                   @default(now()) @map("created_at")
+
+  wallet      Wallet             @relation(fields: [walletId], references: [id], onDelete: Cascade)
+  transaction Transaction?       @relation(fields: [transactionId], references: [id])
+
+  allocationsAsDebit  WalletLedgerAllocation[] @relation("DebitEntry")
+  allocationsAsCredit WalletLedgerAllocation[] @relation("CreditEntry")
+
+  @@index([walletId, entryType])
+  @@index([organizationId, occurredAt])
+  @@index([walletId, status, expiresAt])
+  @@map("wallet_ledger_entries")
+}
+
+model WalletLedgerAllocation {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  debitEntryId   String   @map("debit_entry_id") @db.Uuid
+  creditEntryId  String   @map("credit_entry_id") @db.Uuid
+  amount         Decimal  @db.Decimal(10, 2)
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  debitEntry  WalletLedgerEntry @relation("DebitEntry", fields: [debitEntryId], references: [id], onDelete: Cascade)
+  creditEntry WalletLedgerEntry @relation("CreditEntry", fields: [creditEntryId], references: [id], onDelete: Cascade)
+
+  @@index([debitEntryId])
+  @@index([creditEntryId])
+  @@map("wallet_ledger_allocations")
+}
+
+// Vervangt de vorige in-process JavaScript Map voor het two-phase
+// redemption-mechanisme (reserve -> confirm/cancel). Die Map overleefde
+// geen herstart en werkte niet over meerdere serverless-instances heen
+// (Vercel start voor elke aanroep mogelijk een ander functie-exemplaar)
+// — een reservering kon daardoor spontaan "verdwijnen", en dubbele
+// requests met dezelfde idempotencyKey werden niet betrouwbaar herkend.
+// Nu een echte, gedeelde tabel: elke instance ziet dezelfde staat.
+model WalletRedemptionReservation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String    @map("organization_id") @db.Uuid
+  walletId        String    @map("wallet_id") @db.Uuid
+  customerId      String    @map("customer_id") @db.Uuid
+  amount          Decimal   @db.Decimal(10, 2)
+  lockedEntryIds  String[]  @map("locked_entry_ids") @db.Uuid
+  transactionId   String?   @map("transaction_id") @db.Uuid
+  idempotencyKey  String    @map("idempotency_key")
+  status          String    @default("active") // 'active' | 'confirmed' | 'cancelled'
+  createdAt       DateTime  @default(now()) @map("created_at")
+  expiresAt       DateTime  @map("expires_at")
+
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, status])
+  @@map("wallet_redemption_reservations")
+}
+
+enum WalletPassType {
+  apple
+  google
+}
+
+enum WalletPassStatus {
+  active
+  removed
+  not_installed
+}
+
+model WalletPass {
+  id                       String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  walletId                 String            @map("wallet_id") @db.Uuid
+  passType                 WalletPassType    @map("pass_type")
+  serialNumber             String            @unique @map("serial_number")
+  deviceLibraryIdentifier  String?           @map("device_library_identifier")
+  pushToken                String?           @map("push_token")
+  status                   WalletPassStatus  @default(not_installed)
+  lastPushedAt             DateTime?         @map("last_pushed_at")
+  installedAt              DateTime?         @map("installed_at")
+  removedAt                DateTime?         @map("removed_at")
+
+  wallet Wallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@map("wallet_passes")
+}
+
+model CreditRule {
+  id                          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId              String   @map("organization_id") @db.Uuid
+  locationId                  String?  @map("location_id") @db.Uuid
+  validityDays                Int      @default(60) @map("validity_days")
+  usableFromNextVisit         Boolean  @default(true) @map("usable_from_next_visit")
+  minimumOrderAmount          Decimal? @map("minimum_order_amount") @db.Decimal(10, 2)
+  maximumRedeemPercentage     Decimal? @map("maximum_redeem_percentage") @db.Decimal(5, 2)
+  minimumRedemptionBalance    Decimal? @map("minimum_redemption_balance") @db.Decimal(10, 2)
+  redemptionBlockSize         Int?     @map("redemption_block_size")
+  // Sectie 14 (kaartbeveiliging): boven dit euro-bedrag geeft de
+  // kassa-identificatie-endpoint een waarschuwing mee dat extra
+  // verificatie nodig is — een enkele fotografeerbare QR-scan volstaat
+  // dan niet meer. null = geen drempel, altijd gewone scan voldoende.
+  cardRedemptionThreshold     Decimal? @map("card_redemption_threshold") @db.Decimal(10, 2)
+  excludedProductCategories   Json?    @map("excluded_product_categories")
+  excludedDays                Json?    @map("excluded_days")
+  nonCombinableCampaignIds    Json?    @map("non_combinable_campaign_ids")
+  transfersAllowed            Boolean  @default(false) @map("transfers_allowed")
+  isActive                    Boolean  @default(true) @map("is_active")
+  createdAt                   DateTime @default(now()) @map("created_at")
+  updatedAt                   DateTime @updatedAt @map("updated_at")
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([organizationId])
+  @@map("credit_rules")
+}
+
+model RedemptionRateRule {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String?  @map("location_id") @db.Uuid
+  name           String
+  appliesOnDays  Json     @map("applies_on_days") // e.g. ["monday","tuesday","wednesday","thursday"]
+  pointsPerEuro  Decimal  @map("points_per_euro") @db.Decimal(10, 4) // e.g. 25 -> 250 points = €10
+  priority       Int      @default(0)
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  location Location? @relation(fields: [locationId], references: [id])
+
+  @@index([organizationId, isActive])
+  @@map("redemption_rate_rules")
+}
+
+// Cadeaucatalogus: vaste items inwisselbaar tegen een vast puntenaantal
+// (bijv. "Gebakje bij de koffie — 100 punten"), naast de generieke
+// blokgewijze tegoed-inwisseling hierboven.
+model RewardCatalogItem {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  // Leeg/null array = organisatiebreed geldig, gevuld = alleen geldig bij
+  // de genoemde locatie(s) — zelfde patroon als VoucherTemplate.locationIds
+  // hieronder, i.p.v. de vorige losse locationId-relatie (max. 1 locatie).
+  locationIds    String[] @default([]) @map("location_ids") @db.Uuid
+  name           String
+  description    String?
+  pointsCost     Int      @map("points_cost")
+  euroValue      Decimal  @map("euro_value") @db.Decimal(10, 2) // werkelijke kostprijs/waarde — voor boekhouding, los van het puntenaantal
+  availableDays  Json?    @map("available_days") // e.g. ["monday","tuesday"] — null = elke dag
+  validFrom      DateTime? @map("valid_from") @db.Date
+  validUntil     DateTime? @map("valid_until") @db.Date
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([organizationId, isActive])
+  @@map("reward_catalog_items")
+}
+
+// ============================================================================
+// Voucher-module — een voucher is BEWUST een aparte reward, nooit
+// samengevoegd met Beach Credit/punten (WalletLedgerEntry) of
+// cadeaukaartsaldo (GiftCard). Zelfde architecturale scheiding als
+// tussen GiftCard en Wallet elders in dit schema: aparte tabellen, geen
+// gedeeld saldo-veld, geen impliciete conversie tussen de twee.
+//
+// VoucherTemplate = het "sjabloon" dat een beheerder aanmaakt (bijv.
+// "Gratis cocktail"). CustomerVoucher = een concrete, aan één klant
+// gekoppelde UITGIFTE van dat sjabloon, met een eigen geldigheidsperiode
+// en eigen secure token — twee klanten die dezelfde template krijgen,
+// krijgen allebei een eigen CustomerVoucher-rij.
+// ============================================================================
+
+model VoucherTemplate {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  name           String
+  description    String?
+  imageUrl       String?  @map("image_url")
+  benefit        String   // vrije tekst: "Gratis cocktail", "€10 korting bij lunch", "2x credit" — bewust geen apart bedragveld, want niet elke voucher is een geldbedrag
+  terms          String?  @map("terms") // voorwaarden, vrije tekst
+  isActive       Boolean  @default(true) @map("is_active")
+
+  // Geldigheidsregel — precies één van de twee patronen:
+  //  - relatief: validityDays gezet, validFrom/validUntil leeg
+  //    ("geldig gedurende N dagen na uitgifte")
+  //  - vast: validFrom + validUntil gezet, validityDays leeg
+  //    ("geldig tussen twee ingestelde datums", of alleen validUntil
+  //    voor een vaste einddatum ongeacht uitgiftemoment)
+  validityDays   Int?      @map("validity_days")
+  validFrom      DateTime? @map("valid_from")
+  validUntil     DateTime? @map("valid_until")
+
+  // Locatiescope: leeg/null array = organisatiebreed geldig. Gevuld =
+  // alleen geldig bij de genoemde locatie(s).
+  locationIds    String[]  @map("location_ids") @db.Uuid
+
+  // Instelbare reminder(s) vóór het verlopen — dagen-voor-afloop,
+  // bijv. [7, 3, 1]. Leeg = geen automatische verloopherinnering.
+  reminderDaysBeforeExpiry Int[] @default([]) @map("reminder_days_before_expiry")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customerVouchers   CustomerVoucher[]
+
+  @@index([organizationId, isActive])
+  @@map("voucher_templates")
+}
+
+model CustomerVoucher {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String    @map("organization_id") @db.Uuid
+  customerId        String    @map("customer_id") @db.Uuid
+  voucherTemplateId String    @map("voucher_template_id") @db.Uuid
+  campaignId        String?   @map("campaign_id") @db.Uuid
+  journeyId         String?   @map("journey_id") @db.Uuid
+
+  // 'scheduled' (validFrom ligt nog in de toekomst) | 'active' |
+  // 'redeemed' | 'expired' | 'cancelled'. Bewust WEL expliciet
+  // opgeslagen (i.p.v. altijd puur uit data af te leiden) zodat
+  // redemption/cancellation onomkeerbaar vastligt — de status wordt bij
+  // het OPHALEN nog wel "opgewaardeerd" naar 'expired' als de datum
+  // inmiddels is verstreken en de status nog 'scheduled'/'active' was,
+  // zie VouchersService.deriveEffectiveStatus.
+  status            String    @default("scheduled")
+
+  validFrom         DateTime  @map("valid_from")
+  validUntil        DateTime  @map("valid_until")
+  issuedAt          DateTime  @default(now()) @map("issued_at")
+
+  redeemedAt        DateTime? @map("redeemed_at")
+  transactionId     String?   @map("transaction_id") @db.Uuid
+  locationId        String?   @map("location_id") @db.Uuid // locatie waar ingewisseld
+  redeemedByStaffId String?   @map("redeemed_by_staff_id") @db.Uuid
+
+  // Reden/bron van uitgifte — vrije tekst voor weergave in Klantprofiel
+  // en analytics (bijv. "Birthday Journey", "Handmatig door Henny").
+  issueReason       String?   @map("issue_reason")
+  issueSource       String    @default("manual") @map("issue_source") // manual | campaign | journey | reward_engine | api
+
+  // Welke reminder-dagen (uit VoucherTemplate.reminderDaysBeforeExpiry)
+  // al zijn verstuurd voor DEZE voucher — voorkomt dat de "nog 3 dagen
+  // geldig"-melding twee keer verstuurd wordt als de reminder-job vaker
+  // dan één keer per dag draait.
+  remindersSentDays Int[]     @default([]) @map("reminders_sent_days")
+
+  // Nooit de ruwe voucher-code opslaan — zelfde beveiligingsprincipe als
+  // GiftCard.publicTokenHash: de QR/code bevat alleen dit token, nooit
+  // klantgegevens, en is niet te raden (crypto-random, gehasht in de DB).
+  secureTokenHash   String    @unique @map("secure_token_hash")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  organization    Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  voucherTemplate VoucherTemplate @relation(fields: [voucherTemplateId], references: [id])
+
+  @@index([organizationId, customerId])
+  @@index([organizationId, status])
+  @@index([voucherTemplateId])
+  @@map("customer_vouchers")
+}
+
+// ============================================================================
+// Guest App Authentication — passwordless, e-mail-code-gebaseerd
+// (nodig zodra klanten zelf een publieke app/pagina gebruiken; de
+// backoffice zelf blijft op interne staff-headers werken)
+// ============================================================================
+
+model GuestLoginCode {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  codeHash   String   @map("code_hash") // nooit de ruwe code opslaan
+  expiresAt  DateTime @map("expires_at")
+  usedAt     DateTime? @map("used_at")
+  attempts   Int      @default(0)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("guest_login_codes")
+}
+
+model GuestSession {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash") // nooit het ruwe token opslaan
+  deviceInfo String?  @map("device_info")
+  expiresAt  DateTime @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("guest_sessions")
+}
+
+// Expo push-tokens per toestel — één klant kan meerdere toestellen hebben
+// (bijv. na een telefoonwissel blijft het oude token even bestaan totdat
+// het ongeldig raakt). Nooit gevoelig, maar wel persoonlijk: alleen
+// gebruikt om die specifieke klant een melding te kunnen sturen.
+model GuestPushToken {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  expoPushToken String @unique @map("expo_push_token")
+  deviceInfo String?  @map("device_info")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("guest_push_tokens")
+}
+
+// ============================================================================
+// Module 5 — Campaign Manager
+// ============================================================================
+
+enum CampaignGoal {
+  meer_bezoekers
+  lunch_vullen
+  slapende_gasten_activeren
+  credit_laten_inwisselen
+  omzet_verhogen
+  vip_event_vullen
+}
+
+enum CampaignStatus {
+  draft
+  pending_approval
+  scheduled
+  active
+  paused
+  completed
+  cancelled
+  archived
+}
+
+enum IncentiveType {
+  flat_bonus
+  multiplier
+  percentage_bonus
+  coupon
+  none
+}
+
+enum ScheduleType {
+  direct
+  datetime
+  period
+  recurring
+}
+
+model CampaignTemplate {
+  id                     String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String?       @map("organization_id") @db.Uuid
+  name                   String
+  icon                   String?
+  defaultGoal            CampaignGoal  @map("default_goal")
+  defaultAudienceFilter  Json?         @map("default_audience_filter")
+  defaultIncentiveType   IncentiveType @map("default_incentive_type")
+  defaultIncentiveValue  Json?         @map("default_incentive_value")
+  defaultChannels        Json?         @map("default_channels")
+  defaultScheduleType    ScheduleType  @map("default_schedule_type")
+  suggestedBudgetLimits  Json?         @map("suggested_budget_limits")
+  createdAt              DateTime      @default(now()) @map("created_at")
+
+  @@map("campaign_templates")
+}
+
+model Campaign {
+  id                       String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String          @map("organization_id") @db.Uuid
+  templateId               String?         @map("template_id") @db.Uuid
+  name                     String
+  goal                     CampaignGoal
+  status                   CampaignStatus  @default(draft)
+  audienceFilter           Json?           @map("audience_filter")
+  incentiveType            IncentiveType   @default(none) @map("incentive_type")
+  incentiveValue           Json?           @map("incentive_value")
+  rewardRuleId             String?         @map("reward_rule_id") @db.Uuid
+  channels                 Json            @default("[]")
+  scheduleType             ScheduleType    @default(direct) @map("schedule_type")
+  startAt                  DateTime?       @map("start_at")
+  endAt                    DateTime?       @map("end_at")
+  recurrenceRule           String?         @map("recurrence_rule")
+  maxRecipients            Int?            @map("max_recipients")
+  maxRewardExposure        Decimal?        @map("max_reward_exposure") @db.Decimal(10, 2)
+  maxRedemptionCost        Decimal?        @map("max_redemption_cost") @db.Decimal(10, 2)
+  maxIncentivePerCustomer  Int             @default(1) @map("max_incentive_per_customer")
+  currentRewardExposure    Decimal         @default(0) @map("current_reward_exposure") @db.Decimal(10, 2)
+  currentRedemptionCost    Decimal         @default(0) @map("current_redemption_cost") @db.Decimal(10, 2)
+  controlGroupPercentage   Decimal?        @map("control_group_percentage") @db.Decimal(5, 2)
+  createdByUserId          String?         @map("created_by_user_id") @db.Uuid
+  approvedByUserId         String?         @map("approved_by_user_id") @db.Uuid
+  rejectionReason          String?         @map("rejection_reason")
+  createdAt                DateTime        @default(now()) @map("created_at")
+  updatedAt                DateTime        @updatedAt @map("updated_at")
+
+  audienceSnapshot  CampaignAudienceSnapshot[]
+  recipients        CampaignRecipient[]
+  metricsSnapshots  CampaignMetricsSnapshot[]
+
+  @@index([organizationId, status])
+  @@map("campaigns")
+}
+
+model CampaignAudienceSnapshot {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId      String   @map("campaign_id") @db.Uuid
+  runNumber       Int      @map("run_number")
+  customerId      String   @map("customer_id") @db.Uuid
+  matchedAt       DateTime @default(now()) @map("matched_at")
+  inControlGroup  Boolean  @default(false) @map("in_control_group")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, runNumber])
+  @@map("campaign_audience_snapshot")
+}
+
+enum RecipientChannel {
+  push
+  wallet
+  email
+  sms
+}
+
+enum RecipientStatus {
+  queued
+  delivered
+  opened
+  clicked
+  failed
+}
+
+model CampaignRecipient {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId      String            @map("campaign_id") @db.Uuid
+  customerId      String            @map("customer_id") @db.Uuid
+  runNumber       Int               @map("run_number")
+  channel         RecipientChannel
+  status          RecipientStatus   @default(queued)
+  queuedAt        DateTime?         @map("queued_at")
+  deliveredAt     DateTime?         @map("delivered_at")
+  openedAt        DateTime?         @map("opened_at")
+  clickedAt       DateTime?         @map("clicked_at")
+  failureReason   String?           @map("failure_reason")
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status])
+  @@map("campaign_recipients")
+}
+
+model CampaignMetricsSnapshot {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaignId          String   @map("campaign_id") @db.Uuid
+  snapshotAt          DateTime @default(now()) @map("snapshot_at")
+  recipients          Int      @default(0)
+  delivered           Int      @default(0)
+  opens               Int      @default(0)
+  clicks              Int      @default(0)
+  reservations        Int      @default(0)
+  visits              Int      @default(0)
+  revenue             Decimal  @default(0) @db.Decimal(10, 2)
+  averageCheck        Decimal? @map("average_check") @db.Decimal(10, 2)
+  rewardIssued        Decimal  @default(0) @map("reward_issued") @db.Decimal(10, 2)
+  rewardRedeemed      Decimal  @default(0) @map("reward_redeemed") @db.Decimal(10, 2)
+  incrementalRevenue  Decimal? @map("incremental_revenue") @db.Decimal(10, 2)
+  estimatedRoi        Decimal? @map("estimated_roi") @db.Decimal(6, 2)
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, snapshotAt])
+  @@map("campaign_metrics_snapshots")
+}
+
+// ============================================================================
+// Module 6 — Messaging
+// ============================================================================
+
+enum MessageChannel {
+  push
+  wallet
+  email
+  sms
+  whatsapp
+}
+
+enum MessageCategory {
+  transactional
+  marketing
+}
+
+enum ProviderStatus {
+  active
+  paused
+  error
+}
+
+model MessageProvider {
+  id             String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String          @map("organization_id") @db.Uuid
+  channel        MessageChannel
+  providerName   String          @map("provider_name")
+  credentialsRef String?         @map("credentials_ref")
+  status         ProviderStatus  @default(active)
+  isDefault      Boolean         @default(false) @map("is_default")
+  createdAt      DateTime        @default(now()) @map("created_at")
+  updatedAt      DateTime        @updatedAt @map("updated_at")
+
+  queueItems MessageQueueItem[]
+
+  @@index([organizationId, channel])
+  @@map("message_providers")
+}
+
+model MessageTemplate {
+  id               String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String?           @map("organization_id") @db.Uuid
+  templateGroupKey String            @map("template_group_key")
+  channel          MessageChannel
+  category         MessageCategory
+  name             String
+  locale           String            @default("nl")
+  subject          String?
+  body             String
+  isActive         Boolean           @default(true) @map("is_active")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+
+  queueItems MessageQueueItem[]
+
+  @@index([organizationId, templateGroupKey])
+  @@map("message_templates")
+}
+
+enum SendRequestSourceType {
+  campaign
+  journey
+  system
+}
+
+model MessageSendRequest {
+  id               String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId   String                  @map("organization_id") @db.Uuid
+  sourceType       SendRequestSourceType   @map("source_type")
+  sourceId         String?                 @map("source_id") @db.Uuid
+  templateGroupKey String                  @map("template_group_key")
+  createdAt        DateTime                @default(now()) @map("created_at")
+
+  queueItems MessageQueueItem[]
+
+  @@map("message_send_requests")
+}
+
+enum QueueItemStatus {
+  pending
+  ready_to_send
+  sending
+  sent
+  delivered
+  bounced
+  failed
+  skipped_no_consent
+  skipped_frequency_cap
+  skipped_no_channel
+  delayed_quiet_hours
+}
+
+model MessageQueueItem {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sendRequestId     String            @map("send_request_id") @db.Uuid
+  organizationId    String            @map("organization_id") @db.Uuid
+  customerId        String            @map("customer_id") @db.Uuid
+  locationId        String?           @map("location_id") @db.Uuid
+  channel           MessageChannel
+  templateId        String            @map("template_id") @db.Uuid
+  renderedSubject   String?           @map("rendered_subject")
+  renderedBody      String            @map("rendered_body")
+  status            QueueItemStatus   @default(pending)
+  providerId        String?           @map("provider_id") @db.Uuid
+  providerMessageId String?           @map("provider_message_id")
+  scheduledFor      DateTime          @map("scheduled_for")
+  sentAt            DateTime?         @map("sent_at")
+  deliveredAt       DateTime?         @map("delivered_at")
+  failedAt          DateTime?         @map("failed_at")
+  failureReason     String?           @map("failure_reason")
+  retryCount        Int               @default(0) @map("retry_count")
+
+  sendRequest MessageSendRequest @relation(fields: [sendRequestId], references: [id], onDelete: Cascade)
+  customer    Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  template    MessageTemplate    @relation(fields: [templateId], references: [id])
+  provider    MessageProvider?   @relation(fields: [providerId], references: [id])
+
+  events MessageEvent[]
+  links  MessageLink[]
+
+  @@index([organizationId, status])
+  @@index([customerId, channel])
+  @@map("message_queue_items")
+}
+
+enum MessageEventType {
+  delivered
+  opened
+  clicked
+  bounced
+  unsubscribed
+}
+
+model MessageEvent {
+  id          String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queueItemId String            @map("queue_item_id") @db.Uuid
+  eventType   MessageEventType  @map("event_type")
+  occurredAt  DateTime          @default(now()) @map("occurred_at")
+  metadata    Json?
+
+  queueItem MessageQueueItem @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+
+  @@index([queueItemId])
+  @@map("message_events")
+}
+
+model MessageLink {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  queueItemId     String    @map("queue_item_id") @db.Uuid
+  originalUrl     String    @map("original_url")
+  clickCount      Int       @default(0) @map("click_count")
+  firstClickedAt  DateTime? @map("first_clicked_at")
+
+  queueItem MessageQueueItem @relation(fields: [queueItemId], references: [id], onDelete: Cascade)
+
+  @@index([queueItemId])
+  @@map("message_links")
+}
+
+enum PushPlatform {
+  ios
+  android
+  web
+}
+
+model CustomerPushToken {
+  id           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId   String        @map("customer_id") @db.Uuid
+  platform     PushPlatform
+  token        String
+  isActive     Boolean       @default(true) @map("is_active")
+  lastUsedAt   DateTime?     @map("last_used_at")
+  registeredAt DateTime      @default(now()) @map("registered_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, token])
+  @@map("customer_push_tokens")
+}
+
+model MessageFrequencyCap {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String           @map("organization_id") @db.Uuid
+  channel        MessageChannel
+  category       MessageCategory
+  maxMessages    Int              @map("max_messages")
+  periodDays     Int              @map("period_days")
+
+  @@index([organizationId, channel])
+  @@map("message_frequency_caps")
+}
+
+model CustomerMessageSendLog {
+  id         String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String           @map("customer_id") @db.Uuid
+  channel    MessageChannel
+  category   MessageCategory
+  sentAt     DateTime         @default(now()) @map("sent_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, channel, category, sentAt])
+  @@map("customer_message_send_log")
+}
+
+model BrandVoiceProfile {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId    String   @unique @map("organization_id") @db.Uuid
+  toneDescription   String?  @map("tone_description")
+  exampleMessages   Json?    @map("example_messages")
+
+  @@map("brand_voice_profiles")
+}
+
+model AiCopyRequest {
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String    @map("organization_id") @db.Uuid
+  requestedByUserId    String?   @map("requested_by_user_id") @db.Uuid
+  promptText           String    @map("prompt_text")
+  generatedVariants    Json      @map("generated_variants")
+  chosenVariantIndex   Int?      @map("chosen_variant_index")
+  finalEditedText      String?   @map("final_edited_text")
+  createdAt            DateTime  @default(now()) @map("created_at")
+
+  @@map("ai_copy_requests")
+}
+
+// ============================================================================
+// Module 7 — Segmentation Engine
+// ============================================================================
+
+enum SegmentType {
+  standard
+  custom
+}
+
+enum EvaluationMode {
+  realtime
+  cached
+}
+
+enum RefreshFrequency {
+  realtime
+  hourly
+  daily
+}
+
+model Segment {
+  id                 String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String            @map("organization_id") @db.Uuid
+  name               String
+  description        String?
+  segmentType        SegmentType       @map("segment_type")
+  definition         Json
+  evaluationMode     EvaluationMode    @map("evaluation_mode")
+  refreshFrequency   RefreshFrequency? @map("refresh_frequency")
+  isPinned           Boolean           @default(false) @map("is_pinned")
+  lastComputedAt     DateTime?         @map("last_computed_at")
+  lastComputedCount  Int?              @map("last_computed_count")
+  createdByUserId    String?           @map("created_by_user_id") @db.Uuid
+  createdAt          DateTime          @default(now()) @map("created_at")
+  updatedAt          DateTime          @updatedAt @map("updated_at")
+
+  members SegmentMembership[]
+
+  @@index([organizationId, segmentType])
+  @@map("segments")
+}
+
+model SegmentMembership {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  segmentId  String   @map("segment_id") @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  matchedAt  DateTime @default(now()) @map("matched_at")
+
+  segment  Segment  @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@unique([segmentId, customerId])
+  @@index([customerId])
+  @@map("segment_membership")
+}
+
+model ChurnRiskScore {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId            String   @unique @map("customer_id") @db.Uuid
+  organizationId        String   @map("organization_id") @db.Uuid
+  riskRatio             Decimal  @map("risk_ratio") @db.Decimal(6, 2)
+  churnRiskScore        Int      @map("churn_risk_score")
+  isAtRisk              Boolean  @default(false) @map("is_at_risk")
+  basedOnPersonalCadence Boolean @default(true) @map("based_on_personal_cadence")
+  computedAt            DateTime @default(now()) @map("computed_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, isAtRisk])
+  @@map("churn_risk_scores")
+}
+
+// ============================================================================
+// Module 8 — Automated Journeys
+// ============================================================================
+
+enum JourneyStatus {
+  draft
+  published
+  paused
+  stopped
+}
+
+enum ReEnrollmentPolicy {
+  once_ever
+  once_per_completion
+  always
+}
+
+model Journey {
+  id                 String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId     String              @map("organization_id") @db.Uuid
+  name               String
+  isStandard         Boolean             @default(false) @map("is_standard")
+  status             JourneyStatus       @default(draft)
+  reEnrollmentPolicy ReEnrollmentPolicy  @default(once_ever) @map("re_enrollment_policy")
+  currentVersionId   String?             @map("current_version_id") @db.Uuid
+  createdAt          DateTime            @default(now()) @map("created_at")
+  updatedAt          DateTime            @updatedAt @map("updated_at")
+
+  versions    JourneyVersion[]    @relation("JourneyVersions")
+  enrollments JourneyEnrollment[]
+  goals       JourneyGoal[]
+
+  @@index([organizationId, status])
+  @@map("journeys")
+}
+
+enum JourneyTriggerType {
+  event
+  scheduled_date
+}
+
+model JourneyVersion {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyId      String    @map("journey_id") @db.Uuid
+  versionNumber  Int       @map("version_number")
+  triggerType    JourneyTriggerType @map("trigger_type")
+  eventName      String?   @map("event_name")
+  eventFilter    Json?     @map("event_filter")
+  dateField      String?   @map("date_field")
+  dateOffsetDays Int?      @map("date_offset_days")
+  publishedAt    DateTime? @map("published_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  journey     Journey             @relation("JourneyVersions", fields: [journeyId], references: [id], onDelete: Cascade)
+  nodes       JourneyNode[]
+  edges       JourneyEdge[]
+  enrollments JourneyEnrollment[]
+
+  @@index([journeyId, versionNumber])
+  @@map("journey_versions")
+}
+
+enum JourneyNodeType {
+  trigger
+  wait
+  condition
+  segment_condition
+  send_push
+  send_email
+  send_sms
+  add_credit
+  give_reward
+  add_tag
+  change_tier
+  webhook
+  split_test
+  end
+}
+
+model JourneyNode {
+  id                String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyVersionId  String          @map("journey_version_id") @db.Uuid
+  nodeType          JourneyNodeType @map("node_type")
+  config            Json            @default("{}")
+  positionX         Int             @default(0) @map("position_x")
+  positionY         Int             @default(0) @map("position_y")
+
+  journeyVersion JourneyVersion @relation(fields: [journeyVersionId], references: [id], onDelete: Cascade)
+
+  edgesFrom JourneyEdge[]           @relation("EdgeFrom")
+  edgesTo   JourneyEdge[]           @relation("EdgeTo")
+  executions JourneyNodeExecution[]
+
+  @@index([journeyVersionId])
+  @@map("journey_nodes")
+}
+
+model JourneyEdge {
+  id                String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyVersionId  String   @map("journey_version_id") @db.Uuid
+  fromNodeId        String   @map("from_node_id") @db.Uuid
+  toNodeId          String   @map("to_node_id") @db.Uuid
+  branchLabel       String?  @map("branch_label")
+
+  journeyVersion JourneyVersion @relation(fields: [journeyVersionId], references: [id], onDelete: Cascade)
+  fromNode       JourneyNode    @relation("EdgeFrom", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode         JourneyNode    @relation("EdgeTo", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@index([journeyVersionId])
+  @@map("journey_edges")
+}
+
+enum EnrollmentStatus {
+  enrolled
+  executing
+  waiting
+  completed
+  goal_reached
+  exited
+  error
+}
+
+model JourneyEnrollment {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyId         String            @map("journey_id") @db.Uuid
+  journeyVersionId  String            @map("journey_version_id") @db.Uuid
+  customerId        String            @map("customer_id") @db.Uuid
+  status            EnrollmentStatus  @default(enrolled)
+  currentNodeId     String?           @map("current_node_id") @db.Uuid
+  resumeAt          DateTime?         @map("resume_at")
+  splitTestBranch   String?           @map("split_test_branch")
+  enrolledAt        DateTime          @default(now()) @map("enrolled_at")
+  completedAt       DateTime?         @map("completed_at")
+  exitReason        String?           @map("exit_reason")
+
+  journey        Journey        @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  journeyVersion JourneyVersion @relation(fields: [journeyVersionId], references: [id])
+  customer       Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  nodeExecutions JourneyNodeExecution[]
+
+  @@index([journeyId, status])
+  @@index([status, resumeAt])
+  @@index([customerId])
+  @@map("journey_enrollments")
+}
+
+enum NodeExecutionStatus {
+  success
+  failed
+  retrying
+}
+
+model JourneyNodeExecution {
+  id            String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  enrollmentId  String                @map("enrollment_id") @db.Uuid
+  nodeId        String                @map("node_id") @db.Uuid
+  status        NodeExecutionStatus
+  result        Json?
+  executedAt    DateTime              @default(now()) @map("executed_at")
+
+  enrollment JourneyEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Cascade)
+  node       JourneyNode       @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@index([enrollmentId])
+  @@index([nodeId])
+  @@map("journey_node_executions")
+}
+
+model JourneyGoal {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  journeyId      String  @map("journey_id") @db.Uuid
+  goalEventName  String  @map("goal_event_name")
+  goalCondition  Json?   @map("goal_condition")
+  withinDays     Int     @map("within_days")
+
+  journey Journey @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+
+  @@map("journey_goals")
+}
+
+// ============================================================================
+// Module 9 — Reservations & Occupancy Booster
+// ============================================================================
+
+enum ServicePeriod {
+  lunch
+  dinner
+  all_day
+}
+
+model LocationCapacitySetting {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  locationId     String        @map("location_id") @db.Uuid
+  area           String?
+  servicePeriod  ServicePeriod @map("service_period")
+  maxCovers      Int           @map("max_covers")
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId])
+  @@map("location_capacity_settings")
+}
+
+model ReservationConnection {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  provider       String
+  status         String   @default("active")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  location     Location      @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  reservations Reservation[]
+
+  @@index([organizationId])
+  @@map("reservation_connections")
+}
+
+enum ReservationStatus {
+  confirmed
+  cancelled
+  no_show
+  seated
+  completed
+}
+
+model Reservation {
+  id                       String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId           String              @map("organization_id") @db.Uuid
+  locationId               String              @map("location_id") @db.Uuid
+  reservationConnectionId  String?             @map("reservation_connection_id") @db.Uuid
+  externalReservationId    String?             @map("external_reservation_id")
+  customerId               String?             @map("customer_id") @db.Uuid
+  dateTime                 DateTime            @map("date_time")
+  servicePeriod             ServicePeriod       @map("service_period")
+  covers                    Int
+  tableReference             String?            @map("table_reference")
+  area                        String?
+  status                       ReservationStatus  @default(confirmed)
+  createdAt                    DateTime           @default(now()) @map("created_at")
+
+  location  Location               @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  connection ReservationConnection? @relation(fields: [reservationConnectionId], references: [id])
+  customer  Customer?              @relation(fields: [customerId], references: [id])
+
+  @@index([organizationId])
+  @@index([locationId, dateTime])
+  @@index([customerId])
+  @@map("reservations")
+}
+
+model WeatherForecast {
+  id                    String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  locationId            String   @map("location_id") @db.Uuid
+  forecastDate          DateTime @map("forecast_date") @db.Date
+  temperatureCelsius    Decimal  @map("temperature_celsius") @db.Decimal(4, 1)
+  condition             String
+  precipitationChance   Decimal? @map("precipitation_chance") @db.Decimal(5, 2)
+  fetchedAt             DateTime @default(now()) @map("fetched_at")
+
+  location Location @relation(fields: [locationId], references: [id], onDelete: Cascade)
+
+  @@index([locationId, forecastDate])
+  @@map("weather_forecasts")
+}
+
+model ForecastRun {
+  id                           String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  locationId                   String        @map("location_id") @db.Uuid
+  forecastDate                 DateTime      @map("forecast_date") @db.Date
+  servicePeriod                ServicePeriod @map("service_period")
+  area                          String?
+  modelVersion                  String        @map("model_version")
+  forecastOccupancyPercentage    Decimal       @map("forecast_occupancy_percentage") @db.Decimal(5, 2)
+  factorsUsed                     Json?         @map("factors_used")
+  computedAt                       DateTime      @default(now()) @map("computed_at")
+
+  location      Location                 @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  opportunities OccupancyOpportunity[]
+
+  @@index([locationId, forecastDate])
+  @@map("forecast_runs")
+}
+
+enum OpportunityStatus {
+  detected
+  recommendation_created
+  dismissed
+  expired
+}
+
+model OccupancyOpportunity {
+  id                            String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId                String            @map("organization_id") @db.Uuid
+  locationId                    String            @map("location_id") @db.Uuid
+  opportunityDate                DateTime          @map("opportunity_date") @db.Date
+  servicePeriod                   ServicePeriod     @map("service_period")
+  area                              String?
+  forecastRunId                      String            @map("forecast_run_id") @db.Uuid
+  forecastOccupancyPercentage          Decimal           @map("forecast_occupancy_percentage") @db.Decimal(5, 2)
+  status                                 OpportunityStatus @default(detected)
+  detectedAt                              DateTime          @default(now()) @map("detected_at")
+
+  location       Location                @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  forecastRun    ForecastRun             @relation(fields: [forecastRunId], references: [id])
+  recommendations OccupancyRecommendation[]
+  attributionResults OccupancyAttributionResult[]
+
+  @@index([organizationId])
+  @@index([locationId, opportunityDate])
+  @@map("occupancy_opportunities")
+}
+
+enum RecommendationStatus {
+  pending_approval
+  approved
+  dismissed
+  expired
+}
+
+model OccupancyRecommendation {
+  id                          String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId               String                @map("opportunity_id") @db.Uuid
+  organizationId               String                @map("organization_id") @db.Uuid
+  suggestedName                 String                @map("suggested_name")
+  audienceFilter                  Json                  @map("audience_filter")
+  audienceCount                    Int                   @map("audience_count")
+  incentiveType                      IncentiveType         @map("incentive_type")
+  incentiveValue                       Json?                 @map("incentive_value")
+  suggestedMessage                       String                @map("suggested_message")
+  estimatedMaxRewardExposure               Decimal               @map("estimated_max_reward_exposure") @db.Decimal(10, 2)
+  status                                     RecommendationStatus  @default(pending_approval)
+  reviewedByUserId                             String?               @map("reviewed_by_user_id") @db.Uuid
+  reviewedAt                                     DateTime?             @map("reviewed_at")
+  resultingCampaignId                              String?               @map("resulting_campaign_id") @db.Uuid
+  createdAt                                          DateTime              @default(now()) @map("created_at")
+
+  opportunity OccupancyOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("occupancy_recommendations")
+}
+
+model OccupancyAttributionResult {
+  id                             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opportunityId                  String   @map("opportunity_id") @db.Uuid
+  campaignId                     String   @map("campaign_id") @db.Uuid
+  forecastOccupancyPercentage    Decimal  @map("forecast_occupancy_percentage") @db.Decimal(5, 2)
+  actualOccupancyPercentage      Decimal  @map("actual_occupancy_percentage") @db.Decimal(5, 2)
+  occupancyUplift                Decimal  @map("occupancy_uplift") @db.Decimal(5, 2)
+  computedAt                     DateTime @default(now()) @map("computed_at")
+
+  opportunity OccupancyOpportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+
+  @@index([opportunityId])
+  @@map("occupancy_attribution_results")
+}
+
+// ============================================================================
+// Module 10 — Analytics & AI Campaign Assistant
+// ============================================================================
+
+enum AnalyticsPeriodType {
+  daily
+  monthly
+}
+
+model AnalyticsSnapshot {
+  id                   String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String              @map("organization_id") @db.Uuid
+  locationId           String?             @map("location_id") @db.Uuid
+  snapshotDate         DateTime            @map("snapshot_date") @db.Date
+  periodType           AnalyticsPeriodType @map("period_type")
+  memberCount          Int                 @map("member_count")
+  newMembersInPeriod   Int                 @map("new_members_in_period")
+  loyaltyRevenue       Decimal             @map("loyalty_revenue") @db.Decimal(10, 2)
+  averageSpend         Decimal?            @map("average_spend") @db.Decimal(10, 2)
+  repeatVisitRate      Decimal?            @map("repeat_visit_rate") @db.Decimal(5, 2)
+  outstandingCredit    Decimal             @map("outstanding_credit") @db.Decimal(10, 2)
+  creditExpiringSoon   Decimal             @map("credit_expiring_soon") @db.Decimal(10, 2)
+  atRiskCount          Int                 @map("at_risk_count")
+  vipCount             Int                 @map("vip_count")
+  creditIssued         Decimal             @map("credit_issued") @db.Decimal(10, 2)
+  creditRedeemed       Decimal             @map("credit_redeemed") @db.Decimal(10, 2)
+  creditExpired        Decimal             @map("credit_expired") @db.Decimal(10, 2)
+  computedAt           DateTime            @default(now()) @map("computed_at")
+
+  @@index([organizationId, locationId, periodType, snapshotDate])
+  @@map("analytics_snapshots")
+}
+
+model CohortRetentionSnapshot {
+  id                   String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId       String   @map("organization_id") @db.Uuid
+  cohortMonth          DateTime @map("cohort_month") @db.Date
+  monthsSinceCohort    Int      @map("months_since_cohort")
+  cohortSize           Int      @map("cohort_size")
+  activeCount          Int      @map("active_count")
+  retentionPercentage  Decimal  @map("retention_percentage") @db.Decimal(5, 2)
+  computedAt           DateTime @default(now()) @map("computed_at")
+
+  @@index([organizationId, cohortMonth])
+  @@map("cohort_retention_snapshots")
+}
+
+model AiAssistantConversation {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  userId         String?  @map("user_id") @db.Uuid
+  startedAt      DateTime @default(now()) @map("started_at")
+
+  messages    AiAssistantMessage[]
+  suggestions AiCampaignSuggestion[]
+
+  @@index([organizationId])
+  @@map("ai_assistant_conversations")
+}
+
+enum AiMessageRole {
+  user
+  assistant
+}
+
+model AiAssistantMessage {
+  id             String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  conversationId String        @map("conversation_id") @db.Uuid
+  role           AiMessageRole
+  content        String
+  createdAt      DateTime      @default(now()) @map("created_at")
+
+  conversation AiAssistantConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  toolCalls    AiToolCall[]
+
+  @@index([conversationId])
+  @@map("ai_assistant_messages")
+}
+
+model AiToolCall {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  messageId  String   @map("message_id") @db.Uuid
+  toolName   String   @map("tool_name")
+  parameters Json?
+  result     Json?
+  calledAt   DateTime @default(now()) @map("called_at")
+
+  message AiAssistantMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("ai_tool_calls")
+}
+
+model AiCampaignSuggestion {
+  id                      String                @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId          String                @map("organization_id") @db.Uuid
+  conversationId          String?               @map("conversation_id") @db.Uuid
+  suggestedName           String                @map("suggested_name")
+  audienceFilter          Json                  @map("audience_filter")
+  audienceCount           Int                   @map("audience_count")
+  incentiveType           IncentiveType         @map("incentive_type")
+  incentiveValue          Json?                 @map("incentive_value")
+  suggestedMessage        String                @map("suggested_message")
+  estimatedMaxExposure    Decimal               @map("estimated_max_exposure") @db.Decimal(10, 2)
+  underlyingDataSnapshot  Json?                 @map("underlying_data_snapshot")
+  status                  RecommendationStatus  @default(pending_approval)
+  reviewedByUserId        String?               @map("reviewed_by_user_id") @db.Uuid
+  resultingCampaignId     String?               @map("resulting_campaign_id") @db.Uuid
+  createdAt               DateTime              @default(now()) @map("created_at")
+
+  conversation AiAssistantConversation? @relation(fields: [conversationId], references: [id])
+
+  @@index([organizationId, status])
+  @@map("ai_campaign_suggestions")
+}
+
+enum InsightSeverity {
+  info
+  attention
+  warning
+}
+
+model ProactiveInsight {
+  id                     String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId         String          @map("organization_id") @db.Uuid
+  insightType            String          @map("insight_type")
+  summary                String
+  underlyingDataSnapshot Json?           @map("underlying_data_snapshot")
+  severity               InsightSeverity @default(info)
+  dismissedAt            DateTime?       @map("dismissed_at")
+  createdAt              DateTime        @default(now()) @map("created_at")
+
+  @@index([organizationId, dismissedAt])
+  @@map("proactive_insights")
+}
+
+// ============================================================================
+// Data Import (Piggy-migratie e.d.) — hergebruikt Customer/Wallet/ledger,
+// geen los klant- of saldomodel. Bestandsinhoud wordt tijdelijk als JSON
+// bewaard op de job zelf (geen objectopslag beschikbaar in deze omgeving),
+// en na afronding leeggemaakt (zie ImportService — bewuste, gedocumenteerde
+// keuze i.p.v. een aparte bestandsopslagdienst).
+// ============================================================================
+
+enum ImportJobStatus {
+  parsed
+  previewed
+  processing
+  completed
+  failed
+  rolled_back
+}
+
+enum ImportRowAction {
+  new_customer
+  matched_customer
+  review_required
+  invalid
+  skip
+  duplicate
+}
+
+model ImportJob {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String?  @map("location_id") @db.Uuid
+  source         String   @default("piggy")
+  filename       String
+  fileHash       String   @map("file_hash")
+
+  status         ImportJobStatus @default(parsed)
+
+  totalRows      Int      @default(0) @map("total_rows")
+  processedRows  Int      @default(0) @map("processed_rows")
+  successRows    Int      @default(0) @map("success_rows")
+  errorRows      Int      @default(0) @map("error_rows")
+  reviewRows     Int      @default(0) @map("review_rows")
+  duplicateRows  Int      @default(0) @map("duplicate_rows")
+
+  columnMapping  Json?    @map("column_mapping")
+  // "ratio" (bijv. 100 punten = €1) of "one_to_one" (1 punt = 1 punt)
+  conversionType String?  @map("conversion_type")
+  conversionRate Decimal? @map("conversion_rate") @db.Decimal(10, 4)
+  // "add" (veilige standaard) of "replace" (met correctie-ledgerentry)
+  balanceMode    String   @default("add") @map("balance_mode")
+
+  totalSourceBalance    Decimal? @map("total_source_balance") @db.Decimal(14, 2)
+  totalConvertedCredit  Decimal? @map("total_converted_credit") @db.Decimal(14, 2)
+
+  // Tijdelijke opslag van de geparste rijen — geleegd na afronding of na
+  // de retentieperiode (zie ImportService.purgeExpiredRawData).
+  rawRows Json? @map("raw_rows")
+
+  createdByUserId String?   @map("created_by_user_id") @db.Uuid
+  startedAt       DateTime? @map("started_at")
+  completedAt     DateTime? @map("completed_at")
+  rolledBackAt    DateTime? @map("rolled_back_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  records ImportRecord[]
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, fileHash])
+  @@map("import_jobs")
+}
+
+model ImportRecord {
+  id          String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  importJobId String @map("import_job_id") @db.Uuid
+
+  rowNumber Int    @map("row_number")
+  rowHash   String @map("row_hash")
+  rawData   Json   @map("raw_data")
+
+  action            ImportRowAction
+  matchedCustomerId String? @map("matched_customer_id") @db.Uuid
+  sourceBalance     Decimal? @map("source_balance") @db.Decimal(14, 2)
+  convertedCredit   Decimal? @map("converted_credit") @db.Decimal(14, 2)
+  errorMessage      String? @map("error_message")
+
+  ledgerEntryId         String? @map("ledger_entry_id") @db.Uuid
+  reversalLedgerEntryId String? @map("reversal_ledger_entry_id") @db.Uuid
+  customerCreatedByImport Boolean @default(false) @map("customer_created_by_import")
+
+  committedAt DateTime? @map("committed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  importJob ImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@unique([importJobId, rowHash])
+  @@index([importJobId, action])
+  @@map("import_records")
+}
+
+// ============================================================================
+// Fysieke loyaltykaarten (QR-token → LoyaltyCard → Customer → Wallet)
+// Een kaart is bewust GEEN Customer en bezit zelf nooit het saldo — het
+// saldo blijft altijd bij de Wallet van de gekoppelde Customer. Dit maakt
+// vervangen/blokkeren/opnieuw koppelen altijd veilig, zonder saldo-risico.
+// ============================================================================
+
+enum LoyaltyCardBatchStatus {
+  generating
+  ready
+  exported
+}
+
+enum LoyaltyCardStatus {
+  unclaimed
+  active
+  blocked
+  lost
+  replaced
+  expired
+}
+
+model LoyaltyCardBatch {
+  id             String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String                 @map("organization_id") @db.Uuid
+  locationId     String?                @map("location_id") @db.Uuid
+  name           String
+  quantity       Int
+  status         LoyaltyCardBatchStatus @default(generating)
+  createdByUserId String?               @map("created_by_user_id") @db.Uuid
+  createdAt      DateTime               @default(now()) @map("created_at")
+  exportedAt     DateTime?              @map("exported_at")
+
+  cards LoyaltyCard[]
+
+  @@index([organizationId, createdAt])
+  @@map("loyalty_card_batches")
+}
+
+model LoyaltyCard {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @map("organization_id") @db.Uuid
+  locationId     String?  @map("location_id") @db.Uuid
+  batchId        String?  @map("batch_id") @db.Uuid
+  customerId     String?  @map("customer_id") @db.Uuid
+
+  // Nooit de ruwe token opslaan — zelfde principe als bij inlogcodes en
+  // sessietokens elders in dit platform: bij een databaselek kan een
+  // aanvaller zo geen geldige kaarten "namaken" uit de dump.
+  publicTokenHash String @unique @map("public_token_hash")
+  cardNumber      String @unique @map("card_number") // bijv. "BC-000001" — puur administratief, NOOIT de beveiliging
+
+  status      LoyaltyCardStatus @default(unclaimed)
+  pendingBalance Decimal @default(0) @map("pending_balance") @db.Decimal(10, 2) // ongeregistreerd sparen vóór claim — zie LoyaltyCardPendingEntry
+
+  issuedAt         DateTime  @default(now()) @map("issued_at")
+  claimedAt        DateTime? @map("claimed_at")
+  blockedAt        DateTime? @map("blocked_at")
+  blockedReason    String?   @map("blocked_reason")
+  lastUsedAt       DateTime? @map("last_used_at")
+  replacedByCardId String?   @unique @map("replaced_by_card_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  batch       LoyaltyCardBatch? @relation(fields: [batchId], references: [id])
+  customer    Customer?         @relation(fields: [customerId], references: [id])
+  replacedBy  LoyaltyCard?      @relation("CardReplacement", fields: [replacedByCardId], references: [id])
+  replacesCard LoyaltyCard?     @relation("CardReplacement")
+  pendingEntries LoyaltyCardPendingEntry[]
+
+  @@index([organizationId, status])
+  @@index([customerId])
+  @@map("loyalty_cards")
+}
+
+// Ongeregistreerd sparen: een nog niet-geclaimde kaart kan al tegoed
+// opbouwen. Bewust GEEN eigen Wallet voor de kaart (dat zou een parallel
+// saldosysteem naast de bestaande Wallet-architectuur betekenen) — bij
+// claim wordt dit in één atomaire transactie omgezet in een echte
+// WalletLedgerEntry (entryType 'transfer') op de Wallet van de klant.
+model LoyaltyCardPendingEntry {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  cardId    String   @map("card_id") @db.Uuid
+  amount    Decimal  @db.Decimal(10, 2)
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  card LoyaltyCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@map("loyalty_card_pending_entries")
+}
+
+// ============================================================================
+// Cadeaukaarten (Gift Cards) — bewust volledig gescheiden van het
+// loyaltytegoed:
+//
+//   Customer -> Wallet -> WalletLedgerEntry        (loyaltytegoed)
+//   GiftCard -> GiftCardLedgerEntry                (cadeaukaart-saldo)
+//
+// Een cadeaukaart heeft GEEN eigen Wallet en een Wallet heeft geen
+// cadeaukaart-saldo — dat voorkomt dat de twee financieel door elkaar
+// lopen, ook al kunnen ze bij dezelfde rekening samen gebruikt worden.
+//
+// Belangrijke ontwerpkeuze: de VERKOOP van een cadeaukaart loopt bewust
+// NIET via het bestaande /transactions-endpoint (dat de beloningsengine
+// aanroept) — een cadeaukaart-verkoop raakt de reward engine daardoor
+// nooit, wat "geen loyaltytegoed bij aankoop van een cadeaukaart"
+// architecturaal afdwingt zonder een uitzondering in die engine zelf
+// nodig te hebben. Het latere GEBRUIK van een cadeaukaart als
+// betaalmiddel loopt wél via een normale transactie (net als contant/
+// pin), en verdient dus gewoon normaal loyaltytegoed.
+// ============================================================================
+
+enum GiftCardStatus {
+  draft
+  active
+  partially_redeemed
+  redeemed
+  blocked
+  expired
+  cancelled
+}
+
+enum GiftCardLedgerEntryType {
+  issue
+  sale
+  redeem
+  top_up
+  refund
+  reversal
+  adjustment
+  expiration
+}
+
+enum GiftCardBatchStatus {
+  generating
+  ready
+  exported
+}
+
+model GiftCardBatch {
+  id              String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  String              @map("organization_id") @db.Uuid
+  locationId      String?             @map("location_id") @db.Uuid
+  name            String
+  quantity        Int
+  status          GiftCardBatchStatus @default(generating)
+  createdByUserId String?             @map("created_by_user_id") @db.Uuid
+  createdAt       DateTime            @default(now()) @map("created_at")
+  exportedAt      DateTime?           @map("exported_at")
+
+  cards GiftCard[]
+
+  @@index([organizationId, createdAt])
+  @@map("gift_card_batches")
+}
+
+model GiftCard {
+  id             String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String  @map("organization_id") @db.Uuid
+  batchId        String? @map("batch_id") @db.Uuid
+
+  giftCardNumber  String @unique @map("gift_card_number") // bijv. "GC-000001" — administratief, nooit de beveiliging
+  publicTokenHash String @unique @map("public_token_hash") // zelfde principe als LoyaltyCard: nooit het ruwe token bewaren
+
+  status         GiftCardStatus @default(draft)
+  originalValue  Decimal        @map("original_value") @db.Decimal(10, 2)
+  currentBalance Decimal        @default(0) @map("current_balance") @db.Decimal(10, 2)
+  currency       String         @default("EUR")
+
+  purchaserCustomerId String? @map("purchaser_customer_id") @db.Uuid
+  recipientCustomerId String? @map("recipient_customer_id") @db.Uuid
+  recipientName       String? @map("recipient_name")
+  recipientEmail      String? @map("recipient_email")
+  // Afzender bij online aankoop — losse vrije-tekstvelden (geen
+  // koppeling aan een klantaccount, in tegenstelling tot
+  // purchaserCustomerId hierboven, dat een AL BESTAAND account koppelt).
+  // Nodig voor de aparte bevestigingsmail aan de koper zelf.
+  senderName                String?   @map("sender_name")
+  senderEmail               String?   @map("sender_email")
+  senderConfirmationSentAt  DateTime? @map("sender_confirmation_sent_at")
+  // Online verkoop via Mollie (iDEAL e.d.) — de kaart blijft bewust op
+  // status 'draft' totdat de webhook een bevestigde betaling meldt; zie
+  // MollieService voor de reden waarom nooit op de webhook-inhoud zelf
+  // wordt vertrouwd, alleen op een verse statusopvraag bij Mollie.
+  molliePaymentId     String? @map("mollie_payment_id")
+  // Welke website/merk deze ONLINE aankoop startte (Het Strand of
+  // Zomers) — bepaalt welk Mollie-account de betaling verwerkt en welk
+  // account een eventuele terugbetaling moet gebruiken. Bewust een
+  // ANDER veld dan locationIds hieronder: locationIds bepaalt waar de
+  // kaart INGEWISSELD mag worden (vaak leeg = organisatiebreed), terwijl
+  // brandLocationId vastlegt waar 'm VERKOCHT is — die twee lopen
+  // volledig uiteen bij online aankoop. Voor kaarten die niet online via
+  // Mollie zijn gekocht (kassa/admin) blijft dit veld leeg; dat is prima,
+  // want dan is er ook geen Mollie-betaling om aan te koppelen.
+  brandLocationId     String? @map("brand_location_id") @db.Uuid
+  brandLocation       Location? @relation("GiftCardBrandLocation", fields: [brandLocationId], references: [id])
+  personalMessage     String? @map("personal_message")
+  scheduledSendAt     DateTime? @map("scheduled_send_at") // geplande verzending (bijv. verjaardag) — zie GiftCardsService voor het bewuste, gedocumenteerde verzendmechanisme
+
+  // Locatiescope — zelfde conventie als VoucherTemplate.locationIds: een
+  // leeg array betekent organisatiebreed geldig (bij zowel Het Strand
+  // als Zomers), een gevuld array beperkt de kaart tot precies die
+  // locatie(s). Vervangt het oudere `locationId` (enkelvoud) +
+  // `isOrganizationWide`-paar, dat overigens nooit daadwerkelijk werd
+  // afgedwongen bij inwisseling — zie GiftCardsService.redeem().
+  locationIds String[] @map("location_ids") @db.Uuid
+
+  issuedAt          DateTime  @default(now()) @map("issued_at")
+  activatedAt       DateTime? @map("activated_at")
+  expiresAt         DateTime? @map("expires_at")
+  expiryReminderSentAt DateTime? @map("expiry_reminder_sent_at") // 30-dagen-voor-verloop-herinnering — voorkomt dubbel versturen
+  // Bewust een LOS veld van het bestaande batchId/batch-mechanisme
+  // (vooraf gedrukte kaarten die via activate() worden geactiveerd) —
+  // dit dekt de andere, veelvoorkomende situatie: een medewerker maakt
+  // via het gewone "Kadobon uitgeven"-formulier (issue()) een kaart aan
+  // én overhandigt daarbij een fysieke sticker/kaart, zonder de
+  // batch-vooraf-drukken-flow te gebruiken. Bepaalt of de rapportage
+  // deze verkoop bij "fysiek" of "digitaal" telt.
+  isPhysical        Boolean   @default(false) @map("is_physical")
+  blockedAt         DateTime? @map("blocked_at")
+  blockedReason     String?   @map("blocked_reason")
+  replacedByGiftCardId String? @unique @map("replaced_by_gift_card_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  batch             GiftCardBatch? @relation(fields: [batchId], references: [id])
+  purchaser         Customer?      @relation("GiftCardPurchaser", fields: [purchaserCustomerId], references: [id])
+  recipient         Customer?      @relation("GiftCardRecipient", fields: [recipientCustomerId], references: [id])
+  replacedByGiftCard GiftCard?     @relation("GiftCardReplacement", fields: [replacedByGiftCardId], references: [id])
+  replacesGiftCard   GiftCard?     @relation("GiftCardReplacement")
+  ledgerEntries      GiftCardLedgerEntry[]
+
+  @@index([organizationId, status])
+  @@index([purchaserCustomerId])
+  @@index([recipientCustomerId])
+  @@index([molliePaymentId])
+  @@map("gift_cards")
+}
+
+model GiftCardLedgerEntry {
+  id            String                  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  giftCardId    String                  @map("gift_card_id") @db.Uuid
+  organizationId String                 @map("organization_id") @db.Uuid
+  locationId    String?                 @map("location_id") @db.Uuid
+  entryType     GiftCardLedgerEntryType @map("entry_type")
+  amount        Decimal                 @db.Decimal(10, 2) // positief = saldo erbij, negatief = saldo eraf
+  transactionId String?                 @map("transaction_id") @db.Uuid // gekoppelde POS-transactie, indien van toepassing
+  performedByUserId String?             @map("performed_by_user_id") @db.Uuid
+  reason        String?
+  metadata      Json?
+  occurredAt    DateTime                @default(now()) @map("occurred_at")
+
+  giftCard    GiftCard     @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  transaction Transaction? @relation(fields: [transactionId], references: [id])
+
+  @@index([giftCardId, occurredAt])
+  @@index([organizationId, occurredAt])
+  @@map("gift_card_ledger_entries")
+}
+
+// ============================================================================
+// Klantportal-QR (Mijn Tegoed) — bewust een APART, kortlevend
+// tokensysteem, los van de fysieke-loyaltykaart-tokens. Een fysieke
+// kaart bestaat fysiek in de wereld, dus het token hoeft nooit opnieuw
+// getoond te worden na aanmaken. Een portal-QR moet elke keer dat een
+// gast inlogt opnieuw zichtbaar zijn — dat vraagt om een ander patroon:
+// kort geldig, makkelijk te vernieuwen, en met beperkte bevoegdheid
+// (identificatie only — geen volledige accountsessie, dus een
+// gefotografeerde QR geeft nooit toegang tot het hele account).
+// ============================================================================
+
+model CustomerQrToken {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  customerId String   @map("customer_id") @db.Uuid
+  tokenHash  String   @unique @map("token_hash")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@map("customer_qr_tokens")
+}
+
+// Aparte tabel (i.p.v. GuestLoginCode hergebruiken) voor codes aan een
+// e-mailadres dat nog geen Customer heeft — GuestLoginCode vereist een
+// bestaande customerId en wordt door de al bewezen inlogflow gebruikt;
+// dit voorkomt elk risico daarop terwijl de nieuwe-klant-registratie
+// wordt toegevoegd.
+model GuestRegistrationCode {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  email          String
+  codeHash       String    @map("code_hash")
+  expiresAt      DateTime  @map("expires_at")
+  usedAt         DateTime? @map("used_at")
+  attempts       Int       @default(0)
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  @@index([organizationId, email])
+  @@map("guest_registration_codes")
+}
+
+// ============================================================================
+// Financiële rapportagemodule (kantoor/administratie) — bewaart alleen de
+// RAPPORTPARAMETERS (periode, locatie, type, wie/wanneer), nooit het
+// bestand zelf of een cache van de berekende bedragen. Een rapport kan
+// altijd opnieuw met dezelfde parameters gegenereerd worden, en wordt dan
+// vers uit de ledgers herberekend — zie FinancialReportsService. Dit is
+// bewust GEEN tweede financiële administratie, puur een "geschiedenis van
+// aanvragen" zodat kantoor niet steeds handmatig dezelfde periode hoeft
+// in te stellen.
+// ============================================================================
+
+model FinancialReportHistory {
+  id                  String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId      String   @map("organization_id") @db.Uuid
+  reportType          String   @map("report_type") // 'today' | 'this_week' | 'last_week' | 'this_month' | 'last_month' | 'quarter' | 'year' | 'custom'
+  periodStart         DateTime @map("period_start")
+  periodEnd           DateTime @map("period_end")
+  locationId          String?  @map("location_id") @db.Uuid // null = hele organisatie
+  format              String   // 'excel' | 'pdf' | 'view' (alleen bekeken, niet geëxporteerd)
+  generatedByStaffId  String?  @map("generated_by_staff_id") @db.Uuid
+  generatedAt         DateTime @default(now()) @map("generated_at")
+
+  @@index([organizationId, generatedAt])
+  @@map("financial_report_history")
+}

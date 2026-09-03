@@ -1,0 +1,93 @@
+/**
+ * Maakt een backoffice-account aan (of update het wachtwoord/permissies
+ * van een bestaand account op hetzelfde e-mailadres). ALLEEN lokaal
+ * uitvoeren — nooit als endpoint, nooit een wachtwoord in git committen.
+ *
+ * Gebruik:
+ *   npx ts-node scripts/create-staff-user.ts <org-id> <email> <wachtwoord> <voornaam> [achternaam] [permissies-comma-gescheiden]
+ *
+ * Voorbeeld — Henny als volledige admin:
+ *   npx ts-node scripts/create-staff-user.ts \
+ *     ab51a93c-43a2-40cd-8635-f8522f68a8c8 \
+ *     henny@het-strand.nl \
+ *     "een-sterk-wachtwoord-hier" \
+ *     Henny \
+ *     "" \
+ *     "customer.read,customer.write,customer.merge,customer.notes.read,customer.notes.write,customer.export,customer.anonymize,consent.write,transaction.read,transaction.write,transaction.correct,transaction.void,wallet.read,wallet.redeem,wallet.adjust,gift_card.read,gift_card.write,gift_card.redeem,loyalty_card.read,loyalty_card.write,voucher.read,voucher.write,voucher.redeem,campaign.read,campaign.write,campaign.launch,segment.read,segment.write,journey.read,journey.write,journey.publish,journey.pause,journey.stop,message.read,message.send,message.template.read,message.template.write,reservation.read,reservation.write,analytics.read,ai_assistant.use,ai_campaign_suggestion.approve,import.read,import.write,credit_rules.read,credit_rules.write,reward_rule.read,reward_rule.write,reward_calculation.read,admin.read,admin.write"
+ *
+ * Laat je het permissies-argument weg, dan krijgt het account bovenstaande
+ * volledige lijst standaard (handig voor het eerste/enige admin-account).
+ *
+ * Draai daarna: npx prisma generate  (als dat nog niet gebeurd is)
+ */
+import { PrismaClient } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
+
+const FULL_PERMISSIONS = [
+  'customer.read', 'customer.write', 'customer.merge', 'customer.notes.read', 'customer.notes.write',
+  'customer.export', 'customer.anonymize', 'consent.write',
+  'transaction.read', 'transaction.write', 'transaction.correct', 'transaction.void',
+  'wallet.read', 'wallet.redeem', 'wallet.adjust',
+  'gift_card.read', 'gift_card.write', 'gift_card.redeem',
+  'loyalty_card.read', 'loyalty_card.write',
+  'voucher.read', 'voucher.write', 'voucher.redeem',
+  'campaign.read', 'campaign.write', 'campaign.launch',
+  'segment.read', 'segment.write',
+  'journey.read', 'journey.write', 'journey.publish', 'journey.pause', 'journey.stop',
+  'message.read', 'message.send', 'message.template.read', 'message.template.write',
+  'reservation.read', 'reservation.write',
+  'analytics.read', 'ai_assistant.use', 'ai_campaign_suggestion.approve',
+  'import.read', 'import.write',
+  'credit_rules.read', 'credit_rules.write',
+  'reward_rule.read', 'reward_rule.write', 'reward_calculation.read',
+  'admin.read', 'admin.write', 'finance.read',
+];
+
+async function main() {
+  const [orgId, email, password, firstName, lastName, permissionsArg] = process.argv.slice(2);
+
+  if (!orgId || !email || !password || !firstName) {
+    console.error('Gebruik: npx ts-node scripts/create-staff-user.ts <org-id> <email> <wachtwoord> <voornaam> [achternaam] [permissies]');
+    process.exit(1);
+  }
+  if (password.length < 10) {
+    console.error('Wachtwoord moet minstens 10 tekens lang zijn.');
+    process.exit(1);
+  }
+
+  const permissions = permissionsArg ? permissionsArg.split(',').map((p) => p.trim()).filter(Boolean) : FULL_PERMISSIONS;
+
+  const prisma = new PrismaClient();
+  try {
+    const passwordHash = await bcrypt.hash(password, 12);
+
+    const staffUser = await prisma.staffUser.upsert({
+      where: { organizationId_email: { organizationId: orgId, email } },
+      update: { passwordHash, firstName, lastName: lastName || null, permissions, isActive: true, failedLoginAttempts: 0, lockedUntil: null },
+      create: { organizationId: orgId, email, passwordHash, firstName, lastName: lastName || null, permissions, isActive: true },
+    });
+
+    // Bij een wachtwoord-wijziging (dit script wordt zowel voor het
+    // eerste aanmaken als voor een latere reset gebruikt) alle bestaande
+    // sessies van dit account intrekken — hetzelfde principe als een
+    // "wachtwoord vergeten"-flow: een oude, nog geldige sessietoken mag
+    // na een reset niet blijven werken.
+    const revoked = await prisma.staffSession.updateMany({
+      where: { staffUserId: staffUser.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+
+    console.log(`OK — staff-account klaar: ${staffUser.email} (${staffUser.id})`);
+    console.log(`Permissies: ${staffUser.permissions.join(', ')}`);
+    if (revoked.count > 0) {
+      console.log(`${revoked.count} bestaande sessie(s) ingetrokken — dit account moet overal opnieuw inloggen.`);
+    }
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

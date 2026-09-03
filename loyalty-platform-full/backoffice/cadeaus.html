@@ -1,0 +1,828 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Strand tegoed — Beloningen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300;9..144,450;9..144,600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f6f3ec; --white: #ffffff; --navy: #1b3a5c; --navy-dark: #0e1c2a;
+    --body-text: #3a4a5c; --muted: #7a8ea0; --teal: #497a9d; --teal-dark: #376079; --teal-light: #6496b5;
+    --coral: #e8604a; --coral-light: #f08c78; --wood: #c47a45;
+    --line: rgba(27, 58, 92, 0.12); --shadow: 0 2px 14px rgba(27, 58, 92, 0.07);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--cream); color: var(--body-text); font-family: 'Inter', sans-serif; min-height: 100vh; }
+
+  .accent-line { height: 3px; background: linear-gradient(90deg, var(--teal), var(--coral)); }
+
+  header { background: var(--navy-dark); border-bottom: 1px solid rgba(255,255,255,0.06); }
+  .header-inner {
+    max-width: 900px; margin: 0 auto; padding: 24px 32px;
+    display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 16px;
+  }
+  .brand-eyebrow { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(240,244,247,0.55); margin: 0 0 6px; }
+  .brand-logo { display: block; margin: 0 0 8px; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 26px; margin: 0; letter-spacing: -0.01em; color: var(--white); }
+  nav a {
+    color: rgba(240,244,247,0.6); text-decoration: none; font-size: 12px; margin-left: 18px;
+    letter-spacing: 0.06em; text-transform: uppercase; border-bottom: 1px solid transparent; padding-bottom: 3px;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  nav a:hover, nav a:focus-visible { color: var(--white); border-color: var(--coral); }
+  nav a.active { color: var(--coral-light); }
+  .config-toggle {
+    background: none; border: 1px solid rgba(240,244,247,0.25); color: rgba(240,244,247,0.7); font-family: 'Inter', sans-serif;
+    font-size: 12px; padding: 8px 14px; border-radius: 20px; cursor: pointer;
+  }
+  .config-toggle:hover, .config-toggle:focus-visible { border-color: var(--coral); color: var(--white); }
+
+  #config-panel { max-width: 900px; margin: 0 auto; padding: 0 32px 20px; display: none; gap: 12px; flex-wrap: wrap; }
+  #config-panel.open { display: flex; }
+  #config-panel label { display: flex; flex-direction: column; font-size: 12px; color: var(--muted); gap: 4px; flex: 1; min-width: 220px; }
+  #config-panel input {
+    background: var(--white); border: 1px solid var(--line); color: var(--body-text);
+    padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 13px;
+  }
+  #config-panel button {
+    align-self: flex-end; background: var(--coral); color: var(--white); border: none;
+    padding: 10px 18px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  main { max-width: 900px; margin: 0 auto; padding: 32px 32px 80px; }
+  .status-line { font-size: 13px; color: var(--muted); margin-bottom: 20px; min-height: 18px; }
+  .status-line.error { color: var(--coral); }
+
+  .block-panel {
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 18px; padding: 26px 30px; margin-bottom: 24px;
+  }
+  .block-panel h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0 0 6px; color: var(--navy); }
+  .block-panel .sub { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+  .block-row { display: flex; gap: 10px; align-items: center; }
+  .block-row input {
+    width: 140px; background: var(--cream); border: 1px solid var(--line); color: var(--navy);
+    padding: 11px 14px; border-radius: 8px; font-family: 'Fraunces', serif; font-size: 18px;
+  }
+  .block-row span { font-size: 13px; color: var(--muted); }
+  .block-row button {
+    background: var(--coral); color: var(--white); border: none; padding: 11px 20px;
+    border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  .toolbar h2 { font-family: 'Fraunces', serif; font-weight: 450; font-size: 18px; margin: 0; color: var(--navy); }
+  .new-btn {
+    background: var(--coral); color: var(--white); border: none; padding: 10px 18px;
+    border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer;
+  }
+
+  .item-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 24px; }
+  .item-row {
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 12px;
+    padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;
+  }
+  .item-row.inactive { opacity: 0.5; }
+  .item-row .name { font-family: 'Fraunces', serif; font-size: 15px; color: var(--navy); }
+  .item-row .desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .item-row .right { display: flex; align-items: center; gap: 12px; }
+  .item-row .cost { font-family: 'Fraunces', serif; color: var(--wood); font-size: 16px; }
+  .item-row button {
+    background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
+  }
+  .item-row button:hover { border-color: var(--coral); color: var(--navy); }
+  .empty-note { color: var(--muted); font-size: 13px; padding: 20px; text-align: center; }
+
+  .panel {
+    background: var(--white); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 18px; padding: 26px 30px;
+    display: none; margin-bottom: 24px;
+  }
+  .panel.open { display: block; }
+  .form-row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 560px) { .form-row { grid-template-columns: 1fr; } }
+  .form-field { display: flex; flex-direction: column; gap: 6px; }
+  .form-field.full { grid-column: 1 / -1; }
+  .form-field label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .form-field input {
+    background: var(--cream); border: 1px solid var(--line); color: var(--body-text);
+    padding: 10px 12px; border-radius: 8px; font-family: 'Inter', sans-serif; font-size: 14px;
+  }
+  .form-actions { display: flex; gap: 10px; margin-top: 14px; }
+
+  .availability-block {
+    margin-top: 18px; padding: 16px; background: var(--cream); border: 1px solid var(--line); border-radius: 10px;
+  }
+  .availability-title { font-family: 'Fraunces', serif; font-size: 14px; margin-bottom: 6px; color: var(--navy); }
+  .availability-hint { font-size: 11px; color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
+  .day-picker { display: flex; gap: 6px; flex-wrap: wrap; }
+  .day-picker label {
+    display: flex; align-items: center; gap: 5px; background: var(--white); border: 1px solid var(--line);
+    border-radius: 20px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+  }
+  .day-picker label:has(input:checked) { border-color: var(--wood); color: var(--wood); }
+  .item-row .availability-badge {
+    font-size: 11px; color: var(--wood); background: rgba(196,122,69,0.12); padding: 2px 8px;
+    border-radius: 12px; margin-top: 4px; display: inline-block;
+  }
+  .btn-primary { background: var(--coral); color: var(--white); border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; }
+  .btn-secondary { background: none; border: 1px solid var(--line); color: var(--muted); padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+
+  .rate-summary-banner {
+    display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;
+  }
+  .rate-summary-chip {
+    background: rgba(196,122,69,0.1); border: 1px solid var(--wood); border-radius: 20px;
+    padding: 8px 16px; font-size: 13px; color: var(--wood); font-weight: 600;
+  }
+  .rate-rule-row {
+    display: flex; justify-content: space-between; align-items: center; background: var(--white);
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 8px; font-size: 13px;
+  }
+  .rate-rule-row .name { font-family: 'Fraunces', serif; color: var(--navy); font-size: 15px; }
+  .rate-rule-row .days { font-size: 11px; color: var(--muted); margin-top: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .rate-rule-row .right { display: flex; align-items: center; gap: 12px; }
+  .rate-rule-row .rate { font-family: 'Fraunces', serif; color: var(--wood); }
+  .rate-rule-row .example { font-size: 11px; color: var(--muted); }
+  .rate-rule-row button {
+    background: none; border: 1px solid var(--line); color: var(--muted);
+    padding: 5px 10px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  }
+
+  footer { max-width: 900px; margin: 0 auto; padding: 24px 32px 40px; font-size: 12px; color: var(--muted); }
+</style>
+<style>nav a[data-page] { display: none; }</style>
+</head>
+<body>
+<div id="staff-login-overlay" style="position:fixed;inset:0;background:#0e1c2ae6;z-index:99999;display:flex;align-items:center;justify-content:center;padding:20px;font-family:-apple-system,'Inter',sans-serif;">
+  <div style="width:100%;max-width:360px;background:#f6f3ec;border-radius:16px;padding:32px 28px;">
+    <h2 style="font-family:Georgia,serif;font-size:20px;color:#1b3a5c;margin:0 0 6px;">Inloggen</h2>
+    <p style="font-size:13px;color:#7a8ea0;margin:0 0 20px;">Log in met je backoffice-account.</p>
+    <input type="email" id="staff-login-email" name="staff-login-email" placeholder="E-mailadres" autocomplete="username" style="width:100%;padding:11px 14px;border-radius:8px;border:1px solid rgba(27,58,92,0.12);background:#fff;font-size:14px;margin-bottom:10px;box-sizing:border-box;">
+    <input type="password" id="staff-login-password" name="staff-login-password" placeholder="Wachtwoord" autocomplete="current-password" style="width:100%;padding:11px 14px;border-radius:8px;border:1px solid rgba(27,58,92,0.12);background:#fff;font-size:14px;margin-bottom:14px;box-sizing:border-box;">
+    <button id="staff-login-btn" style="width:100%;padding:13px;border-radius:8px;border:none;background:#e8604a;color:#fff;font-weight:600;font-size:14px;cursor:pointer;">Inloggen</button>
+    <div id="staff-login-error" style="color:#e8604a;font-size:12px;margin-top:10px;min-height:14px;"></div>
+  </div>
+</div>
+<script>
+  function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  function setStaffToken(t) { localStorage.setItem('staff_token', t); }
+  function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
+  function staffLogout() { clearStaffToken(); location.reload(); }
+
+  function showStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'flex'; }
+  function hideStaffLoginOverlay() { document.getElementById('staff-login-overlay').style.display = 'none'; }
+
+  // Welke permissie geeft toegang tot welk tabblad — moet in lockstep
+  // blijven met de @RequirePermissions(...) op de belangrijkste
+  // endpoints van elke pagina. Een tabblad verbergen is puur UX (geen
+  // beveiliging op zich — de ECHTE afscherming zit server-side in
+  // PermissionsGuard); dit voorkomt alleen dat iemand op een tabblad
+  // klikt en daar meteen een foutmelding krijgt.
+  const NAV_PAGE_PERMISSION = {
+    dashboard: 'analytics.read',
+    customers: 'customer.read',
+    campaigns: 'campaign.read',
+    transacties: 'transaction.write',
+    cadeaus: 'credit_rules.read',
+    inschrijven: 'customer.write',
+    import: 'import.read',
+    'loyalty-cards': 'loyalty_card.read',
+    instellingen: 'admin.read',
+    medewerkers: 'admin.read',
+    'gift-cards': 'gift_card.read',
+    vouchers: 'voucher.read',
+    financieel: 'finance.read',
+  };
+
+  // Alle tabbladen staan standaard op display:none via CSS (zie de
+  // <style>-regel in <head>) — dit toont alleen de toegestane, in
+  // plaats van dat we eerst alles laten zien en dan verkeerde weer
+  // wegtoveren (dat gaf een storende flits van tabbladen die er niet
+  // horen te zijn).
+  function applyNavPermissions(permissions) {
+    localStorage.setItem('staff_permissions', JSON.stringify(permissions));
+    document.querySelectorAll('nav [data-page]').forEach(function (link) {
+      const required = NAV_PAGE_PERMISSION[link.getAttribute('data-page')];
+      link.style.display = (!required || permissions.indexOf(required) !== -1) ? 'inline' : 'none';
+    });
+  }
+
+  // Terugvalmechanisme: als het ophalen van de rechten om wat voor
+  // reden dan ook mislukt (tijdelijke netwerkstoring, trage server,
+  // een endpoint dat nog niet overal is uitgerold), mag het menu NOOIT
+  // permanent leeg blijven staan — dat is erger dan te veel tonen. In
+  // het ergste geval ziet iemand een tabblad waar ze geen rechten voor
+  // hebben en krijgen ze bij een klik een nette foutmelding; de ECHTE
+  // beveiliging blijft altijd server-side (PermissionsGuard) staan,
+  // ongeacht wat hier in de UI zichtbaar is.
+  function showAllNavTabs() {
+    document.querySelectorAll('nav [data-page]').forEach(function (link) { link.style.display = 'inline'; });
+  }
+
+  // Gecachte rechten van de vorige keer meteen (synchroon, geen
+  // netwerk-vertraging) toepassen zodat het menu vanaf de eerste
+  // seconde al (bijna altijd) correct staat — de live servercall
+  // hieronder ververst dit daarna alsnog, voor het geval rechten
+  // intussen gewijzigd zijn.
+  function applyCachedPermissionsImmediately() {
+    try {
+      const cached = JSON.parse(localStorage.getItem('staff_permissions') || '[]');
+      if (cached.length) applyNavPermissions(cached);
+    } catch (err) { /* geen geldige cache — wacht op de servercall hieronder */ }
+  }
+
+  async function fetchAndApplyOwnPermissions() {
+    const { apiBase, orgId } = getConfig();
+    // Als de servercall te lang duurt (trage verbinding), na 6 seconden
+    // toch maar alles tonen i.p.v. de medewerker met een leeg menu te
+    // laten zitten.
+    const fallbackTimer = setTimeout(showAllNavTabs, 6000);
+    try {
+      const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/me', {
+        headers: { Authorization: 'Bearer ' + getStaffToken() },
+      });
+      clearTimeout(fallbackTimer);
+      if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); return; }
+      if (!res.ok) { showAllNavTabs(); return; }
+      const data = await res.json();
+      applyNavPermissions(data.permissions || []);
+    } catch (err) {
+      clearTimeout(fallbackTimer);
+      showAllNavTabs();
+    }
+  }
+
+  document.getElementById('staff-login-btn').addEventListener('click', async function () {
+    const errorEl = document.getElementById('staff-login-error');
+    errorEl.textContent = '';
+    const email = document.getElementById('staff-login-email').value.trim();
+    const password = document.getElementById('staff-login-password').value;
+    if (!email || !password) { errorEl.textContent = 'Vul e-mailadres en wachtwoord in.'; return; }
+    const { apiBase, orgId } = getConfig();
+    const loginBtn = document.getElementById('staff-login-btn');
+    loginBtn.disabled = true;
+    const originalLoginLabel = loginBtn.textContent;
+    loginBtn.textContent = 'Bezig…';
+    try {
+      const res = await fetch(apiBase + '/organizations/' + orgId + '/auth/staff/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email, password: password }),
+      });
+      const data = await res.json().catch(function () { return {}; });
+      if (!res.ok) { errorEl.textContent = data.message || 'Inloggen mislukt.'; return; }
+      setStaffToken(data.token);
+      if (data.staffUser && data.staffUser.permissions) {
+        applyNavPermissions(data.staffUser.permissions);
+      } else {
+        showAllNavTabs();
+      }
+      hideStaffLoginOverlay();
+      bootAfterLogin();
+    } catch (err) {
+      errorEl.textContent = 'Er ging iets mis. Probeer het opnieuw.';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = originalLoginLabel;
+    }
+  });
+
+  // Pas checken/booten nadat de HELE pagina (inclusief het script
+  // onderaan dat bootAfterLogin() definieert) is ingeladen — anders
+  // bestaat die functie nog niet op het moment van deze check.
+  window.addEventListener('DOMContentLoaded', function () {
+    if (getStaffToken()) {
+      hideStaffLoginOverlay();
+      applyCachedPermissionsImmediately();
+      fetchAndApplyOwnPermissions();
+      bootAfterLogin();
+    } else {
+      showStaffLoginOverlay();
+    }
+  });
+</script>
+
+<header>
+  <div class="header-inner">
+    <div>
+      <img class="brand-logo" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAARoAAAAyCAYAAACDOxRVAAAx4klEQVR42u19eVgUx/Z29TI9w74MCiIiLiAQxTWSEDaNoFHBJe5LjMs1GkVBjYnEiNftqlGDKNGoUSOKCyEaFBV3RPiJKAiKAsoiOwwwrLP0Vt8fmfLrTGYATXJzTTjPM89AT3dV9emqt855z6lqAnRIh/xDBcfxNs8hCAJACEFAQIB1165dqaKiIhU6pkswDOtQbId0SIe8mhAEAQAA4PLly5tPnDixBAAASJJsFbj0/d4hHdIh/yBBVsfbb79tRJIkwDBMpyWCjhkbG2MymSy3sLAwSSQS6bRcEMh89dVXXu+//75ley2mDumQDnkFmTFjhsOb0lZkcRw8ePAjZKXoAgUcxwGO48DGxgaHEEKVStVgamqKEQQBCIJ4CTbI6gkICLCGEEIfHx9z4fEO6ZAO+QcDzYoVKwZDCOHChQtd0HGCIABJkr8BnsjIyKmbNm0aocvqIUkSmJqaYvn5+bcghNDJyYnqsGg6pEP+4UCDLI1hw4ZZQAhhQUFBIkVRvznP0NAQdO/enRw6dKiRn5+fdNSoUVYTJ060ff/99y1dXV3FnTp1eokkyOrJzs6OE4vFet2xf6p0sFYd8rcVFB3ief5XxzmOAziOgzt37sh//vnnUIlEYkzTNCAIAri7u5uMGDFioIeHx0h3d/eZ5ubm3dF1LMuqqqqqshsaGsoVCkV9fX19RUVFRUF2dnZmZmbm8w0bNgyPiYn5P7VaDXAc/029HdIhHfI3tmh0cSXCY/b29uRnn302ND09PRoKJCcn51JERMSk6dOnd3d1dRVbWFhgIpEIEAQBRCIRMDIyAnZ2dkT//v0Nxo0bZ+Pl5WXm7OxMdUSdOqRD/uZAg9wVU1NTLCgoqH/Xrl0J4XEMw16CjJmZGRYWFuZTVlaWjsClqqoqe/fu3RPd3d2NX4djkUgkHdxMh3TIP8GiQRGhCxcuhNXX1xcvWbKkn/A4AACMHTvWOjc3NwEBTF1dXUFYWJhP586dce2yEDmMeBftD47jgCCIDoDpkA75JwENGvB9+vShEJDMnz/fCQHHtm3bRgtdpJ9++ulzR0dHkRBcELB0SId0SAfQtAk2M2fOdCgrK0tfsWLFYIlEAi5cuBAGIYQ8z3Mqlaph2bJl/dE1KHmvQzqkQzqApt2CQMPAwAAYGhqCmzdvfgMhhBzHMXV1dQUog7fD7emQDukAmt8FNCKRCGAYBi5durQRQghZllXLZLLcoUOHGgEAAFpS0CEd0iEdQPNagsLMe/funQIhhDRNtzQ1NVW+8847xsLfO6RDOqQDaNrtIgkFhbAnT55sByGEarW6CUIIJ06caNsBMn8B6M+ePbunVCo1a2pqalEoFOqWlha1QqGglUolq1QqWZVKxalUKl6tVvM0TUOapiHDMJBhGMCyrN59ObQfOsdx7eowOI6369zWymitTW39/r9m+rdXHygTVSQSAV9fX6mHh0ffnj179jEwMDBqaGiozcrKyrx8+fKTZ8+eMW+aHtoSdB8IXCCEAEIIOnfujO/Zs+cSz/MsRVHGu3btGvfTTz+Vi0QiwDBMx+j/bwJNSEjIpoEDB07X8wB5lmVVDMMoGIZRaj4KmqYVSqWynuM45ttvv1377bffPtYHJsLj/v7+0tGjR3u7ubl5SaXSbhzHMRUVFXnp6elJly5dupeSktLEcVyrwIQGSOfOnXFbW1sxy7KQ53kIIQTV1dV0bW0t1DeI0HFTU1PM3NycgBBCTDMdVlVVsWq1+jfX2NnZERKJBNcMZkwT9sQ0K3sxHMcxgiB+9U2SJP78+fOmiooKXtgWgiBAQEBAF1NTU0OSJAmKokiRSCSiKEokEolIiqIomqbp0tLSqoyMjPLs7Gx1W/oQgsy0adPs16xZs9PNzW2SrvMaGxvLjhw5ErRmzZqzSqXybwE2aI0STdMvdYT0tW7duknW1tZ9eZ5nnzx5cj40NDSOIAjAsmzHyP9vy+3bt/eyLKtmGEbJcRzDcRzD8zwH2yn/+c9/RuozRdEM4+PjY56amnq4rbISExMjvL29zYTX6vO7v/jii3e0r8/MzIwRiUQ6cyCQdUBRFHj48OEZmqZblEqlXKVSNdA03eLl5aWz3szMzBie5zmWZdXwFeTTTz/ti9qL2mJoaAiampoq23M9z/PczZs3v/H09DRtTR/o+ObNm/2E17Isq9b+CPVsYGDwh25j8N92nVCUyNnZmUpPT4/OyMg4FR0dvdTX19ccAAAcHR1FSqVSznEcAyGEI0eOtGpNjx3yJ8udO3f2oZCfdkfX9+E4jlGr1U0cxzFhYWE+uoAG/R8UFNQfARcCNPQt/AjrDw0N9dDXKVC5n3/++Ts8z3MMwyhR2RBCuGjRItfW2rN8+fIB6P6E96sP4B4/fnxO1/n69IT08q9//ctZG2gkEgkoKipKZhhGqVarm9C90zTdgj5IP6h8juOYmTNnOggHlzbIfPjhh10hhFCoR6GOUXmofRBCGBERMelN52iQPsaMGdO5pqYmD+nM0NAQ7Nq1axz6//r16zt06a9D/ouSlJQUiWbA1sBFe4ChAb5u3Tpv7YGNBsDChQtd0GBB5aPrhIJ+Y1lWjQYKspS0B74QaITtQNZYeXl5hqmpKSa0atAGRlZWVnhNTU2e0HJDdesDmqysrFht/aDBq+ujUqkaWJZV6wOakpKSe7qAXQgsCBgYhlGi+vr16ydBVpnQSiNJEmRnZ8e1ZXWhZ4jOo2m65a233hK/6WQw0q2lpSW2bNmy/gsXLnSRSqVYdXX1U3TP/v7+0g5r5o8h2V9b7t69+317THltgECDAG0GhAAAPcwBAwYYoAGpDVY8z3NlZWXpJSUl92iabtG2DtAxNJMLOwiqZ82aNe9qtwv9vWHDhuG62hQeHj5B+xo04FsDmtaAQZ8EBQX11wYasVgMXrx48X/tKQ/pC7X1xx9/XCVsHwKcAQMGGGgDCYQQnjt3bs2KFSsGr1692j0+Pn69EMRUKlUDhBD+8MMPC990oNFlqUyZMqUb0uOjR4/O6sv4RQsshWugtI8L60DHhB9h3bp+1y6ntXvQ1Zb2lCm8liRJnRt36bp3tNGX8KOLchDeZ1u6QWVql0POmTNnsbGxcRD2i6CFYuhvjCRJvKmpiV63bt2yCRMmbOU4jiYIgoIQ8hiG4Tk5OflC5h99R0REfE2SpITjOFrTQJxlWdXOnTsnHj9+/GZhYaEKQghsbW1FgYGBbqGhoSelUqkjhJAnCILieZ7dvXv3lYSEBOfa2lq+PcQlui4kJCT6wIEDXcvKyjiSJAHHcaBPnz7U4sWLj/E8zxIEQb1GZIMHAIDi4uK7wcHBH/J6NhvhOA5iGAaysrJqNf/rLI/neRbHcTI9PT36448/nk8QBMbzPDQ3NxcvWrRo9vTp0/egtkIIeT8/v2CpVLoTkd2IAHZ1dbXW1ENjGIYTBEEdPXp0wdy5c79HdW3fvj01JCQkbteuXQ+QnliWVZmYmFj8HWZenucBhmGAoijAsiwIDAwci/pnTEzMNyzLApIkf0MCQwh1Ph9dx9uzt8zrRksxDNNbfnvK1HetviAC6jttkeJozGmT7O3VjXBPHjI3N5cGANCtVThx4kTbMWPGrEUdn2VZlUgkMty3b9/048ePF6IGoG8fHx9zLy+vJRzH0TiOkxBCXq1WN44fP94xISGhRlj28+fPmV27dj24cOFC32vXrt22s7N7Gw1EqVTquHjx4vc2btyYpN1RMB1TFIZhOMdxtLGxsfWGDRvmzJs37zCO44BlWbBt27aVFEUZoza9LtA0NjZWnj17tvwVrnuJ7pqwKy8sr7m5ufbRo0cqwSWq27dv73V0dBw6ZMiQ2ai9pqamXfv06WOckpLSJJytzMzMjLTbGB8fnyASiQAK4/I8D7755pv0yZMnHxSLxUZnzpzZc/78+YwnT56o/06mvlqtBhRFgaFDh07AMAzneZ6Nj4+/L5wAhQNg8ODBhl9++WUQz/Pcv//9773oOUyePNlu5syZs+vr62WrVq06XFNTw69cuXKIp6fnCLVarfzFcOR5iqIkGRkZ/7dly5YUAwMDEBER8ZGpqSnamJyAEPKaREHVsmXLvpPL5b+JiKK2zJ8/32nMmDETCIIgr1y5EhcZGfnI2NgY27lz50xzc3Mr7TKVSmUzatuGDRuGv/XWW4PLy8uLZDJZVX5+fvGtW7dKysrKOO0NuND/nTp1wqdNm9ZvwIABg0xNTS05jmPFYrFBdHT08ZiYmFJ3d3fjgwcP/qBQKOofPnx44+DBg2cfPHigGDt2rPX8+fPnqtVq5YoVK/aWl5dz06dP7z516tQZSqWyuaioKC8pKSn94sWLMp7n/z/Y6DIJUXQGAAA8PT1NEZ8h5AGuXLmyFc2saCAhV+X777+fK+QyIIRw1apVbyP3QbjkHsdxIBb/QhUMGzbMApHNqM4nT55cEJpiqI4vv/zyPV0uHbqeZVn14MGDDQEA4P3337cUckHanEh7XCdUz6NHj862YVXpNMVRKLaoqCgZZalCCGFycvJ+HMdfmrtoG8gtW7b4o3pRuwMCAqxRHUgPH3/8cW+ka9TG/fv3zxTWLRKJAEmSwNzc/E9bMfhXZwYj8EXRJgghLCwsTEJ9S9sdAQCA8ePHd0H9AEWlAAAvdc9xHOPg4EBqwHu9Lhf34cOHZwD4Zf+b1lxhOzs7QrsdqM09evQgFQpFLYQQ1tTU5PXq1UsEAABWVlZ4a2X26NGDBACA+/fvR2n/VlNTk7d06VI3YT3o293d3Ri58NqyefNmPwAAGDVqlJXwuFqtbpo2bZr94sWL30LHnJ2dKQDAr4h3JLdv397bu3dvEaqX1GX24DgOGIYB1tbW+KlTp27gOE7yPM8is/vZs2dXp06dukZ71kYmqre390wMw3BkyldWVmZ9++23aTiOA5qmf4XoEEKgVqsBSZLg5s2b8uTk5P2enp6fopm8T58+I3v37k3l5ubSrfmdPM+zGIbhaGYnCILasmXL2pEjR4Zu3759j7bVo+0+YXqYL57nOXSdpkPZjB49uhPK3dF0SAghhAqFgklNTW3W5+IJLRphe7T3N9HUy+uw1nhhWQAAkJ+fL/slrQcnkfW4cOHCY0qlsmXfvn0X8/LyaJScVl9fDxEI8jz/xm81KZzoCIIANE0DBwcHU4lEYq6ZJC63tq0mwzAccu0ZhnnpDyiVSiXHcXR9ff0LdF1TU5Oc4zi6paVFdufOnUNqtVqJ4zj+8OHD/wMAAJZl4YULF8KMjY0tevfu/V6XLl36q1Sq+oyMjB9VKlWzUqnk9ZGty5YtG2tgYGDJMIxi1qxZHvn5+QwAAKhUKhgXF7fW1NTUCpWpVCrlmZmZZ5ubm+sUCgWysmUcx9EymSxHJpM979ev30SpVOq4Z8+ezOLi4i5xcXGViEKwsLDATp8+nWBvb/+OcOzQNN0sEokMlUqlUnM/PM/zLMdxtEgkMqQoyviHH37Ivnr16g6O42ie51mkG4VC0cJxHE3TdLOBgYElAAB4eXktuXbt2kAPDw/vyspKTi9JhOP4y9WuaEblOI5pamqqRNEKbUIIAAAcHBxINFujGfb06dPBbbH+iLBbt26dt3AmhxDCsWPH/mYmX7t2rafQMmhubq46dOjQHCEhyrKs+uTJk0FColkulxcdPnx4njBS1dorMh4+fHimvWRwRUVFpq73/gitsYKCgkRhu2/fvr1Xlz5Q3pHQCuvfv78B0jUCJSMjI1BeXp4hvBfhLJScnLx/06ZNI3x9fc2Fbfujt0P4X1nrNH/+fCd0/9u3bx+jK9UBPeOxY8dao3PRSm4AAAgLC/OBEEK5XF5kb29PAgDAmTNnQiCEsLi4+G5buouMjJyKzkV16SJZUVtQ1DApKSlSXxj+22+/nQYhhPn5+beQt4HKvnbt2tcQQnj27NkvRCIR8PLyMsvLy7siLBM9+08//bQvGg8ZGRmnxo8f3yUwMNCmoaGhFEIIv/rqKy8AAPDz85Oifl9VVZWtK1iB3vaAcrjkcnnRmDFjOp8/f34dOu/QoUNzAAAA12X6sywLtm/fHuDr6xvMsqyKIAgKWRgfffTRoOzsbDVCSG3FWVtbS0QikaFw5s7Ly3vUns4NIQQvXrwo0+YcLC0tjdsKtxkZGXXet29fTHp6ejRCaYIgqGnTpkVACHlElu7bt2/hrVu3EtE5r8PV0DTdjD4MwyjUanUjwzCK5uZmWTuuh0ILydra2nHcuHE2Y8aM6ezv7y8dP358l9jY2M+GDh06F1lpEEK+uLj4bk5OjhL5+BBCgOM4aGlpATt27FiA4zjJsqwK6YzjOJqiKGMPD49Pvvzyy6s3b96Up6enn/344497I2voTd17BU2GdnZ2xOTJk+02bdo04quvvvIyNzfHTExMXnJWRUVFL/6EunELCwtM12tZ0GSJaw5iGIZTFNWqns3NzTGpVNoDwzA8Pj4+SjuFQVAmcr0wiqIwPVE0jGEYkJSU1HDw4MG1GIbhLi4ufp07d8aRVevn5zcWQsg3NzdXTZkyZfa5c+cq0tLSqrUtbYEBQa5Zs2bCRx991Etj6aha083Vq1erAwICNty/fz+K53l20qRJG+3t7X8N9YhwnTJlSreVK1fGsSyrIklSgr43bNgw/OzZs+W6GHwkBgYGpBAkkCna3lR3XRrkdFDn6Dw0EDEMwxsbG5nQ0NDlly9fnoFABAEkjuNkS0tL9datW6/OmTPH7fd0NIqijHX9Zmpq2qUtIEV6QYS0k5OT/7lz5yp0ARqO46RarW4Ui8Wm+/btC0EuJtI9ItvCw8MfvPfee6snTpy4HS0bQdEqnudZVFbfvn3HHzlyZLyfn9/SOXPmROqLurwJuR1SqRT/7rvvvho9enQY+i03N9e+sbGxBf1fX1/frE0Et8KtYcjywduIDaNJU9v9RBOAjmeuF2xwHMfQpFNaWlql73rtyUrPEhsc9Q8jIyNDCCFPkqSEJMmXlffs2XMwhmF4ampq1PPnzxmxWAxMTExaDY5QFEUePnw4z8vL66N//etfx4Q0hXaf7dSpE1FWVsZt27YtNCYmZraZmVm3Dz74wIkUuj4sywInJyfq0KFDqcgi4DiOJklSEh8fvz4sLOymtiWjLSqVihXO2BpSq1N7Zk8Mw0D37t27CtEUAACqq6ubtCM4ugDJyspKkpCQUJOamnrY3d19HuJiEFDu2rVremNjIxTOeq8adWpubq5KTEzcRxAESRCECH2LRCJxTU1NyeuUyzCMAvFZqB7EIYnFYtPr16/v+Oabb+5qL7AUdrYpU6Z8vW3btpzg4OAfSZKUIJBFIIN4No7j6BkzZuytra2tWrZs2Y9vmjWD7rmqqoqfMGHC+v79+3/dr1+/rmq1mo6LiytZunTp2+jc2tra5vaWW19fr0IA3tLSomiFC+Rqa2v/sAViCoWCZxhGCQAAJiYmhr/HymQYRo3G8Lx587ZiGIYXFhamVFVVccgSJghCBAAAFRUVBYgflclkjD6LBgEvQRBg06ZNJ6dNm7bNxMSki77zaZqGGIaBpKSk8tra2mdSqdTx3Xff9SCFCE1RFDh16tRRExOTLogkIwiCKioqujN79uwNiFTThaboWEVFhYqm6WbhrD9kyBA/COHPrZGPCLn9/PymIaBCM3pOTk69NtC0MjuAzz77bMXt27fnaQgrFsdxsqys7MHOnTtvamYivj2gpyscXVxcfG/s2LH/bu+A0AdYuiwkBArIEmlsbCw7evRocGho6Dm1Wq1zESTSCcdxYNWqVedPnDhhvmTJkikBAQGrO3fu7Kqdt4PymYKCgmJOnDhhkpqa2gzeUKFpGqSlpbWkpaXlCQbby2XZYrGYbC/YT5gwwdPJySlPE5Xx1p4sBS66dMGCBX1UKhV9586dkqKiIvZ1FqcKXd+nT59e79q162BfX1+/ffv2Zb8qSY/cqu7du7uFhYX5LF68eK+1tXXf+vr6F6tWrfpUmHqC7qlPnz7us2fPvgohhJ06dbIQiUQGreQH8RzHgeLiYvbmzZuRgYGBmxA+6BvHMpmMLywsvCuVSh1tbGx64MJEnPDw8GkDBw6czrKsCnV4hmEUU6dOHYVyAPQpAR0vLS1lCwsL7wjdmnfeeWeui4uLGG1joD2gKYp6mX/j4eGxELk9EEI+MzMztqSkRFc+AK5LIRBCkJSU1PDjjz+uEolEhiKRyJAgCGr9+vUzGxoa4O9drUwQhEgsFgOKogD6Rh8URm5PZqYgL6csMTExIiMj46QwaobjOFlXV1cUEhJyTqlUAhzH9XZmxFlQFAUyMjKUCxYs+MHV1bXvxIkTu+7fv39GYWHhbfQ8UTQQAAAWLVo09U2POiGuBIWxy8rKXuZpSaVSk/aUw/M8+8UXX1yOiooqiIqKKpg4ceJ2oVUpBB1LS8teBw8ezImKiirw9fV10EfevkpI/vr162cBAGDEiBFLra2tceQSvyrQDBkyZPb69etvWVtb92VZVlVeXp719OnTBuHEh84dOnTo3GPHjuVHRUUV7Nq16wGK1GGtzOQYhoGUlJTruiZMXXhQUVGRBwAAEonEGBfyMosXLz6J3AzkdoSEhLxz7969FuQyab9mQtgudM7Vq1cPo8bwPM9qkvu2EwQBGIb5Ve4OhBDQNA26detGHD58+JxwIGIYhh85cuSVF8RhGAa++OKLiKSkpMjk5OT9p0+fDj569Ggu8sGx32GfahaUApqmAfpGH7RHD8uyOgFZ89ZETvigcnJyrvj6+i4fNGjQjMTExAj0G8dxdM+ePX1Wr17t3tb9oyxPmv5lkhGJRKC2thaePXu2fPHixSf79u3rs2HDhuEoiQ25pJ6entPfZKBBHBPSOQAAvHjxQo4mKmtra2l7SW+WZVWI4G+N8NS8rfJxTU1NXkNDg+L3tB/1kbi4uAy1Wt1oaWnZa8aMGQNetb8L3fqcnJyLFRUVD0mSlLi6ugYkJiYmmJmZYdqTlPB+GYZRtAUcSN8o/N0eqa2tfck9kizLgu7du5MHDhxI1uZlTp06tSwyMvKRRCJ5CRDa5JcuxR06dOjCkiVLeMQ78DzP+vj4LLt06ZJy5cqV64WZsAYGBmDs2LF2O3bsiLG3t39HmK9TVFR0Jyoq6glyDdoijYUzRX5+PuPt7b1Um+z+PSQwAAB069ZtyMmTJ4MYhqEZhqFpmlbRNK3WiEqpVCppmmbu37//7NatW/WtWSLIQkJ6DQsLC7t169YyoWWzatWqowcPHnStr6//TVYp+t/BwYEcMmSIzciRI4fX1NRUrVmzJoGiKCDIcwBhYWE3x40bF9O/f//JaBKxtbXtD/4mgu61oKBAUV1d/cTGxsatV69eTgCAu+2wUqlZs2b1SElJKQXgl7yW4ODgs0L3AA1EmUyW6+3t7d7c3Mw1NDSgCN9rtxnDMPDkyRP1vXv3ojw9PRfPnTv3yz179nyIJvV2lsMBAEBmZuZZPz+/xRKJBPv3v//9YVBQUEzv3r3fDwwM7BEVFVWgGUcMAABcuXJl29KlSzcBAICdnZ3RhQsXsk1NTbu2ZfK/yiQtpChIDMPA0aNHvzYzM+sm5GWuXbu2ffr06Xs0BO+vCpBIJMDQ0BAzNTUlGhsbubq6upduFUEQIDMzU3nixIkls2bN2scwjEIkEhnyPM/6+fl9npGREXL//v3jJSUlTwwNDU1cXV3fd3Bw8EQmLEqoI0lSsmjRogktLS0612zoumGe56F2ZEC7I/5eoDExMekybdq0iLbOP3bs2Ce3bt06ICRw9SXsIb0lJibWX7t2bfuIESNWo6SoTp06OYeEhAxbt27dDWHECd1bTEzMyrFjx65Fpi/LsqqoqCjzJ0+eqJHViZYi1NTUvNB6juZ/F6BBXFVtbS3Mycm5YWNj4+bs7OwOADjWHiAoLi6WFxYWsgAAUFNTI9PnHnAcR1dUVDAKheIPaTdKJzlz5swBLy+vJX379h3v6elpfuvWrXqSJF+J+2FZllYqlUCpVMLw8PCfFy5c2EhRlHGvXr3sAQAFwnMbGxtr0f2qVKqm9lg0rypo6QQAAOBbt24d7evrG4xmOQzDcIZhFDdu3DgXEhIyaMeOHQGHDx+eFxcXt/bOnTv7Hj9+fC4vL+9ubm5uTm5urnzu3LmDkcKEJFdISMiBkpKSVJFIZIg4H1SHu7v7vEmTJu0YPXp0mIODgycibTXrOHiSJCWrV692T0hIqNG3MEyTNMSijybCou2m6MyA5XkesiyrEn70ITnDMCqO42jhR5hHo51To1Qq6zQ5NQ3tBDBMCBzr16/fjAAIWYPLli07am1tjaOX0yN9QwhBbW1tpUQiMUe5PARBUPHx8ddGjhxphUCOYRjg7u5u7O7uPhvxPxoytRn8jYSiKJRhfhYAAN56660PrK2tcdQnWxOxWEyg7URErbwaQUPeY39U0iPqm+fPn3/S3NxchWEYPmnSJP/XnAxftoumaV6hUNRqeNLf9G2SJCl0vwYGBn/K/hnW1tY9NUDWTK5evToepewjRYpEIsMtW7akvKp5hBSH4zioqanhx44d63vlypU0RE4hjgABipAwFoZ3Q0JCBoWHh2e0lq8jFoslOI6TwugWSZLtcmwNDQ0NNPkFEnRMJBIRelDZliAISkgMtrb6myRJiSafQaRr1tXsW6NCPADHcSjfBxAEAZKTkxuvXLnyH39//zUoPG1mZtZt9erVY1euXBmHBgxSe3h4eMyCBQsOkyQpQfpzcHDwvHz5suzp06fxBQUFaRKJxNjT03OhWCw2Fc5clZWVj/8uIIPjOEBbsZ4+ffruunXraAsLix4eHh42586dK9e3DEF7YkKTWFvWU1sR0Fd1n168eMHev3//pK+vb7CXl9dkgiDOoCU9r2rZCSx6vDVeB92v0BP4Iwh6AACwsLDAevTo4Q4h5IuKip68jEToYuKFmbPoHPSNSGNdDwW5AllZWSovL69Bhw4d2unt7R2kfaPa9d69e/fQ6tWrVyUlJTXo29sVVSeTyWTPnj27qlAo6jW7yanq6+vp1kLLSLGpqamPv//++48ZhqF/SREgiNLSUp3JXT///HOEk5NTIkmSIoqiDAQfQ7FYbERRlCFFUUZisdiYoigjHMdJIyOjTkK9CMu0sLCwF4KchYWFndD0BwCADRs2bPX391+DQIFhGMW8efMivv766wuVlZU8GjQEQYCcnBx6z549U4ODg8+itALkgrq4uIxxcXEZo61zlMR49+7dM38njsbb29vsvffec42NjX1w/fr1nX5+fp8HBgZ+cPbs2e//l/dGRn393r17V319fYO7dOnS19jYGGtoaHjtRv9V94siroMGDbKwtbUdCAAAd+7cSSH1oR7KY0EdVJhPghLANB9cT3QGEAQBnj17xvj4+CybMWPGrjlz5iwcPHjwJKlU6ohctLKysvS7d++eOXnyZExcXFwlUrw+vxodDw8Pv//NN9/465ql2grBX7x4UXbx4sUfWjsHPajPPvvsAgDgQmszKUmSQCQSAYqiMIqiMAMDAxwtotO+j9DQ0Mk9evToZmJiYiqVSjvL5fIaROqyLAtwHAfJycmNCQkJW0aOHBkqsKy679y5c/GsWbMiBQsvAUEQ4PPPPz/n6ur60goScD+sMBNZeEyzHOPYmwwuyE0QiURg27ZtE5YvX/4TAAA0NTX1/89//rPd399/TWBg4BobG5sjVVVVfFtWzatYTyjiKrSEfu+9VFZWVqJn9yYuD8EwDFer1ZDneRAUFPQJz/NsVVXV44SEhBckMs+1AUaYb6FPWlpaqpuamlr0/Y44BZ7nQXR0dFF0dHSoVCr90sbGhqIoCm9oaGDLy8sZIdnc3teL6Fpn1V4URx1Fuzxd1wsXWWpv7oU6GQpvt7S0QAAABADw+maWH374IR8AkN8WqTl9+vS1Li4uWy0tLQ2trKxMrK2trUxNTU0MDAyAQqH4VSfnOA4EBgaGRkREPFm4cGGU0IIRrn1C7imO42R4ePiE27dvN7yJAIMGOUqnWLVq1Xtz5sz5Jj09PTo+Pv77Y8eOPVIqlTArK+tHNze3SbNmzRq8Y8eONIIgfjcoQAj5pqYm+EevfIcQgv79+w+CEPIymeyZpi+9aYQ8T1EUFhoa+m5gYOAmDMPw7777Llgmk/GkPr5BqVTW1dXVFVZXV+eVl5fnlpaWPi8pKSkqLS2tLC8vr6+srGypqamha2treY0r1aoVISAvYW1trVrXYH7VrQuECwxf1cxubz1tgZ6+LSL1tUt7rxrt9UboGrlcDlNSUpoAAE0AgCoAwHNdpjECJrVaDT755JPj0dHRFz799NOPhw8fvtjKyspJe5MvuVxeGBERMW/9+vW3/qgZ/r8FLmgSQm1Getu9e3fKli1bHLT1vWDBgo+TkpL8g4OD933//fdvNzY2QpFIJNQdRFyZ0NXleZ7X8Ghq7WOmpqa2p06dWqVSqVrEYrHh7du3r+3ZsydTOHHpur61+2JZFvTp04cKDAwMxTAMv3z58kGGYYAw6qTZC0pnmRzHsSzLqhDfJ4hCqVmWVQl5VM1eTb86V2NNq4TnCnUjvF4YSEE606zypkUikUFaWtpdtHndgwcPju/YsSMRx3FApqSkfFdaWppTXFz8/MWLF8XFxcXVZWVljVVVVeq6ujrujwrjoU4hZOuFkSqWZYFwrxTNuoyXoIA6mkDxL/9H52pbGuh6dB6qW3two3qFVo3Q6kE5DcL/haaztuUiTGoUZnkKl29wHAdIktQ70IX1CS02fVtPovoSExPrExMTw6VS6e6+ffua9e7du7NUKrVgWZYtLCysSElJqayqquJby/L+X+MvhBFEAADo0qUL7ubmZtm3b18HBweHHlZWVjYmJiaWxsbGls3NzXVKpbK5vLy88OnTpzlPnz69NGDAgKmrV6/2X7NmTQLSH47jwNDQkEJcGUVRL01XIyMjY5IkJRqgBgAAYGZmZkWSpMTMzKzbhx9++DU618zMbNuePXsyhf3axMTEXHO9YxtLZgCGYWDgwIEG8fHxKRYWFj2ampoqIiIi4tHz0VFmb02kEgp4P1uSJCUWFha2grIxKysrJ3Q/6LilpWV3zX10EugYk0qljppzjZA+kG4MDAzEugIpKPgikUgMCIKgjIyMOhsZGXUG4JeNwhYsWLCxpaXlF3rhvffeW9TWjK2dAYwG9+tYE8JrtDu69iASWkm6rBDh+bosKvR7W1aJrt91rcwV/v8qSVr6BnRre7a+6spqIeACAEBtbS3UgE69rsH7v75qG1lbqJ3Ozs7U1KlT3504ceJSfS/I0yWaFx42L1++PNrCwmLZlStXbt69e7eqvLycS01Nrdy7d+8UAwMDw9LS0mZUZ3JycvqhQ4fmKBSK5sbGRk4TFDhZWlr6jNfseMZxHEsQBHnv3r007X595cqVK2q1eo5cLq/V9YzR0gnUBwYOHNgtLS3tR0tLy5QdO3ZsLCoqYlFbENAlJCQkqFSqOTU1NVUMw0Dh5Hbq1KmIhw8fXsvLy8tBdTQ1NXEREREfGhoaGicnJ6ej44cPH/7c1ta22/379++jYw0NDeyePXsmGxgYGKakpGQCAEBRUVEj2ksmMzPzZf7V/fv38w4dOjSH4zhOLpczAACQm5v7LCUl5buWlpb658+fP7xw4cL1ixcvytC9agDz10AiVNjrAMmruDwjRoyw9PT0dCsuLi4/cuRI3vDhwy179uzZOT09vTg/P185evTo7s+ePZOlpaW12NraEgsWLHjv4cOHeSzLcllZWXUuLi7mRUVFjaWlpUxISIjH8+fPS2pqaporKysVT548UU+cONE2OTm50tnZ2bSpqYl2dHS06tevn9ONGzce3LhxQ44e5qhRo6y8vLwGhoeHX5fJZDwAALi5uUnGjBkzkGVZLjIy8p6zs7PhBx98MLCyslJ27NixvJEjR1rb2dlJS0tLa5VKJVNYWNhkaWlJcRzHW1paGpAkiffs2dM6KyurxNnZ2cbOzq7L0aNHk21tbQ1IksTv3LnTMGPGDIfLly+/aO3tmr9Hx7omCH2LYn+vzJgxwyE6Orrojy533LhxNkuXLg1555135tA03fzo0aP47OzslIKCgny5XN5YV1fXRBAEbmFhYWxhYWHWq1cvR3t7+z4uLi7D7OzshghTGJDU1dXlp6amRp89ezY6NjY2t66uDmr3zT+LV9KepJycnKhx48YNaGpqaj59+vRTuVwO3ySXti1K4S+N9iE0T09Pj05KSoqUy+VF8+fPd0pNTT2cnp4ePXr06E7z5s1zghDC8+fPr9OEcS8VFhYmbdy48X2ZTJY7bNgwi5SUlAOhoaEeP/300+dVVVXZmzdv9svKyopdu3atJwAAqFSqBn9/f+nNmze/OXDgwOySkpJ758+fX0fTdIuzszOFYRjo1auXKDc3N+HMmTMhMTExK5GC9u7dO6WgoCAxOzs7bs+ePZMjIyOnFhYWJhUXF9/duHHj+0VFRclXr17dFhoa6pGXl3dlx44dAdeuXfv6p59++jw6OnppQUFB4uXLlzcvWbKkn1KplN+5c2dfWlrasXXr1nnn5ORcCggIsGZZVm1qaor9GTve/bflj9xhTyQSAR8fH/MffvhhYUxMzMrly5cPcHV1FbeSR/cbMTY2xgYNGmS4ZMmSfj///POXunaJQzs5JiYmRixfvnyAi4uLWJflgRasooWzwsWz2jsyIpJaLBYDsVisMw/GzMwMmz59eveEhIQtWVlZsUFBQf0lEslvgg/aYwbVqe83Xe9A07U5l/a5qM3Cc3UdE0ZZdb3CRvgKF20h/8rO2dLSIk9JSYnHcZwoKSmppWlaefv27Z8ePHhQu2XLlrGXL1/ehGEY5u3tbeHk5OTfqVMnsra2Fs6ePbtm+PDhg0QikaRbt27dhw8fvsTHx6dPZmam0t/ff7ZSqVRp0tHzWZblGxsba1paWppkMtnz27dvX+7evXv/uro6VuNisEqlskGlUikePHiQihCYYRj64cOHF9VqtSI/P/+5i4vLWxEREcvVajU9f/78NXV1dS9+/vnnE7GxsY8nTJhQ6e7uPsrGxqaPXC4v3bdv3+YBAwaMio2NjcrOzi7TbC3xaUlJScUnn3yyKDAwsCY8PPz09u3bAxobG2FriYn/ROnXr5+hpaWl4dq1a78vKSnh2ooY6nJVm5ubYXp6uiI9Pf1RZGTkI0tLyy3Dhg2znThx4vjhw4cvtLGxcdMMPIm3t3eQt7d3kEqlqk9PTz999erVU1evXk3PzMxsam5uhvosFO2/kQcgXOSJpFevXqKhQ4faTp48edqoUaNWAwDA/v37502bNu1LuVyOdl1sM63jVX7T1af05abpehWNrnNbC6Tou+YvBxqGYdSDBg3yMTU1tXZxcelG07RyxIgRs65du3a3e/furvn5+ZkDBw4c0bdvX/vy8vIMtOEQTdMtI0eOnG1nZ9f/8ePHiQ0NDWWlpaUvY+RqtZpGm/yo1WqO53kOx3FcJBIZvP322+8ZGxtbubi4mFZXV9d/9NFHbjiOEz4+Ph9fu3btWp8+fajc3FyaYRjG0dHxnZqamqKePXtWsCzLzJs37ysMw7Djx49vnTp1avDMmTODsrKyVtXW1pa8++67cyorK7NdXFxGZWZmfkqSJDVr1qxPjx8//q2xsXGnmJiYrQUFBUkZGRmKpKSk2ODg4LMHDhwY0RqH808VDUAohEQ9cvnaGzEU7jAAIQR1dXUwNja2LDY2NtLKymrf8OHDu06dOnWar6/vJ5aWlr00pKa5h4fHJx4eHp+EhYWBkpKS1AcPHpy7d+9e4oMHD/JevHjRVF1dzcjlcr3hbYlEAjp37kxaW1uL3dzcurq5ufX18PAYP2TIkNkaK7t+9+7dM3bt2pVQXV3NCzmz/+WkwjdSkGmVnZ0dFxwcPDA2Nvaz7OzsuIyMjFNhYWE+dnZ2RENDQ2lOTs4llmXVn3zyiWtzc3PVhAkTbHv06EHW19cXe3t7m12/fn3Hjh07AsrKytIXLVrkam9vT2ZmZsbs379/Zs+ePUV1dXUFc+fOdUxNTT0cERExqaioKHn48OEWarW6CW1c/fTp0/i1a9d6rl+/3hdCCOfPn+8EAABHjhyZj8x2tMl5VVVVdm1t7fOuXbsSMpksd9GiRa4mJiZYTEzMSplMlnvy5MkglmXVJiYmWFNTU+XUqVPthw4daiSXy4taWlpkW7Zs8QcAgDlz5vSSyWS5HT2h9T7yR7qTut6wCAAAGu6vz/nz59fV1dUVtLb5PE3TLWVlZelZWVmxSUlJkRcvXtxw6dKljRcvXtxw5cqVrWlpacfy8vKuoI2+hXL37t3vFy5c6CJ85c0ffY//08/zryKKIITA1dWV+/DDD5ebmJhIV6xYsdDc3ByOGjVqvo2NjYpl2YbRo0fP7d69e316enrmrVu3TmzZsuUEx3G5KpWqMjU19UGPHj06JSYmJsfHx5/YuHFjlIGBQVl+fv7D4cOHzyRJsiwuLu7Q559/HtnS0lK3devWvW5ubt1mzJjx6aNHj+LXrVt3oKGhgc/Ly0sICQnZYmFhYXnx4sXd1dXV1enp6bV2dnbsyJEjZw8dOtT/s88+C4AQqm/cuHG6qqrqsVQqBSqVqmzcuHGLnzx5crWwsPAZAECWkJCQAACoOH78eMqwYcOsAgIC5tA0/aKqqip79+7da8aMGTPlxIkT16ytrQl7e3uT6Ojomx2Qoj+K9meUiVIB0CBvbGyE6enptSdPnkyMioram5qaelAul2eQJMkZGxtbCdfSEQQhMjEx6WJtbe1ib2//tqOjo0/v3r29HR0dfXr16uVpa2vbXyqV9hKLxaZyubzw3r17UQcOHAhZuXJl0ObNm2MfPHhQo1KpfpU39k+RvxxOdTHs+vZdMTQ0BCqVSucDMjAweLnxlDYpKPSzddWHCLb28iQURb3cZOpV7/XPiuR1yOv3P9QntN/o6OzsLB4wYECXIUOG9HdychpgZ2f3lpWVVU8TExMbIyOjTsgVqqurK5TJZPllZWVPs7Oz09LS0h6lp6dXFxUVsdoW1T/VRfp/GpSo6Do2ug8AAAAASUVORK5CYII=" alt="Zomers Beachclub &amp; Brewery / Het Strand" height="34">
+      <h1>Beloningen &amp; inwisselen</h1>
+    </div>
+    <div>
+      <nav>
+        <a href="dashboard.html" data-page="dashboard">Overzicht</a>
+        <a href="transacties.html" data-page="transacties">Spaarpunten</a>
+        <a href="gift-cards.html" data-page="gift-cards">Kadobonnen</a>
+        <a href="vouchers.html" data-page="vouchers">Vouchers</a>
+        <a href="customers.html" data-page="customers">Gasten</a>
+        <a href="campaigns.html" data-page="campaigns">Campagnes</a>
+        <a href="#" class="active" aria-current="page" data-page="cadeaus">Beloningen</a>
+        <a href="medewerkers.html" data-page="medewerkers">Medewerkers</a>
+        <a href="loyalty-cards.html" data-page="loyalty-cards">Kaarten</a>
+        <a href="financieel.html" data-page="financieel">Financieel</a>
+        <a href="inschrijven.html" data-page="inschrijven">Inschrijven</a>
+        <a href="import.html" data-page="import">Import</a>
+        <a href="instellingen.html" data-page="instellingen">Instellingen</a>
+      </nav>
+      <button class="config-toggle" id="config-toggle" aria-expanded="false" style="margin-left:18px;">Verbinding instellen</button>
+      <button class="config-toggle" id="staff-logout-btn" style="margin-left:8px;" onclick="staffLogout()">Uitloggen</button>
+    </div>
+  </div>
+</header>
+<div class="accent-line"></div>
+
+<div id="config-panel">
+  <label>API-basis-URL<input type="text" id="api-base" placeholder="https://loyalty-platform-live.vercel.app"></label>
+  <label>Organisatie-ID<input type="text" id="org-id" placeholder="ab51a93c-..."></label>
+  <button id="config-save">Opslaan &amp; laden</button>
+</div>
+
+<main>
+  <p class="status-line" id="status-line">Laden…</p>
+
+  <div class="block-panel">
+    <h2>Vaste inwissel-blokgrootte</h2>
+    <p class="sub">Punten worden altijd in dit vaste aantal per keer ingewisseld — bijv. 250, dan 500, 750, enzovoort. Nooit een los bedrag.</p>
+    <div class="block-row">
+      <input type="number" id="block-size-input" step="1" min="1" placeholder="250">
+      <span>punten per blok</span>
+      <button type="button" id="block-size-save">Opslaan</button>
+    </div>
+  </div>
+
+  <div class="block-panel">
+    <h2>Wisselkoers per dag</h2>
+    <p class="sub">Hoeveel punten een euro tegoed kost, per dag van de week — bijv. doordeweeks 25 punten per euro (250 pt = €10), in het weekend 50 punten per euro (250 pt = €5). Zonder regels geldt overal 1 punt = €1.</p>
+
+    <div id="rate-summary-banner"></div>
+    <div id="rate-rule-list"></div>
+
+    <div class="availability-block" style="margin-top: 16px;">
+      <div class="availability-title">Nieuwe wisselkoersregel</div>
+      <div class="form-row">
+        <div class="form-field">
+          <label for="rate-name">Naam</label>
+          <input type="text" id="rate-name" placeholder="Bijv. Weekdagen">
+        </div>
+        <div class="form-field">
+          <label for="rate-points-per-euro">Punten per euro</label>
+          <input type="number" id="rate-points-per-euro" min="0.01" step="0.01" placeholder="25">
+        </div>
+      </div>
+      <div class="day-picker" id="rate-day-picker" style="margin-top: 10px;">
+        <label><input type="checkbox" value="monday"> Ma</label>
+        <label><input type="checkbox" value="tuesday"> Di</label>
+        <label><input type="checkbox" value="wednesday"> Wo</label>
+        <label><input type="checkbox" value="thursday"> Do</label>
+        <label><input type="checkbox" value="friday"> Vr</label>
+        <label><input type="checkbox" value="saturday"> Za</label>
+        <label><input type="checkbox" value="sunday"> Zo</label>
+      </div>
+      <button type="button" class="btn-primary" id="rate-rule-save" style="margin-top: 14px;">Wisselkoersregel opslaan</button>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <h2>Cadeaucatalogus</h2>
+    <button class="new-btn" id="new-item-btn">+ Nieuwe beloning</button>
+  </div>
+
+  <div class="panel" id="new-panel">
+    <form id="item-form">
+      <div class="form-row" style="grid-template-columns: 1.4fr 1fr 1fr;">
+        <div class="form-field">
+          <label for="f-name">Naam</label>
+          <input type="text" id="f-name" required placeholder="Bijv. Gebakje bij de koffie">
+        </div>
+        <div class="form-field">
+          <label for="f-cost">Punten</label>
+          <input type="number" id="f-cost" min="1" step="1" required placeholder="100">
+        </div>
+        <div class="form-field">
+          <label for="f-value">Waarde (€)</label>
+          <input type="number" id="f-value" min="0" step="0.01" required placeholder="2,50">
+        </div>
+        <div class="form-field full">
+          <label for="f-desc">Omschrijving (optioneel)</label>
+          <input type="text" id="f-desc" placeholder="Korte toelichting voor het personeel">
+        </div>
+      </div>
+      <p class="availability-hint">De waarde in euro's is de werkelijke kostprijs van deze beloning — nodig voor de boekhouding en het dagafsluiting-rapport, los van het aantal punten dat de gast betaalt.</p>
+
+      <div class="availability-block">
+        <div class="availability-title">Beschikbaarheid (optioneel)</div>
+        <p class="availability-hint">Laat alles leeg voor "altijd beschikbaar". Kies specifieke dagen en/of een periode om te beperken — bijv. alleen maandag/dinsdag gedurende 4 weken, of alleen op één specifieke datum.</p>
+
+        <div class="day-picker" id="day-picker">
+          <label><input type="checkbox" value="monday"> Ma</label>
+          <label><input type="checkbox" value="tuesday"> Di</label>
+          <label><input type="checkbox" value="wednesday"> Wo</label>
+          <label><input type="checkbox" value="thursday"> Do</label>
+          <label><input type="checkbox" value="friday"> Vr</label>
+          <label><input type="checkbox" value="saturday"> Za</label>
+          <label><input type="checkbox" value="sunday"> Zo</label>
+        </div>
+
+        <div class="form-row" style="margin-top: 12px;">
+          <div class="form-field">
+            <label for="f-valid-from">Geldig vanaf</label>
+            <input type="date" id="f-valid-from">
+          </div>
+          <div class="form-field">
+            <label for="f-valid-until">Geldig tot en met</label>
+            <input type="date" id="f-valid-until">
+          </div>
+        </div>
+        <p class="availability-hint">Tip: voor "alleen op 31 augustus", vul bij beide dezelfde datum in.</p>
+      </div>
+
+      <div class="availability-block">
+        <div class="availability-title">Geldig bij</div>
+        <p class="availability-hint">Laat op "organisatiebreed" staan om overal geldig te zijn, of kies specifieke locatie(s).</p>
+        <div id="reward-location-checkboxes" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn-primary">Cadeau opslaan</button>
+        <button type="button" class="btn-secondary" id="cancel-btn">Annuleren</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="item-list" id="item-list"></div>
+</main>
+
+<footer>Beloningen en de blokgrootte zijn direct bruikbaar in de kassa, bij "Tegoed inwisselen".</footer>
+
+<script>
+  const DEFAULTS = { apiBase: 'https://loyalty-platform-live.vercel.app', orgId: 'ab51a93c-43a2-40cd-8635-f8522f68a8c8' };
+  const PERMISSIONS = 'credit_rules.read,credit_rules.write';
+
+  function getConfig() {
+    return {
+      apiBase: localStorage.getItem('bc_api_base') || DEFAULTS.apiBase,
+      orgId: localStorage.getItem('bc_org_id') || DEFAULTS.orgId,
+    };
+  }
+
+  async function apiGet(path) {
+    const { apiBase } = getConfig();
+    const res = await fetch(apiBase + path, { headers: { Authorization: 'Bearer ' + getStaffToken() } });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
+    if (!res.ok) throw new Error('API-fout: ' + res.status);
+    return res.json();
+  }
+
+  async function apiSend(method, path, body) {
+    const { apiBase } = getConfig();
+    const res = await fetch(apiBase + path, {
+      method,
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getStaffToken() },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(errBody.message ? [].concat(errBody.message).join(', ') : 'API-fout: ' + res.status);
+    }
+    return res.json();
+  }
+
+  const els = {
+    statusLine: document.getElementById('status-line'),
+    blockSizeInput: document.getElementById('block-size-input'),
+    blockSizeSave: document.getElementById('block-size-save'),
+    itemList: document.getElementById('item-list'),
+    newBtn: document.getElementById('new-item-btn'),
+    panel: document.getElementById('new-panel'),
+    form: document.getElementById('item-form'),
+    cancelBtn: document.getElementById('cancel-btn'),
+    configToggle: document.getElementById('config-toggle'),
+    configPanel: document.getElementById('config-panel'),
+    configSave: document.getElementById('config-save'),
+    apiBaseInput: document.getElementById('api-base'),
+    orgIdInput: document.getElementById('org-id'),
+    rateRuleList: document.getElementById('rate-rule-list'),
+    rateName: document.getElementById('rate-name'),
+    ratePointsPerEuro: document.getElementById('rate-points-per-euro'),
+    rateRuleSave: document.getElementById('rate-rule-save'),
+  };
+
+  const DAY_LABELS_SHORT = { monday: 'ma', tuesday: 'di', wednesday: 'wo', thursday: 'do', friday: 'vr', saturday: 'za', sunday: 'zo' };
+
+  function renderRateSummaryBanner(rules) {
+    const el = document.getElementById('rate-summary-banner');
+    if (!el) return;
+    if (rules.length === 0) {
+      el.innerHTML = '';
+      return;
+    }
+    const activeBlockSize = parseInt(els.blockSizeInput.value, 10) || 250;
+    el.innerHTML = rules.map((rule) => {
+      const dayList = (rule.appliesOnDays || []).map((d) => DAY_LABELS_SHORT[d] || d);
+      const days = dayList.length === 0 ? 'elke dag'
+        : dayList.length === 1 ? dayList[0]
+        : `${dayList[0]}–${dayList[dayList.length - 1]}`;
+      const euro = (activeBlockSize / Number(rule.pointsPerEuro)).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
+      return `<span class="rate-summary-chip">${days}: ${activeBlockSize} pt = €${euro}</span>`;
+    }).join('');
+  }
+
+  function renderRateRules(rules) {
+    renderRateSummaryBanner(rules);
+    if (rules.length === 0) {
+      els.rateRuleList.innerHTML = '<div class="empty-note">Geen wisselkoersregels — overal geldt 1 punt = €1.</div>';
+      return;
+    }
+    const activeBlockSize = parseInt(els.blockSizeInput.value, 10) || 250;
+    els.rateRuleList.innerHTML = rules.map((rule) => {
+      const days = (rule.appliesOnDays || []).map((d) => DAY_LABELS_SHORT[d] || d).join('/') || 'elke dag';
+      const exampleEuro = (activeBlockSize / Number(rule.pointsPerEuro)).toLocaleString('nl-NL', { minimumFractionDigits: 2 });
+      return `<div class="rate-rule-row">
+        <div>
+          <div class="name">${rule.name}</div>
+          <div class="days">${days}</div>
+        </div>
+        <div class="right">
+          <div style="text-align:right;">
+            <div class="rate">${rule.pointsPerEuro} pt/€</div>
+            <div class="example">${activeBlockSize} pt = €${exampleEuro}</div>
+          </div>
+          <button type="button" data-id="${rule.id}" class="rate-delete-btn">Verwijderen</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    els.rateRuleList.querySelectorAll('.rate-delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Deze wisselkoersregel verwijderen?')) return;
+        btn.disabled = true;
+        btn.textContent = 'Bezig…';
+        const { orgId } = getConfig();
+        await apiSend('DELETE', '/organizations/' + orgId + '/redemption-rate-rules/' + btn.dataset.id);
+        loadAll();
+      });
+    });
+  }
+
+  async function loadAll() {
+    els.statusLine.textContent = 'Laden…';
+    els.statusLine.classList.remove('error');
+    try {
+      const { orgId } = getConfig();
+      const [blockSizeResult, items, rateRules] = await Promise.all([
+        apiGet('/organizations/' + orgId + '/redemption-block-size'),
+        apiGet('/organizations/' + orgId + '/reward-catalog'),
+        apiGet('/organizations/' + orgId + '/redemption-rate-rules'),
+      ]);
+      els.blockSizeInput.value = blockSizeResult.blockSize || '';
+      renderItems(items);
+      renderRateRules(rateRules);
+      els.statusLine.textContent = items.length + ' beloning(en) in de catalogus';
+    } catch (err) {
+      els.statusLine.textContent = 'Kon gegevens niet laden: ' + err.message;
+      els.statusLine.classList.add('error');
+    }
+  }
+
+  const DAY_LABELS = { monday: 'ma', tuesday: 'di', wednesday: 'wo', thursday: 'do', friday: 'vr', saturday: 'za', sunday: 'zo' };
+
+  function formatAvailability(item) {
+    const parts = [];
+    if (item.availableDays && item.availableDays.length > 0) {
+      parts.push('alleen ' + item.availableDays.map((d) => DAY_LABELS[d] || d).join('/'));
+    }
+    if (item.validFrom && item.validUntil && item.validFrom === item.validUntil) {
+      parts.push('alleen op ' + new Date(item.validFrom).toLocaleDateString('nl-NL'));
+    } else {
+      if (item.validFrom) parts.push('vanaf ' + new Date(item.validFrom).toLocaleDateString('nl-NL'));
+      if (item.validUntil) parts.push('t/m ' + new Date(item.validUntil).toLocaleDateString('nl-NL'));
+    }
+    if (parts.length === 0) return null;
+    const availableNow = item.isCurrentlyAvailable;
+    return `<span class="availability-badge" style="${availableNow ? '' : 'color:var(--coral);background:rgba(232,96,74,0.12);'}">${parts.join(', ')}${availableNow ? '' : ' — nu niet beschikbaar'}</span>`;
+  }
+
+  function formatRewardLocationBadge(item) {
+    if (!item.locationIds || item.locationIds.length === 0) return '';
+    const names = item.locationIds.map((id) => {
+      const loc = rewardLocations.find((l) => l.id === id);
+      return loc ? loc.name : null;
+    }).filter(Boolean);
+    if (names.length === 0) return '';
+    return `<div style="font-size:11px;color:var(--muted);margin-top:2px;">Alleen bij ${names.join(' & ')}</div>`;
+  }
+
+  function renderItems(items) {
+    if (items.length === 0) {
+      els.itemList.innerHTML = '<div class="empty-note">Nog geen beloningen. Voeg de eerste toe met de knop hierboven.</div>';
+      return;
+    }
+    els.itemList.innerHTML = items.map((item) => `
+      <div class="item-row ${item.isActive ? '' : 'inactive'}">
+        <div>
+          <div class="name">${item.name}</div>
+          ${item.description ? `<div class="desc">${item.description}</div>` : ''}
+          ${formatAvailability(item) || ''}
+          ${formatRewardLocationBadge(item)}
+        </div>
+        <div class="right">
+          <div style="text-align:right;">
+            <div class="cost">${item.pointsCost} pt</div>
+            <div style="font-size:11px;color:var(--muted);">€${Number(item.euroValue).toFixed(2)} waarde</div>
+          </div>
+          <button type="button" data-id="${item.id}" data-active="${item.isActive}" class="toggle-btn">${item.isActive ? 'Deactiveren' : 'Activeren'}</button>
+          <button type="button" data-id="${item.id}" class="delete-btn">Verwijderen</button>
+        </div>
+      </div>
+    `).join('');
+
+    els.itemList.querySelectorAll('.toggle-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        btn.disabled = true;
+        const { orgId } = getConfig();
+        await apiSend('PATCH', '/organizations/' + orgId + '/reward-catalog/' + btn.dataset.id, {
+          isActive: btn.dataset.active !== 'true',
+        });
+        loadAll();
+      });
+    });
+    els.itemList.querySelectorAll('.delete-btn').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Deze beloning definitief verwijderen?')) return;
+        btn.disabled = true;
+        btn.textContent = 'Bezig…';
+        const { orgId } = getConfig();
+        await apiSend('DELETE', '/organizations/' + orgId + '/reward-catalog/' + btn.dataset.id);
+        loadAll();
+      });
+    });
+  }
+
+  els.blockSizeSave.addEventListener('click', async () => {
+    const size = parseInt(els.blockSizeInput.value, 10);
+    if (!size || size < 1) {
+      alert('Vul een geldig aantal punten in.');
+      return;
+    }
+    els.blockSizeSave.disabled = true;
+    const originalBlockSizeLabel = els.blockSizeSave.textContent;
+    els.blockSizeSave.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      await apiSend('POST', '/organizations/' + orgId + '/credit-rules', { redemptionBlockSize: size });
+      els.statusLine.textContent = 'Blokgrootte opgeslagen: ' + size + ' punten.';
+      els.statusLine.classList.remove('error');
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    } finally {
+      els.blockSizeSave.disabled = false;
+      els.blockSizeSave.textContent = originalBlockSizeLabel;
+    }
+  });
+
+  // -- Locaties (voor de "geldig bij"-checkboxen) — hergebruikt het
+  // voucher-scoped endpoint (geen aparte 'locations.read'-permissie
+  // nodig, hangt aan 'credit_rules.write' dat deze pagina toch al
+  // vereist). ----------------------------------------------------------
+  let rewardLocations = [];
+  async function loadRewardLocations() {
+    try {
+      const { orgId } = getConfig();
+      rewardLocations = await apiGet('/organizations/' + orgId + '/vouchers/locations');
+    } catch (err) {
+      rewardLocations = [];
+    }
+    const container = document.getElementById('reward-location-checkboxes');
+    if (rewardLocations.length === 0) {
+      container.innerHTML = '<div class="availability-hint" style="margin:0;">Geen locaties gevonden — beloning wordt organisatiebreed geldig.</div>';
+      return;
+    }
+    container.innerHTML = '<label><input type="checkbox" id="f-loc-all" checked> Organisatiebreed (alle locaties)</label>'
+      + rewardLocations.map((l) => '<label class="reward-loc-specific" style="display:none;"><input type="checkbox" class="f-loc-checkbox" value="' + l.id + '"> ' + l.name + '</label>').join('');
+    document.getElementById('f-loc-all').addEventListener('change', function () {
+      document.querySelectorAll('.reward-loc-specific').forEach((el) => { el.style.display = this.checked ? 'none' : 'flex'; });
+    });
+  }
+  function getSelectedRewardLocationIds() {
+    const allChecked = document.getElementById('f-loc-all')?.checked;
+    if (allChecked || !rewardLocations.length) return [];
+    return Array.from(document.querySelectorAll('.f-loc-checkbox:checked')).map((el) => el.value);
+  }
+  function setSelectedRewardLocationIds(ids) {
+    const allBox = document.getElementById('f-loc-all');
+    if (!allBox) return;
+    const hasSpecific = ids && ids.length > 0;
+    allBox.checked = !hasSpecific;
+    document.querySelectorAll('.reward-loc-specific').forEach((el) => { el.style.display = hasSpecific ? 'flex' : 'none'; });
+    document.querySelectorAll('.f-loc-checkbox').forEach((el) => { el.checked = hasSpecific && ids.includes(el.value); });
+  }
+
+  els.newBtn.addEventListener('click', () => els.panel.classList.add('open'));
+  els.cancelBtn.addEventListener('click', () => els.panel.classList.remove('open'));
+
+  els.form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const submitBtn = els.form.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    const originalSubmitLabel = submitBtn.textContent;
+    submitBtn.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      const selectedDays = Array.from(document.querySelectorAll('#day-picker input:checked')).map((cb) => cb.value);
+      const validFrom = document.getElementById('f-valid-from').value || undefined;
+      const validUntil = document.getElementById('f-valid-until').value || undefined;
+
+      await apiSend('POST', '/organizations/' + orgId + '/reward-catalog', {
+        name: document.getElementById('f-name').value,
+        pointsCost: parseInt(document.getElementById('f-cost').value, 10),
+        euroValue: parseFloat(document.getElementById('f-value').value),
+        description: document.getElementById('f-desc').value || undefined,
+        availableDays: selectedDays.length > 0 ? selectedDays : undefined,
+        locationIds: getSelectedRewardLocationIds(),
+        validFrom,
+        validUntil,
+      });
+      els.panel.classList.remove('open');
+      els.form.reset();
+      setSelectedRewardLocationIds([]);
+      loadAll();
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalSubmitLabel;
+    }
+  });
+
+  els.configToggle.addEventListener('click', () => {
+    const open = els.configPanel.classList.toggle('open');
+    els.configToggle.setAttribute('aria-expanded', String(open));
+    if (open) {
+      const { apiBase, orgId } = getConfig();
+      els.apiBaseInput.value = apiBase;
+      els.orgIdInput.value = orgId;
+    }
+  });
+  els.configSave.addEventListener('click', async () => {
+    els.configSave.disabled = true;
+    const originalConfigSaveLabel = els.configSave.textContent;
+    els.configSave.textContent = 'Bezig…';
+    try {
+      localStorage.setItem('bc_api_base', els.apiBaseInput.value.trim() || DEFAULTS.apiBase);
+      localStorage.setItem('bc_org_id', els.orgIdInput.value.trim() || DEFAULTS.orgId);
+      els.configPanel.classList.remove('open');
+      await loadAll();
+    } finally {
+      els.configSave.disabled = false;
+      els.configSave.textContent = originalConfigSaveLabel;
+    }
+  });
+
+  els.rateRuleSave.addEventListener('click', async () => {
+    const name = els.rateName.value.trim();
+    const pointsPerEuro = parseFloat(els.ratePointsPerEuro.value);
+    const selectedDays = Array.from(document.querySelectorAll('#rate-day-picker input:checked')).map((cb) => cb.value);
+
+    if (!name || !pointsPerEuro || pointsPerEuro <= 0) {
+      alert('Vul een naam en een geldig aantal punten per euro in.');
+      return;
+    }
+    if (selectedDays.length === 0) {
+      alert('Kies minstens één dag waarop deze regel geldt.');
+      return;
+    }
+
+    els.rateRuleSave.disabled = true;
+    const originalRateRuleLabel = els.rateRuleSave.textContent;
+    els.rateRuleSave.textContent = 'Bezig…';
+    try {
+      const { orgId } = getConfig();
+      await apiSend('POST', '/organizations/' + orgId + '/redemption-rate-rules', {
+        name,
+        pointsPerEuro,
+        appliesOnDays: selectedDays,
+      });
+      els.rateName.value = '';
+      els.ratePointsPerEuro.value = '';
+      document.querySelectorAll('#rate-day-picker input:checked').forEach((cb) => { cb.checked = false; });
+      loadAll();
+    } catch (err) {
+      alert('Opslaan mislukt: ' + err.message);
+    } finally {
+      els.rateRuleSave.disabled = false;
+      els.rateRuleSave.textContent = originalRateRuleLabel;
+    }
+  });
+
+  async function bootAfterLogin() {
+    await loadRewardLocations();
+    loadAll();
+  }
+</script>
+
+</body>
+</html>
