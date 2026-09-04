@@ -752,6 +752,15 @@
     }, 300);
   });
 
+  // Enter in het redenveld geeft de voucher meteen uit — zelfde gedrag
+  // als op "Voucher uitgeven" klikken.
+  document.getElementById('issue-reason').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.getElementById('issue-voucher-btn').click();
+    }
+  });
+
   document.getElementById('issue-voucher-btn').addEventListener('click', async () => {
     const btn = document.getElementById('issue-voucher-btn');
     const errorEl = document.getElementById('issue-error');

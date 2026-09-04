@@ -1169,6 +1169,17 @@
     }
   });
 
+  // Enter in het token- of bedragveld doet hetzelfde als op de knop
+  // drukken — mensen zijn dat gewend vanuit andere formulieren.
+  [gcEls.tokenInput, gcEls.amountInput].forEach((input) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !gcEls.confirmBtn.disabled) {
+        e.preventDefault();
+        gcEls.confirmBtn.click();
+      }
+    });
+  });
+
   // -- Voucher inwisselen — losse lookup + directe inwissel-flow, geen
   // bedrag nodig (een voucher is een op-zichzelfstaand voordeel, geen
   // geldbedrag zoals tegoed/kadobonsaldo hierboven). ------------------
@@ -1233,6 +1244,14 @@
       vcEls.confirmBtn.disabled = false;
     } finally {
       vcEls.confirmBtn.textContent = 'Voucher inwisselen';
+    }
+  });
+
+  // Enter in het tokenveld doet hetzelfde als op de knop drukken.
+  vcEls.tokenInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !vcEls.confirmBtn.disabled) {
+      e.preventDefault();
+      vcEls.confirmBtn.click();
     }
   });
 </script>

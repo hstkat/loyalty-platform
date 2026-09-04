@@ -517,6 +517,15 @@
 
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+  // Enter in het aangepaste-bedragveld maakt de kadobon meteen aan —
+  // zelfde gedrag als op "Kadobon aanmaken" klikken.
+  els.customAmountInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      els.issueBtn.click();
+    }
+  });
+
   els.issueBtn.addEventListener('click', async () => {
     const amount = selectedAmount || parseFloat(els.customAmountInput.value);
     if (!amount || amount < 10) { alert('Minimaal bedrag is €10 (i.v.m. transactiekosten).'); return; }
@@ -1011,6 +1020,17 @@
     } finally {
       gcRedeemEls.confirmBtn.textContent = 'Kadobon-betaling bevestigen';
     }
+  });
+
+  // Enter in het token- of bedragveld doet hetzelfde als op de knop
+  // drukken — mensen zijn dat gewend vanuit andere formulieren.
+  [gcRedeemEls.tokenInput, gcRedeemEls.amountInput].forEach((input) => {
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !gcRedeemEls.confirmBtn.disabled) {
+        e.preventDefault();
+        gcRedeemEls.confirmBtn.click();
+      }
+    });
   });
 
   function bootAfterLogin() {
