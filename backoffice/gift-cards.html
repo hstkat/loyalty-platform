@@ -545,8 +545,8 @@
       let resultHtml = `<div>Kadobon <strong>${result.giftCardNumber}</strong> aangemaakt — saldo €${amount.toFixed(2)}.</div>
         <div class="warn" style="margin-top:8px;">Token (eenmalig zichtbaar): <code>${result.token}</code></div>
         <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
-          <button type="button" class="btn-secondary print-sticker-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}">🖨️ QR + code printen (62×29mm)</button>
-          <button type="button" class="btn-secondary print-sticker-large-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}">🖨️ QR + code printen (89×28mm, LW-650PRO)</button>
+          <button type="button" class="btn-primary print-sticker-large-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}">🖨️ QR + code printen (LW-650PRO)</button>
+          <button type="button" class="btn-secondary print-sticker-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}">🖨️ QR + code printen (62×29mm, QL-700)</button>
         </div>`;
 
       if (recipientEmail) {
@@ -923,7 +923,7 @@
     openStickerPrintWindow(buildGiftCardStickerHtml({
       cardNumber, token, viewUrl, expiryLabel,
       widthMm: 89, heightMm: 28, qrSizeMm: 20,
-      cardNumberPx: 9, tokenPx: 18, issuedDatePx: 7,
+      cardNumberPx: 9, tokenPx: 18, issuedDatePx: 11,
       gapMm: 2.5, paddingMm: 1.5,
     }));
   }
