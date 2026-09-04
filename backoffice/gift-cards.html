@@ -544,7 +544,10 @@
 
       let resultHtml = `<div>Kadobon <strong>${result.giftCardNumber}</strong> aangemaakt — saldo €${amount.toFixed(2)}.</div>
         <div class="warn" style="margin-top:8px;">Token (eenmalig zichtbaar): <code>${result.token}</code></div>
-        <button type="button" class="btn-secondary print-sticker-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}" style="margin-top:8px;">🖨️ QR + code printen (sticker)</button>`;
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;">
+          <button type="button" class="btn-secondary print-sticker-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}">🖨️ QR + code printen (62×29mm)</button>
+          <button type="button" class="btn-secondary print-sticker-large-btn" data-card-number="${result.giftCardNumber}" data-token="${result.token}" data-expires-at="${result.expiresAt || ''}">🖨️ QR + code printen (89×28mm, LW-650PRO)</button>
+        </div>`;
 
       if (recipientEmail) {
         try {
@@ -566,6 +569,10 @@
       const printBtn = els.issueResult.querySelector('.print-sticker-btn');
       if (printBtn) {
         printBtn.addEventListener('click', () => printGiftCardSticker(printBtn.dataset.cardNumber, printBtn.dataset.token, new Date(), printBtn.dataset.expiresAt ? new Date(printBtn.dataset.expiresAt) : null));
+      }
+      const printBtnLarge = els.issueResult.querySelector('.print-sticker-large-btn');
+      if (printBtnLarge) {
+        printBtnLarge.addEventListener('click', () => printGiftCardStickerLarge(printBtnLarge.dataset.cardNumber, printBtnLarge.dataset.token, new Date(), printBtnLarge.dataset.expiresAt ? new Date(printBtnLarge.dataset.expiresAt) : null));
       }
 
       els.recipientNameInput.value = '';
@@ -818,60 +825,28 @@
   }
 
   /**
-   * Opent een klein, print-klaar venster met een grote QR-code (die naar
-   * de kaartweergave-pagina /g/:token wijst — hetzelfde adres als in de
-   * e-mail aan de ontvanger) plus het kaartnummer in leesbare tekst.
-   * Bedoeld om direct op een sticker te printen en op een fysieke kaart
-   * te plakken. Het RUWE token staat bewust NIET los als tekst op de
-   * sticker — alleen versleuteld in de QR — zodat iemand die de sticker
-   * ziet 'm niet zomaar kan overtypen/doorgeven; scannen is de enige weg.
+   * Bouwt de print-HTML voor een sticker op een gegeven label-formaat.
+   * Gedeeld door beide printfuncties hieronder zodat de layout-logica
+   * (QR + kaartnummer + token + vervaldatum) niet dubbel hoeft te
+   * worden onderhouden — alleen de afmetingen/lettergroottes verschillen.
    */
-  /**
-   * Formaat exact afgestemd op de Brother QL-700 met 62×29mm-etiketten
-   * (de gangbare DK-11209-rol). @page zet het papierformaat zodat de
-   * printer/browser-printdialoog automatisch het juiste formaat
-   * aanstuurt — controleer bij het printen wel of in het printvenster
-   * zelf ook "62 x 29mm"/DK-11209 als mediaformaat geselecteerd staat,
-   * dat zet de browser niet altijd automatisch goed.
-   */
-  /**
-   * Formaat exact afgestemd op de Brother QL-700 met 62×29mm-etiketten
-   * (de gangbare DK-11209-rol). @page zet het papierformaat zodat de
-   * printer/browser-printdialoog automatisch het juiste formaat
-   * aanstuurt — controleer bij het printen wel of in het printvenster
-   * zelf ook "62 x 29mm"/DK-11209 als mediaformaat geselecteerd staat,
-   * dat zet de browser niet altijd automatisch goed.
-   *
-   * Het token staat BEWUST ook als (groot, goed leesbaar) overtypbare
-   * tekst op de sticker — zonder die tekst is de kaart onbruikbaar zodra
-   * de QR een keer niet scant (bijv. door slijtage), want de kassa zoekt
-   * de kaart op via dit token, niet via het kaartnummer.
-   */
-  function printGiftCardSticker(cardNumber, token, issuedAt, expiresAt) {
-    const { apiBase } = getConfig();
-    const viewUrl = apiBase + '/g/' + token;
+  function buildGiftCardStickerHtml({ cardNumber, token, viewUrl, expiryLabel, widthMm, heightMm, qrSizeMm, cardNumberPx, tokenPx, issuedDatePx, gapMm, paddingMm }) {
     const qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=' + encodeURIComponent(viewUrl);
-    const expiryLabel = expiresAt instanceof Date && !isNaN(expiresAt)
-      ? 'Geldig tot: ' + expiresAt.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
-      : '';
-
-    const printWindow = window.open('', '_blank', 'width=420,height=300');
-    if (!printWindow) { alert('Pop-up geblokkeerd — sta pop-ups toe voor deze pagina om te kunnen printen.'); return; }
-    printWindow.document.write(`<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="nl">
 <head>
 <meta charset="UTF-8">
 <title>Sticker ${cardNumber}</title>
 <style>
-  @page { size: 62mm 29mm; margin: 0; }
+  @page { size: ${widthMm}mm ${heightMm}mm; margin: 0; }
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
-  body { width: 62mm; height: 29mm; font-family: -apple-system, 'Inter', sans-serif; display: flex; align-items: center; gap: 1.5mm; padding: 1mm; }
-  img { width: 17mm; height: 17mm; flex-shrink: 0; }
+  body { width: ${widthMm}mm; height: ${heightMm}mm; font-family: -apple-system, 'Inter', sans-serif; display: flex; align-items: center; gap: ${gapMm}mm; padding: ${paddingMm}mm; }
+  img { width: ${qrSizeMm}mm; height: ${qrSizeMm}mm; flex-shrink: 0; }
   .text-block { display: flex; flex-direction: column; justify-content: center; overflow: hidden; min-width: 0; width: 100%; }
-  .card-number { font-size: 8px; font-weight: 600; letter-spacing: 0.02em; font-family: 'Courier New', monospace; line-height: 1.15; color: #555; }
-  .token { font-size: 15px; font-weight: 700; color: #000; font-family: 'Courier New', monospace; line-height: 1.2; margin-top: 1mm; word-break: break-all; }
-  .issued-date { font-size: 6px; color: #777; margin-top: 1mm; }
+  .card-number { font-size: ${cardNumberPx}px; font-weight: 600; letter-spacing: 0.02em; font-family: 'Courier New', monospace; line-height: 1.15; color: #555; }
+  .token { font-size: ${tokenPx}px; font-weight: 700; color: #000; font-family: 'Courier New', monospace; line-height: 1.2; margin-top: 1mm; word-break: break-all; }
+  .issued-date { font-size: ${issuedDatePx}px; color: #777; margin-top: 1mm; }
   button { padding: 8px 16px; border-radius: 6px; border: none; background: #1b3a5c; color: #fff; font-weight: 600; font-size: 13px; cursor: pointer; }
   @media print { .print-controls { display: none; } }
   @media screen { body { border: 1px dashed #ccc; margin: 20px auto; } }
@@ -884,10 +859,73 @@
     <div class="token">${token}</div>
     <div class="issued-date">${expiryLabel}</div>
   </div>
-  <div class="print-controls" style="position:fixed;top:32mm;left:0;"><button onclick="window.print()">Printen</button></div>
+  <div class="print-controls" style="position:fixed;top:${heightMm + 3}mm;left:0;"><button onclick="window.print()">Printen</button></div>
 </body>
-</html>`);
+</html>`;
+  }
+
+  /**
+   * Opent een klein, print-klaar venster met een grote QR-code (die naar
+   * de kaartweergave-pagina /g/:token wijst — hetzelfde adres als in de
+   * e-mail aan de ontvanger) plus het kaartnummer in leesbare tekst.
+   * Bedoeld om direct op een sticker te printen en op een fysieke kaart
+   * te plakken. Het RUWE token staat bewust NIET los als tekst op de
+   * sticker — alleen versleuteld in de QR — zodat iemand die de sticker
+   * ziet 'm niet zomaar kan overtypen/doorgeven; scannen is de enige weg.
+   *
+   * Het token staat BEWUST ook als (groot, goed leesbaar) overtypbare
+   * tekst op de sticker — zonder die tekst is de kaart onbruikbaar zodra
+   * de QR een keer niet scant (bijv. door slijtage), want de kassa zoekt
+   * de kaart op via dit token, niet via het kaartnummer.
+   */
+  function openStickerPrintWindow(html) {
+    const printWindow = window.open('', '_blank', 'width=420,height=300');
+    if (!printWindow) { alert('Pop-up geblokkeerd — sta pop-ups toe voor deze pagina om te kunnen printen.'); return; }
+    printWindow.document.write(html);
     printWindow.document.close();
+  }
+
+  /**
+   * Formaat exact afgestemd op de Brother QL-700 met 62×29mm-etiketten
+   * (de gangbare DK-11209-rol). @page zet het papierformaat zodat de
+   * printer/browser-printdialoog automatisch het juiste formaat
+   * aanstuurt — controleer bij het printen wel of in het printvenster
+   * zelf ook "62 x 29mm"/DK-11209 als mediaformaat geselecteerd staat,
+   * dat zet de browser niet altijd automatisch goed.
+   */
+  function printGiftCardSticker(cardNumber, token, issuedAt, expiresAt) {
+    const { apiBase } = getConfig();
+    const viewUrl = apiBase + '/g/' + token;
+    const expiryLabel = expiresAt instanceof Date && !isNaN(expiresAt)
+      ? 'Geldig tot: ' + expiresAt.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+    openStickerPrintWindow(buildGiftCardStickerHtml({
+      cardNumber, token, viewUrl, expiryLabel,
+      widthMm: 62, heightMm: 29, qrSizeMm: 17,
+      cardNumberPx: 8, tokenPx: 15, issuedDatePx: 6,
+      gapMm: 1.5, paddingMm: 1,
+    }));
+  }
+
+  /**
+   * Formaat exact afgestemd op de LW-650PRO met 89×28mm-etiketten.
+   * Zelfde @page-aanpak als bij de QL-700 hierboven — controleer bij het
+   * printen ook hier of het printvenster het juiste labelformaat/de
+   * juiste rol heeft geselecteerd, de browser zet dat niet altijd
+   * automatisch goed.
+   */
+  function printGiftCardStickerLarge(cardNumber, token, issuedAt, expiresAt) {
+    const { apiBase } = getConfig();
+    const viewUrl = apiBase + '/g/' + token;
+    const expiryLabel = expiresAt instanceof Date && !isNaN(expiresAt)
+      ? 'Geldig tot: ' + expiresAt.toLocaleDateString('nl-NL', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      : '';
+    openStickerPrintWindow(buildGiftCardStickerHtml({
+      cardNumber, token, viewUrl, expiryLabel,
+      widthMm: 89, heightMm: 28, qrSizeMm: 20,
+      cardNumberPx: 9, tokenPx: 18, issuedDatePx: 7,
+      gapMm: 2.5, paddingMm: 1.5,
+    }));
   }
 
   // -- Kadobon afboeken — losse token-opzoek + inwissel-flow, volledig
