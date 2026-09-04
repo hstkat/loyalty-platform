@@ -1100,9 +1100,19 @@
   // Kadobonnen-tabblad.
 
   let gcLookupTimeout = null;
+
+  // De sticker-QR bevat de volledige weergave-URL (.../g/<token>), niet
+  // het kale token — een scanner plakt dus vaak de hele URL in dit veld.
+  // Herken en strip dat automatisch, zodat scannen altijd werkt.
+  function extractGiftCardToken(raw) {
+    const trimmed = raw.trim();
+    const match = trimmed.match(/\/g\/([^/?#\s]+)\s*$/);
+    return match ? match[1] : trimmed;
+  }
+
   gcEls.tokenInput.addEventListener('input', () => {
     clearTimeout(gcLookupTimeout);
-    const token = gcEls.tokenInput.value.trim();
+    const token = extractGiftCardToken(gcEls.tokenInput.value);
     gcEls.amountInput.disabled = true;
     gcEls.confirmBtn.disabled = true;
     if (!token) { gcEls.lookupResult.textContent = ''; return; }
