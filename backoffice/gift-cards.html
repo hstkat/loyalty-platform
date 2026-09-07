@@ -905,10 +905,36 @@
    * de kaart op via dit token, niet via het kaartnummer.
    */
   function openStickerPrintWindow(html) {
-    const printWindow = window.open('', '_blank', 'width=420,height=300');
-    if (!printWindow) { alert('Pop-up geblokkeerd — sta pop-ups toe voor deze pagina om te kunnen printen.'); return; }
-    printWindow.document.write(html);
-    printWindow.document.close();
+    // Gebruik een verborgen iframe i.p.v. window.open('_blank', ...) —
+    // veel kassa-/kiosk-browsers (o.a. op Sunmi-terminals) staan geen
+    // nieuw venster/tabblad toe, waardoor window.open() stilzwijgend
+    // niets doet (geen foutmelding, geen venster, geen print-dialoog).
+    // Een iframe binnen dezelfde pagina werkt wél op zulke browsers.
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+
+    const cleanup = () => { if (iframe.parentNode) iframe.parentNode.removeChild(iframe); };
+
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow.focus();
+        iframe.contentWindow.print();
+      } catch (err) {
+        alert('Printen mislukt: ' + err.message);
+      }
+      setTimeout(cleanup, 2000);
+    };
+
+    const doc = iframe.contentWindow.document;
+    doc.open();
+    doc.write(html);
+    doc.close();
   }
 
   /**
