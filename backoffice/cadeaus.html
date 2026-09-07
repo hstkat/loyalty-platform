@@ -708,7 +708,8 @@
     });
   }
   function getSelectedRewardLocationIds() {
-    const allChecked = document.getElementById('f-loc-all')?.checked;
+    const fLocAllEl = document.getElementById('f-loc-all');
+    const allChecked = fLocAllEl && fLocAllEl.checked;
     if (allChecked || !rewardLocations.length) return [];
     return Array.from(document.querySelectorAll('.f-loc-checkbox:checked')).map((el) => el.value);
   }

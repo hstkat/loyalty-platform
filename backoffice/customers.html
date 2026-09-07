@@ -540,8 +540,8 @@
         </div>
 
         <div class="stat-strip five-col">
-          <div class="tile"><div class="label">Bezoeken</div><div class="value">${customer.visitCount ?? 0}</div></div>
-          <div class="tile"><div class="label">Totale besteding</div><div class="value">€${Number(customer.lifetimeSpend ?? 0).toLocaleString('nl-NL', { minimumFractionDigits: 2 })}</div></div>
+          <div class="tile"><div class="label">Bezoeken</div><div class="value">${customer.visitCount || 0}</div></div>
+          <div class="tile"><div class="label">Totale besteding</div><div class="value">€${Number(customer.lifetimeSpend || 0).toLocaleString('nl-NL', { minimumFractionDigits: 2 })}</div></div>
           <div class="tile"><div class="label">Laatste bezoek</div><div class="value">${formatDate(customer.lastVisitAt)}</div></div>
           <div class="tile"><div class="label">Totaal gespaard</div><div class="value">${points(wallet ? wallet.lifetimeEarned : customer.lifetimeEarned)}</div></div>
           <div class="tile"><div class="label">Geboortedatum</div><div class="value">${customer.dateOfBirth ? formatDate(customer.dateOfBirth) : '—'}</div></div>

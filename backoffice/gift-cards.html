@@ -120,6 +120,9 @@
 </div>
 <script>
   function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  // Vervangt `el?.addEventListener(...)` (niet ondersteund op oudere
+  // kassa-browsers, o.a. Sunmi) — bindt alleen als het element bestaat.
+  function bindClick(id, handler) { const el = document.getElementById(id); if (el) el.addEventListener('click', handler); }
   function setStaffToken(t) { localStorage.setItem('staff_token', t); }
   function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
   function staffLogout() { clearStaffToken(); location.reload(); }
@@ -709,7 +712,7 @@
       <div class="detail-tile"><div class="label">Persoonlijke boodschap</div><div class="value">${card.personalMessage || '—'}</div></div>
       <div class="detail-tile"><div class="label">Uitgegeven op</div><div class="value">${issuedDate}</div></div>
       <div class="detail-tile"><div class="label">Geldig tot</div><div class="value">${expiryDate}</div></div>
-      ${card.molliePaymentId ? `<div class="detail-tile"><div class="label">Website</div><div class="value">${card.brandLocation?.name ?? '—'}</div></div>
+      ${card.molliePaymentId ? `<div class="detail-tile"><div class="label">Website</div><div class="value">${(card.brandLocation && card.brandLocation.name) || '—'}</div></div>
       <div class="detail-tile"><div class="label">Mollie payment ID</div><div class="value" style="font-family:monospace;font-size:12px;">${card.molliePaymentId}</div></div>` : ''}
       <div class="detail-tile"><div class="label">Vervangen door</div><div class="value">${card.replacedByGiftCard ? card.replacedByGiftCard.giftCardNumber : '—'}</div></div>
     `;
@@ -722,7 +725,7 @@
     }
     els.actionRow.innerHTML = actions;
 
-    document.getElementById('action-block')?.addEventListener('click', async (evt) => {
+    bindClick('action-block', async (evt) => {
       const reason = prompt('Reden voor blokkeren:');
       if (!reason) return;
       const btn = evt.currentTarget;
@@ -741,7 +744,7 @@
       }
     });
 
-    document.getElementById('action-topup')?.addEventListener('click', async (evt) => {
+    bindClick('action-topup', async (evt) => {
       const amountStr = prompt('Met hoeveel euro opwaarderen?');
       const amount = parseFloat(amountStr);
       if (!amount || amount <= 0) return;
@@ -761,7 +764,7 @@
       }
     });
 
-    document.getElementById('action-replace')?.addEventListener('click', async (evt) => {
+    bindClick('action-replace', async (evt) => {
       const newToken = prompt('Scan of typ de token van de NIEUWE (nog niet geactiveerde) kaart:');
       if (!newToken) return;
       const btn = evt.currentTarget;
@@ -841,7 +844,8 @@
   }
 
   function getIssueLocationIds() {
-    const allChecked = document.getElementById('issue-loc-all')?.checked;
+    const issueLocAllEl = document.getElementById('issue-loc-all');
+    const allChecked = issueLocAllEl && issueLocAllEl.checked;
     if (allChecked === undefined || allChecked) return [];
     return Array.from(document.querySelectorAll('.issue-loc-checkbox:checked')).map((el) => el.value);
   }

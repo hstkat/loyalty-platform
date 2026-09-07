@@ -105,6 +105,10 @@
 </div>
 <script>
   function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  // Vervangt `x ?? y` (niet ondersteund op oudere kassa-browsers, o.a.
+  // Sunmi) — geeft fallback terug alleen bij null/undefined, i.t.t. ||
+  // dat ook 0/''/false als "leeg" zou behandelen.
+  function orDefault(v, fallback) { return (v === undefined || v === null) ? fallback : v; }
   function setStaffToken(t) { localStorage.setItem('staff_token', t); }
   function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
   function staffLogout() { clearStaffToken(); location.reload(); }
@@ -441,10 +445,10 @@
       const { orgId } = getConfig();
       const overview = await apiGet('/organizations/' + orgId + '/admin/overview');
       els.overviewGrid.innerHTML = `
-        <div class="overview-tile"><div class="label">Organisatie</div><div class="value">${overview.organization?.name || '—'}</div></div>
-        <div class="overview-tile"><div class="label">Organisatie-ID</div><div class="value" style="font-size:11px;">${overview.organization?.id || orgId}</div></div>
-        <div class="overview-tile"><div class="label">Aantal gasten</div><div class="value">${overview.customerCount ?? '—'}</div></div>
-        <div class="overview-tile"><div class="label">Actieve loyaltykaarten</div><div class="value">${overview.activeCardCount ?? '—'}</div></div>
+        <div class="overview-tile"><div class="label">Organisatie</div><div class="value">${(overview.organization && overview.organization.name) || '—'}</div></div>
+        <div class="overview-tile"><div class="label">Organisatie-ID</div><div class="value" style="font-size:11px;">${(overview.organization && overview.organization.id) || orgId}</div></div>
+        <div class="overview-tile"><div class="label">Aantal gasten</div><div class="value">${orDefault(overview.customerCount, '—')}</div></div>
+        <div class="overview-tile"><div class="label">Actieve loyaltykaarten</div><div class="value">${orDefault(overview.activeCardCount, '—')}</div></div>
       `;
       els.statusLine.textContent = 'Geladen.';
 
@@ -452,10 +456,10 @@
       const rule = Array.isArray(creditRules) ? creditRules.find((r) => r.isActive) || creditRules[0] : creditRules;
       if (rule) {
         creditRuleId = rule.id;
-        els.validityDays.value = rule.validityDays ?? '';
-        els.minOrder.value = rule.minimumOrderAmount ?? '';
-        els.minRedemption.value = rule.minimumRedemptionBalance ?? '';
-        els.maxRedeemPct.value = rule.maximumRedeemPercentage ?? '';
+        els.validityDays.value = orDefault(rule.validityDays, '');
+        els.minOrder.value = orDefault(rule.minimumOrderAmount, '');
+        els.minRedemption.value = orDefault(rule.minimumRedemptionBalance, '');
+        els.maxRedeemPct.value = orDefault(rule.maximumRedeemPercentage, '');
         els.usableNextVisit.checked = !!rule.usableFromNextVisit;
         els.transfersAllowed.checked = !!rule.transfersAllowed;
       }

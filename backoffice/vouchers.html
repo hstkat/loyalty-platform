@@ -501,7 +501,8 @@
   }
 
   function getSelectedLocationIds() {
-    const allChecked = document.getElementById('tpl-loc-all')?.checked;
+    const allCheckedEl = document.getElementById('tpl-loc-all');
+    const allChecked = allCheckedEl && allCheckedEl.checked;
     if (allChecked || !locations.length) return [];
     return Array.from(document.querySelectorAll('.tpl-loc-checkbox:checked')).map((el) => el.value);
   }

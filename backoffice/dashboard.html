@@ -164,6 +164,10 @@
 </div>
 <script>
   function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  // Vervangt `x ?? y` (niet ondersteund op oudere kassa-browsers, o.a.
+  // Sunmi) — geeft fallback terug alleen bij null/undefined, i.t.t. ||
+  // dat ook 0/''/false als "leeg" zou behandelen.
+  function orDefault(v, fallback) { return (v === undefined || v === null) ? fallback : v; }
   function setStaffToken(t) { localStorage.setItem('staff_token', t); }
   function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
   function staffLogout() { clearStaffToken(); location.reload(); }
@@ -493,14 +497,14 @@
           : 'Totaal beschikbaar + in behandeling, over alle leden';
         els.outstandingSub.textContent = note;
       }
-      els.members.textContent = data.memberCount ?? '—';
-      els.newMembers.textContent = '+' + (data.newMembersInPeriod ?? 0);
+      els.members.textContent = orDefault(data.memberCount, '—');
+      els.newMembers.textContent = '+' + (data.newMembersInPeriod || 0);
       els.revenue.textContent = euro(data.loyaltyRevenue);
       els.avgSpend.textContent = euro(data.averageSpend);
-      els.repeat.textContent = (data.repeatVisitRate ?? 0) + '%';
-      els.vip.textContent = data.vipCount ?? '—';
+      els.repeat.textContent = (data.repeatVisitRate || 0) + '%';
+      els.vip.textContent = orDefault(data.vipCount, '—');
       els.expiring.textContent = points(data.creditExpiringSoon);
-      els.atRisk.textContent = data.atRiskCount ?? '—';
+      els.atRisk.textContent = orDefault(data.atRiskCount, '—');
 
       els.statusLine.textContent = 'Actueel — live geladen vanaf je platform-API';
     } catch (err) {

@@ -211,6 +211,10 @@
 </div>
 <script>
   function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  // Vervangt `x ?? y` (niet ondersteund op oudere kassa-browsers, o.a.
+  // Sunmi) — geeft fallback terug alleen bij null/undefined, i.t.t. ||
+  // dat ook 0/''/false als "leeg" zou behandelen.
+  function orDefault(v, fallback) { return (v === undefined || v === null) ? fallback : v; }
   function setStaffToken(t) { localStorage.setItem('staff_token', t); }
   function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
   function staffLogout() { clearStaffToken(); location.reload(); }
@@ -715,7 +719,7 @@
     const table = document.getElementById('preview-table');
     const headerRow = '<tr>' + state.columns.map((c) => `<th>${c}</th>`).join('') + '</tr>';
     const dataRows = state.previewRows.map((row) =>
-      '<tr>' + state.columns.map((c) => `<td>${row[c] ?? ''}</td>`).join('') + '</tr>'
+      '<tr>' + state.columns.map((c) => `<td>${orDefault(row[c], '')}</td>`).join('') + '</tr>'
     ).join('');
     table.innerHTML = headerRow + dataRows;
   }
@@ -803,7 +807,7 @@
       return `<tr>
         <td>${r.rowNumber}</td>
         <td><span class="action-badge ${r.action}">${actionLabels[r.action] || r.action}</span></td>
-        <td>${r.sourceBalance ?? '—'}</td>
+        <td>${orDefault(r.sourceBalance, '—')}</td>
         <td>${r.convertedCredit !== undefined && r.convertedCredit !== null ? '€' + Number(r.convertedCredit).toFixed(2) : '—'}</td>
         <td>${r.errorMessage || ''}</td>
       </tr>`;

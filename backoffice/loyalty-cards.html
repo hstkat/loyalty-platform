@@ -130,6 +130,9 @@
 </div>
 <script>
   function getStaffToken() { return localStorage.getItem('staff_token') || ''; }
+  // Vervangt `el?.addEventListener(...)` (niet ondersteund op oudere
+  // kassa-browsers, o.a. Sunmi) — bindt alleen als het element bestaat.
+  function bindClick(id, handler) { const el = document.getElementById(id); if (el) el.addEventListener('click', handler); }
   function setStaffToken(t) { localStorage.setItem('staff_token', t); }
   function clearStaffToken() { localStorage.removeItem('staff_token'); localStorage.removeItem('staff_permissions'); }
   function staffLogout() { clearStaffToken(); location.reload(); }
@@ -553,11 +556,11 @@
     }
     els.actionRow.innerHTML = actions;
 
-    document.getElementById('action-block')?.addEventListener('click', (e) => doCardAction('block', 'Reden voor blokkeren:', e.currentTarget));
-    document.getElementById('action-lost')?.addEventListener('click', (e) => doCardAction('mark-lost', 'Toelichting (optioneel):', e.currentTarget));
-    document.getElementById('action-reactivate')?.addEventListener('click', (e) => doCardAction('reactivate', undefined, e.currentTarget));
-    document.getElementById('action-replace')?.addEventListener('click', doReplace);
-    document.getElementById('action-link')?.addEventListener('click', doManualLink);
+    bindClick('action-block', (e) => doCardAction('block', 'Reden voor blokkeren:', e.currentTarget));
+    bindClick('action-lost', (e) => doCardAction('mark-lost', 'Toelichting (optioneel):', e.currentTarget));
+    bindClick('action-reactivate', (e) => doCardAction('reactivate', undefined, e.currentTarget));
+    bindClick('action-replace', doReplace);
+    bindClick('action-link', doManualLink);
   }
 
   async function doCardAction(action, promptText, btn) {
