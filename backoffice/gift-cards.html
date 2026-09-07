@@ -312,7 +312,7 @@
       <div class="amount-chip" data-value="custom">Anders…</div>
     </div>
     <div class="form-field" id="custom-amount-field" style="display:none; margin-bottom: 14px; max-width: 200px;">
-      <input type="number" id="custom-amount-input" placeholder="Bedrag in € (min. €10)" min="10" step="0.01">
+      <input type="text" inputmode="decimal" id="custom-amount-input" placeholder="Bedrag in € (min. €10)">
     </div>
 
     <div class="form-row">
@@ -374,7 +374,7 @@
     <div id="gc-redeem-lookup-result" style="font-size:13px; color:var(--muted); margin-top:10px;"></div>
     <div class="form-field" style="max-width: 220px; margin-top: 12px;">
       <label>Te besteden bedrag (€)</label>
-      <input type="number" id="gc-redeem-amount-input" placeholder="0,00" min="0.01" step="0.01" disabled>
+      <input type="text" inputmode="decimal" id="gc-redeem-amount-input" placeholder="0,00" disabled>
     </div>
     <div style="margin-top: 16px;">
       <button class="btn-primary" id="gc-redeem-confirm-btn" disabled>Kadobon-betaling bevestigen</button>
@@ -516,6 +516,19 @@
   });
 
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  // Bedragvelden zijn text+inputmode="decimal" i.p.v. type="number" — op
+  // sommige ingebouwde Android-toetsenborden (o.a. kassaterminals als de
+  // Sunmi) werkt het numerieke toetsenbord van type="number" niet
+  // betrouwbaar. Deze sanitizer houdt de invoer alsnog netjes numeriek
+  // en accepteert zowel komma als punt als decimaalteken.
+  function sanitizeAmountInput(el) {
+    let v = el.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+    const parts = v.split('.');
+    if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
+    if (v !== el.value) el.value = v;
+  }
+  els.customAmountInput.addEventListener('input', () => sanitizeAmountInput(els.customAmountInput));
 
   // Enter in het aangepaste-bedragveld maakt de kadobon meteen aan —
   // zelfde gedrag als op "Kadobon aanmaken" klikken.
@@ -990,6 +1003,7 @@
   });
 
   gcRedeemEls.amountInput.addEventListener('input', () => {
+    sanitizeAmountInput(gcRedeemEls.amountInput);
     const amount = parseFloat(gcRedeemEls.amountInput.value);
     gcRedeemEls.confirmBtn.disabled = !gcRedeemToken || !amount || amount <= 0 || amount > gcRedeemBalance;
   });
