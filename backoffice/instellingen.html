@@ -503,7 +503,7 @@
         const { orgId } = getConfig();
         const result = await apiGet('/organizations/' + orgId + '/customers?search=' + encodeURIComponent(q) + '&pageSize=10');
         renderCustomerAutocomplete(result.items || []);
-      } catch {
+      } catch (err) {
         els.customerAutocompleteList.innerHTML = '<div class="no-match">Zoeken mislukt</div>';
         els.customerAutocompleteList.classList.add('open');
       }

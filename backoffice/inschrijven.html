@@ -501,7 +501,7 @@
       await navigator.clipboard.writeText(els.digitalPassLink.value);
       els.copyLinkBtn.textContent = 'Gekopieerd!';
       setTimeout(() => { els.copyLinkBtn.textContent = 'Kopiëren'; }, 1500);
-    } catch {
+    } catch (err) {
       document.execCommand('copy');
     }
   });

@@ -625,7 +625,7 @@
         selectCustomerById(parsed.customerId);
         return;
       }
-    } catch {
+    } catch (err) {
       // Not JSON — could be a customerId (legacy/manual), or a physical
       // loyalty-card token/URL. Try to tell them apart below.
     }
@@ -670,7 +670,7 @@
       const qrResult = await apiGet('/organizations/' + orgId + '/customers/qr-lookup/' + encodeURIComponent(token));
       applyResolvedCustomer(qrResult.customerId, qrResult.customerName, 'Portal-QR herkend — vul het bedrag in.');
       return;
-    } catch {
+    } catch (err) {
       // Geen geldig portal-QR-token — val terug op fysieke loyaltykaart.
     }
 
@@ -720,7 +720,7 @@
             stopCamera();
             return;
           }
-        } catch {
+        } catch (err) {
           // detect() can throw transiently if the video frame isn't ready yet — ignore and retry.
         }
         scanRafId = requestAnimationFrame(tick);
@@ -960,7 +960,7 @@
       pointsPerEuroToday = rate ? rate.pointsPerEuro : null;
       els.blockSizeLabel.textContent = blockSize || '—';
       refreshBlockDisplay();
-    } catch {
+    } catch (err) {
       els.blockSizeLabel.textContent = '—';
     }
   }
@@ -1131,7 +1131,7 @@
         gcEls.amountInput.disabled = false;
         gcEls.amountInput.max = card.currentBalance;
         gcEls.amountInput.focus();
-      } catch {
+      } catch (err) {
         gcEls.lookupResult.innerHTML = '<span class="warn">Kaart niet gevonden.</span>';
       }
     }, 300);
@@ -1219,7 +1219,7 @@
         vcLookedUpToken = token;
         vcEls.lookupResult.textContent = voucher.templateName + ' — ' + voucher.benefit + ' — voor ' + voucher.customerName;
         vcEls.confirmBtn.disabled = false;
-      } catch {
+      } catch (err) {
         vcEls.lookupResult.innerHTML = '<span class="warn">Voucher niet gevonden.</span>';
       }
     }, 300);

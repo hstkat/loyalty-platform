@@ -983,7 +983,7 @@
         gcRedeemEls.amountInput.disabled = false;
         gcRedeemEls.amountInput.max = card.currentBalance;
         gcRedeemEls.amountInput.focus();
-      } catch {
+      } catch (err) {
         gcRedeemEls.lookupResult.innerHTML = '<span class="warn">Kaart niet gevonden.</span>';
       }
     }, 300);

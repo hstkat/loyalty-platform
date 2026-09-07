@@ -642,7 +642,7 @@
         const result = await apiGet('/organizations/' + orgId + '/customers?search=' + encodeURIComponent(q) + '&pageSize=10');
         linkSearchResults = result.items || result || [];
         renderLinkAutocomplete();
-      } catch {
+      } catch (err) {
         linkEls.autocompleteList.innerHTML = '<div class="no-match">Zoeken mislukt</div>';
         linkEls.autocompleteList.classList.add('open');
       }
