@@ -384,6 +384,7 @@ export class LoyaltyCardsService {
       customerName: [card.customer?.firstName, card.customer?.lastName].filter(Boolean).join(' '),
       tier: card.customer?.tier?.name ?? null,
       availableBalance: card.customer?.wallet ? Number(card.customer.wallet.availableBalance) : 0,
+      pendingBalance: card.customer?.wallet ? Number(card.customer.wallet.pendingBalance) : 0,
       requiresExtraVerification,
       cardRedemptionThreshold: threshold,
     };

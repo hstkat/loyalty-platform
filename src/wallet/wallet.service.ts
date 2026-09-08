@@ -108,6 +108,14 @@ export class WalletService {
     const expiresAt = new Date(params.occurredAt.getTime() + validityDays * 24 * 60 * 60 * 1000);
 
     const entry = await this.prisma.$transaction(async (tx) => {
+      // Bij usableFromNextVisit gaat het bedrag pas de eerstvolgende
+      // kalenderdag naar availableBalance — zie release-pending-credit
+      // cron (module wallet/pending-credit-release.service.ts). Tot die
+      // tijd staat het apart in pendingBalance: wél zichtbaar/meegeteld
+      // in het totale tegoed, maar nog niet inzetbaar bij het afboeken
+      // (de eligibleLots-query in redeemBlocks/redeemCatalogItem/redeem
+      // filtert al op status: 'available').
+      const startsAvailable = !creditRule?.usableFromNextVisit;
       const created = await tx.walletLedgerEntry.create({
         data: {
           walletId: wallet.id,
@@ -115,7 +123,7 @@ export class WalletService {
           entryType: 'earn',
           amount: params.amount,
           remainingAmount: params.amount,
-          status: 'available',
+          status: startsAvailable ? 'available' : 'pending',
           source: 'system',
           transactionId: params.transactionId,
           rewardCalculationId: params.rewardCalculationId,
@@ -127,10 +135,9 @@ export class WalletService {
 
       await tx.wallet.update({
         where: { id: wallet.id },
-        data: {
-          availableBalance: { increment: params.amount },
-          lifetimeEarned: { increment: params.amount },
-        },
+        data: startsAvailable
+          ? { availableBalance: { increment: params.amount }, lifetimeEarned: { increment: params.amount } }
+          : { pendingBalance: { increment: params.amount }, lifetimeEarned: { increment: params.amount } },
       });
 
       return created;
@@ -488,6 +495,65 @@ export class WalletService {
 
     return { ledgerEntryId: debit.id, deducted: amountToDeduct, requested: absAmount };
   }
+
+  /**
+   * Zet vandaag-of-later nog "pending" earn-entries (zie recordEarn —
+   * usableFromNextVisit) om naar "available" zodra hun kalenderdag voorbij
+   * is, en verplaatst het bedrag van pendingBalance naar availableBalance.
+   * Getriggerd door de dagelijkse cron (zie wallet/pending-credit-release-
+   * cron.controller.ts), draait organisatie-overstijgend in één keer —
+   * elke ledger-entry heeft zijn eigen organizationId, geen aparte
+   * per-organisatie-loop nodig.
+   */
+  async releasePendingCredit() {
+    const cutoff = startOfTodayInTimeZone('Europe/Amsterdam');
+    const entries = await this.prisma.walletLedgerEntry.findMany({
+      where: { status: 'pending', entryType: 'earn', occurredAt: { lt: cutoff } },
+      select: { id: true, walletId: true, amount: true },
+    });
+
+    for (const entry of entries) {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.walletLedgerEntry.update({ where: { id: entry.id }, data: { status: 'available' } });
+        await tx.wallet.update({
+          where: { id: entry.walletId },
+          data: {
+            pendingBalance: { decrement: entry.amount },
+            availableBalance: { increment: entry.amount },
+          },
+        });
+      });
+    }
+
+    return { released: entries.length };
+  }
+}
+
+/**
+ * Middernacht van "vandaag" in een gegeven tijdzone, uitgedrukt als een
+ * correcte UTC-instant — past zich vanzelf aan voor CET/CEST (geen
+ * hardcoded offset), zonder externe tijdzone-library. Truc: formatteer
+ * "nu" in de doel-tijdzone, reconstrueer diezelfde wandklok-tijd ALSOF
+ * het UTC was, en het verschil met de echte "nu" is exact de huidige
+ * utc-offset van die tijdzone.
+ */
+function startOfTodayInTimeZone(timeZone: string): Date {
+  const now = new Date();
+  const fmt = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(now).map((p) => [p.type, p.value]));
+  const wallClockAsUtc = new Date(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}Z`);
+  const offsetMs = wallClockAsUtc.getTime() - now.getTime();
+  const localMidnightAsUtc = new Date(`${parts.year}-${parts.month}-${parts.day}T00:00:00Z`);
+  return new Date(localMidnightAsUtc.getTime() - offsetMs);
 }
 
 function round2(value: number): number {

@@ -7,9 +7,10 @@ import { RewardCatalogController } from './reward-catalog.controller';
 import { RewardCatalogService } from './reward-catalog.service';
 import { WalletPassService } from './wallet-pass.service';
 import { GoogleWalletService } from '../common/google-wallet.service';
+import { PendingCreditReleaseCronController } from './pending-credit-release-cron.controller';
 
 @Module({
-  controllers: [WalletController, CreditRulesController, RewardCatalogController],
+  controllers: [WalletController, CreditRulesController, RewardCatalogController, PendingCreditReleaseCronController],
   providers: [WalletService, ExchangeRateService, RewardCatalogService, WalletPassService, GoogleWalletService],
   exports: [WalletService, ExchangeRateService, WalletPassService],
 })

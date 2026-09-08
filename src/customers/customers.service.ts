@@ -177,6 +177,7 @@ export class CustomersService {
     const itemsWithBalance = items.map((customer) => ({
       ...customer,
       availableBalance: customer.wallet ? customer.wallet.availableBalance : 0,
+      pendingBalance: customer.wallet ? customer.wallet.pendingBalance : 0,
     }));
 
     return { items: itemsWithBalance, total, page, pageSize };
@@ -764,6 +765,7 @@ export class CustomersService {
       customerName: [customer.firstName, customer.lastName].filter(Boolean).join(' '),
       tier: customer.tier?.name ?? null,
       availableBalance: customer.wallet ? Number(customer.wallet.availableBalance) : 0,
+      pendingBalance: customer.wallet ? Number(customer.wallet.pendingBalance) : 0,
     };
   }
 }

@@ -400,6 +400,7 @@
 
     <div class="selected-customer" id="selected-customer">
       <span id="selected-customer-name">—</span>
+      <span id="selected-customer-balance" style="color:var(--muted); font-size:12px; margin-left:8px;"></span>
       <button type="button" class="clear-btn" id="clear-customer-btn">Wijzigen</button>
     </div>
   </div>
@@ -544,6 +545,7 @@
     cameraHint: document.getElementById('camera-hint'),
     selectedCustomer: document.getElementById('selected-customer'),
     selectedCustomerName: document.getElementById('selected-customer-name'),
+    selectedCustomerBalance: document.getElementById('selected-customer-balance'),
     clearCustomerBtn: document.getElementById('clear-customer-btn'),
     redeemPanel: document.getElementById('redeem-panel'),
     redeemTabBlocks: document.getElementById('redeem-tab-blocks'),
@@ -618,6 +620,7 @@
     }
     els.customerHidden.value = customer.id;
     els.selectedCustomerName.textContent = [customer.firstName, customer.lastName].filter(Boolean).join(' ') || '(naam onbekend)';
+    els.selectedCustomerBalance.textContent = formatBalanceInfo(customer.pendingBalance);
     els.selectedCustomer.classList.add('show');
     els.customerSearch.value = '';
     els.autocompleteList.classList.remove('open');
@@ -630,6 +633,7 @@
   els.clearCustomerBtn.addEventListener('click', () => {
     els.customerHidden.value = '';
     els.selectedCustomer.classList.remove('show');
+    els.selectedCustomerBalance.textContent = '';
     els.customerSearch.value = '';
     els.scanInput.value = '';
     els.scanInput.focus();
@@ -673,12 +677,23 @@
     selectLoyaltyCardByToken(token);
   }
 
-  function applyResolvedCustomer(customerId, customerName, statusMsg) {
+  // Toont "in behandeling" apart van het besteedbare saldo, zodat
+  // vandaag-verdiende punten (nog niet inzetbaar t/m morgen, zie
+  // usableFromNextVisit) niet lijken te "verdwijnen" — anders ziet een
+  // medewerker een lager getal dan de gast verwacht, zonder duidelijke
+  // reden.
+  function formatBalanceInfo(pendingBalance) {
+    const pending = Number(pendingBalance) || 0;
+    return pending > 0 ? ('(+' + points(pending) + ' morgen bruikbaar)') : '';
+  }
+
+  function applyResolvedCustomer(customerId, customerName, statusMsg, pendingBalance) {
     // Rechtstreeks uit het lookup-antwoord vullen i.p.v. via de lokaal
     // ingeladen gastenlijst — die kan een zojuist geclaimde kaart/gast nog
     // niet bevatten (voorkomt "onbekend pasje" bij een verse koppeling).
     els.customerHidden.value = customerId;
     els.selectedCustomerName.textContent = customerName || '(naam onbekend)';
+    els.selectedCustomerBalance.textContent = formatBalanceInfo(pendingBalance);
     els.selectedCustomer.classList.add('show');
     els.customerSearch.value = '';
     els.autocompleteList.classList.remove('open');
@@ -697,7 +712,7 @@
     // token), dan pas terugvallen op de fysieke-loyaltykaart-lookup.
     try {
       const qrResult = await apiGet('/organizations/' + orgId + '/customers/qr-lookup/' + encodeURIComponent(token));
-      applyResolvedCustomer(qrResult.customerId, qrResult.customerName, 'Portal-QR herkend — vul het bedrag in.');
+      applyResolvedCustomer(qrResult.customerId, qrResult.customerName, 'Portal-QR herkend — vul het bedrag in.', qrResult.pendingBalance);
       return;
     } catch (err) {
       // Geen geldig portal-QR-token — val terug op fysieke loyaltykaart.
@@ -710,7 +725,7 @@
         els.statusLine.classList.add('error');
         return;
       }
-      applyResolvedCustomer(result.customerId, result.customerName, 'Loyaltykaart herkend — vul het bedrag in.');
+      applyResolvedCustomer(result.customerId, result.customerName, 'Loyaltykaart herkend — vul het bedrag in.', result.pendingBalance);
     } catch (err) {
       els.statusLine.textContent = 'Onbekend pasje — deze kaart is niet gevonden.';
       els.statusLine.classList.add('error');
@@ -820,6 +835,7 @@
     els.customerSearch.value = '';
     els.autocompleteList.classList.remove('open');
     els.selectedCustomerName.textContent = customerLabel(customer);
+    els.selectedCustomerBalance.textContent = formatBalanceInfo(customer.pendingBalance);
     els.selectedCustomer.classList.add('show');
     els.amountInput.focus();
   }
