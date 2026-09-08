@@ -511,7 +511,6 @@
     if (parts.length > 2) v = parts[0] + '.' + parts.slice(1).join('');
     if (v !== el.value) el.value = v;
   }
-  els.amountInput.addEventListener('input', () => sanitizeAmountInput(els.amountInput));
 
   function getConfig() {
     return {
@@ -558,6 +557,8 @@
     redeemConfirmBtn: document.getElementById('redeem-confirm-btn'),
     redeemResultDiv: document.getElementById('redeem-result'),
   };
+
+  els.amountInput.addEventListener('input', () => sanitizeAmountInput(els.amountInput));
 
   // Timeout op netwerkverzoeken — zonder dit blijft de pagina bij een
   // vastgelopen verbinding (bijv. wisselvallige WiFi op de kassa)
