@@ -563,16 +563,16 @@
   // Timeout op netwerkverzoeken — zonder dit blijft de pagina bij een
   // vastgelopen verbinding (bijv. wisselvallige WiFi op de kassa)
   // oneindig op "Laden…" staan, zonder ooit een foutmelding te tonen.
+  // Gebruikt Promise.race i.p.v. AbortController — die laatste bestaat
+  // niet op sommige oudere kassa-browsers (o.a. Sunmi). Dit stopt het
+  // wachten op tijd, al blijft het onderliggende verzoek zelf op de
+  // achtergrond doorlopen (onschadelijk, alleen de UI wacht niet meer).
   const API_TIMEOUT_MS = 15000;
   function fetchWithTimeout(url, options) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-    return fetch(url, Object.assign({}, options, { signal: controller.signal }))
-      .catch((err) => {
-        if (err.name === 'AbortError') throw new Error('Geen reactie van de server (timeout) — controleer de internetverbinding.');
-        throw err;
-      })
-      .finally(() => clearTimeout(timeoutId));
+    const timeoutPromise = new Promise((resolve, reject) => {
+      setTimeout(() => reject(new Error('Geen reactie van de server (timeout) — controleer de internetverbinding.')), API_TIMEOUT_MS);
+    });
+    return Promise.race([fetch(url, options), timeoutPromise]);
   }
 
   async function apiGet(path) {
