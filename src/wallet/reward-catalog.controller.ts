@@ -9,7 +9,7 @@ export class RewardCatalogController {
   constructor(private catalog: RewardCatalogService) {}
 
   @Get('reward-catalog')
-  @RequirePermissions('credit_rules.read')
+  @RequirePermissions('wallet.redeem')
   listItems(@Param('orgId') orgId: string, @Query('activeOnly') activeOnly?: string, @Query('currentlyAvailableOnly') currentlyAvailableOnly?: string) {
     return this.catalog.listItems(orgId, activeOnly === 'true', currentlyAvailableOnly === 'true');
   }
@@ -61,7 +61,7 @@ export class RewardCatalogController {
   }
 
   @Get('redemption-block-size')
-  @RequirePermissions('credit_rules.read')
+  @RequirePermissions('wallet.redeem')
   async getBlockSize(@Param('orgId') orgId: string) {
     const blockSize = await this.catalog.getRedemptionBlockSize(orgId);
     return { blockSize };
