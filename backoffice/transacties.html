@@ -559,9 +559,24 @@
     redeemResultDiv: document.getElementById('redeem-result'),
   };
 
+  // Timeout op netwerkverzoeken — zonder dit blijft de pagina bij een
+  // vastgelopen verbinding (bijv. wisselvallige WiFi op de kassa)
+  // oneindig op "Laden…" staan, zonder ooit een foutmelding te tonen.
+  const API_TIMEOUT_MS = 15000;
+  function fetchWithTimeout(url, options) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+    return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+      .catch((err) => {
+        if (err.name === 'AbortError') throw new Error('Geen reactie van de server (timeout) — controleer de internetverbinding.');
+        throw err;
+      })
+      .finally(() => clearTimeout(timeoutId));
+  }
+
   async function apiGet(path) {
     const { apiBase } = getConfig();
-    const res = await fetch(apiBase + path, { headers: { Authorization: 'Bearer ' + getStaffToken() } });
+    const res = await fetchWithTimeout(apiBase + path, { headers: { Authorization: 'Bearer ' + getStaffToken() } });
     if (res.status === 401) { clearStaffToken(); showStaffLoginOverlay(); throw new Error('Sessie verlopen — log opnieuw in'); }
     if (!res.ok) throw new Error('API-fout: ' + res.status);
     return res.json();
@@ -569,7 +584,7 @@
 
   async function apiPost(path, body) {
     const { apiBase } = getConfig();
-    const res = await fetch(apiBase + path, {
+    const res = await fetchWithTimeout(apiBase + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getStaffToken() },
       body: JSON.stringify(body),
